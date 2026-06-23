@@ -46,3 +46,6 @@ fastlane/test_output
 
 # Project working notes — not part of the published repo
 md_files/
+
+# Local third-party skin samples for dev/testing only — never committed (PRD §8.3)
+local_skins/
