@@ -25,9 +25,12 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         "numbers.bmp":  (99, 13),
         "monoster.bmp": (58, 24),
         "playpaus.bmp": (42, 9),
-        // volume/balance ship as 68x420 (some skins 68x433); rects must fit 420.
+        // volume ships as 68x420 (some skins 68x433); rects must fit 420.
         "volume.bmp":   (68, 420),
-        "balance.bmp":  (68, 420),
+        // balance is NARROWER than volume: canonical frame is 47 wide, and a
+        // large share of real skins ship balance.bmp at exactly 47px wide, so
+        // rects must fit 47 (not 68) to stay in-bounds on those sheets.
+        "balance.bmp":  (47, 420),
         // text.bmp is 155 wide; height varies (18 / 73 / 74). Use the SMALLEST
         // observed height so any rect fitting here fits every real sheet.
         "text.bmp":     (155, 18)
@@ -53,6 +56,28 @@ final class SpriteCoordinatesFitTests: XCTestCase {
                     "\(sheet)/\(rect.name): bottom edge \(rect.y + rect.height) "
                         + "exceeds sheet height \(dims.height)")
             }
+        }
+    }
+
+    /// Pins the balance slider frame width to its canonical 47px. The balance
+    /// sheet is narrower than volume (68px); a regression back to 68 would
+    /// silently read past the right edge of the many real skins that ship
+    /// balance.bmp at 47px wide, making the control invisible there. Asserts
+    /// directly against the coordinate table so it does not rely on the fit
+    /// fixtures above.
+    func testBalanceFrameWidthIsPinnedTo47() {
+        guard let balance = SpriteCoordinates.mainWindow["balance.bmp"] else {
+            XCTFail("balance.bmp missing from the coordinate table")
+            return
+        }
+        XCTAssertEqual(balance.count, 28, "balance must have 28 stacked frames")
+        for rect in balance {
+            XCTAssertEqual(
+                rect.width, 47,
+                "\(rect.name): balance frame width must be 47 (canonical), not "
+                    + "68 — a 68-wide frame overruns 47px-wide balance sheets")
+            XCTAssertEqual(
+                rect.height, 15, "\(rect.name): balance frame height must be 15")
         }
     }
 

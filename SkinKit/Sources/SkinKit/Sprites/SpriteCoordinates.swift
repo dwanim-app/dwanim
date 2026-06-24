@@ -117,10 +117,17 @@ public enum SpriteCoordinates {
 
     // MARK: - balance.bmp (balance slider)
     //
-    // Same shape as the volume sheet: 28 stacked 68x15 position frames from y=0,
-    // each with the thumb baked in. No separate thumb sprite.
+    // Same vertical shape as the volume sheet — 28 stacked position frames from
+    // y=0, each 15 tall, with the thumb baked in (no separate thumb sprite) —
+    // but the balance frame is NARROWER than volume's: 47 wide, not 68. The
+    // balance knob graphic only occupies the left portion of the strip, so the
+    // canonical sheet is authored 47 wide. A 47-wide frame is in-bounds on both
+    // 47-wide and 68-wide balance sheets; a 68-wide frame would overrun the many
+    // skins that ship balance at 47px. 28 * 15 = 420, the standard content
+    // height (some skins ship a slightly taller 433px sheet; the extra rows are
+    // unused and the frames still start at y=0).
 
-    private static let balance: [SpriteRect] = sliderBackgrounds(count: 28, width: 68, height: 15)
+    private static let balance: [SpriteRect] = sliderBackgrounds(count: 28, width: 47, height: 15)
 
     // MARK: - monoster.bmp (mono / stereo indicators)
     //
