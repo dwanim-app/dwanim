@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 /// Errors that can arise while rendering or exporting a skin image.
 enum RenderError: Error, CustomStringConvertible {
     case contextCreationFailed
+    case imageCreationFailed
     case pngDestinationFailed
     case pngWriteFailed
 
@@ -16,6 +17,8 @@ enum RenderError: Error, CustomStringConvertible {
         switch self {
         case .contextCreationFailed:
             return "Could not create a graphics context for the scaled image."
+        case .imageCreationFailed:
+            return "Could not create an image from the scaled graphics context."
         case .pngDestinationFailed:
             return "Could not create a PNG destination for the output path."
         case .pngWriteFailed:
@@ -54,7 +57,7 @@ func scaledImage(
     context.draw(image, in: CGRect(x: 0, y: 0, width: outWidth, height: outHeight))
 
     guard let scaled = context.makeImage() else {
-        throw RenderError.contextCreationFailed
+        throw RenderError.imageCreationFailed
     }
     return (scaled, outWidth, outHeight)
 }

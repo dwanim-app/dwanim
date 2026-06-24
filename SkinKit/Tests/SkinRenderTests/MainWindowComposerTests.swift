@@ -234,4 +234,75 @@ final class MainWindowComposerTests: XCTestCase {
         XCTAssertEqual(corner.2, bgColor.2)
         XCTAssertEqual(corner.3, bgColor.3)
     }
+
+    // MARK: - 7. Undersized background
+
+    /// A `main.bmp/background` whose backing buffer is shorter than its declared
+    /// `width * height * 4` is malformed: copying it would read/write out of
+    /// range and trap. `compose` must treat it as no usable background and return
+    /// `nil` without crashing.
+    func testUndersizedBackgroundReturnsNilWithoutCrashing() {
+        // Declares 20x20 (1600 bytes) but only carries half a buffer.
+        let undersized = DecodedBitmap(
+            width: 20,
+            height: 20,
+            pixels: [UInt8](repeating: 0, count: 20 * 20 * 4 / 2)
+        )
+        let sheets: [String: [String: DecodedBitmap]] = [
+            "main.bmp": ["background": undersized]
+        ]
+
+        XCTAssertNil(MainWindowComposer.compose(makeSkin(sprites: sheets)))
+    }
+
+    // MARK: - 8. Undersized element sprite
+
+    /// A valid background plus one element whose sprite buffer is shorter than
+    /// its declared dimensions: the malformed sprite is skipped (not copied,
+    /// never traps) while the background and the other element still composite.
+    func testUndersizedElementSpriteIsSkippedAndOthersComposite() {
+        let bgColor: (UInt8, UInt8, UInt8, UInt8) = (12, 34, 56, 255)
+        let background = solidBitmap(width: 20, height: 20, color: bgColor)
+
+        // Declares 6x6 (864 bytes) but only carries 4 bytes — undersized.
+        let malformed = DecodedBitmap(width: 6, height: 6, pixels: [0, 0, 0, 255])
+
+        let goodColor: (UInt8, UInt8, UInt8, UInt8) = (200, 100, 50, 255)
+        let sheets: [String: [String: DecodedBitmap]] = [
+            "main.bmp": ["background": background],
+            "bad.bmp": ["broken": malformed],
+            "good.bmp": ["dot": solidBitmap(width: 4, height: 4, color: goodColor)]
+        ]
+        let elements = [
+            WindowElement(sheet: "bad.bmp", sprite: "broken", x: 0, y: 0),
+            WindowElement(sheet: "good.bmp", sprite: "dot", x: 10, y: 10)
+        ]
+
+        guard let composed = MainWindowComposer.compose(
+            makeSkin(sprites: sheets),
+            elements: elements
+        ) else {
+            XCTFail("compose returned nil for a skin with a valid background")
+            return
+        }
+
+        // The malformed sprite was skipped: its footprint at (0,0) stays
+        // background.
+        let skipped = pixel(composed, x: 0, y: 0)
+        XCTAssertEqual(skipped.0, bgColor.0)
+        XCTAssertEqual(skipped.1, bgColor.1)
+        XCTAssertEqual(skipped.2, bgColor.2)
+        XCTAssertEqual(skipped.3, bgColor.3)
+
+        // The valid sprite still composited at its position.
+        let good = pixel(composed, x: 10, y: 10)
+        XCTAssertEqual(good.0, goodColor.0)
+        XCTAssertEqual(good.1, goodColor.1)
+        XCTAssertEqual(good.2, goodColor.2)
+        XCTAssertEqual(good.3, goodColor.3)
+
+        // An uncovered pixel still equals the background.
+        let corner = pixel(composed, x: 19, y: 0)
+        XCTAssertEqual(corner.0, bgColor.0)
+    }
 }

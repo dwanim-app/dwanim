@@ -52,8 +52,8 @@ private func parseArguments(_ argv: [String]) -> Arguments {
             pngOutput = argv[index + 1]
             index += 2
         case "--scale":
-            guard index + 1 < argv.count, let value = Int(argv[index + 1]), value >= 1 else {
-                fail("--scale requires a positive integer. Usage: SkinHarness <path.wsz> [--png <out.png>] [--scale N]")
+            guard index + 1 < argv.count, let value = Int(argv[index + 1]), (1...16).contains(value) else {
+                fail("--scale requires an integer in 1...16 (larger values overflow the scaled-image dimensions). Usage: SkinHarness <path.wsz> [--png <out.png>] [--scale N]")
             }
             scale = value
             index += 2

@@ -36,11 +36,26 @@ public enum MainWindowComposer {
 
         let width = background.width
         let height = background.height
+        // `DecodedBitmap` does not enforce that its backing buffer actually holds
+        // `width * height * 4` bytes. An undersized background would make the row
+        // copies below read/write out of range and trap, so treat a malformed
+        // background as no usable background (same guard class as
+        // `SpriteCutter.crop`).
+        guard background.pixels.count == width * height * 4 else {
+            return nil
+        }
+
         var pixels = background.pixels // a COPY of the background buffer
 
         for element in elements {
             guard let sprite = skin.sprite(sheet: element.sheet, name: element.sprite) else {
                 continue // fault tolerant: skip missing sprites
+            }
+            // Skip a sprite whose buffer is shorter (or longer) than its declared
+            // dimensions: copying it would read out of range and trap. Skipping
+            // keeps the other elements compositing — fault tolerant, never traps.
+            guard sprite.pixels.count == sprite.width * sprite.height * 4 else {
+                continue
             }
             overwrite(
                 &pixels,
