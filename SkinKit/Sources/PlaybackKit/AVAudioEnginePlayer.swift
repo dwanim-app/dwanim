@@ -118,6 +118,9 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 
     public func seek(to time: TimeInterval) {
         guard file != nil else { return }
+        // Ignore a non-finite seek target rather than jumping to the start; the
+        // pure math also sanitizes it, but a garbage seek should be a no-op.
+        guard time.isFinite else { return }
         let clamped = PlaybackMath.clamp(time, to: duration)
         let wasPlaying = wantsToPlay
 

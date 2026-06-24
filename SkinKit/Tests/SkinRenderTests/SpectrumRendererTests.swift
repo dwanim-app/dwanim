@@ -124,6 +124,19 @@ final class SpectrumRendererTests: XCTestCase {
         XCTAssertTrue(isBackground(base, x: 8, y: 9), "clamped-low bar should stay background")
     }
 
+    /// A NaN level must not trap the `Int()` height conversion; it is treated as
+    /// silent (that bar's column stays background), while ±inf still clamp.
+    func testNaNLevelIsSilentAndDoesNotTrap() {
+        var base = solidBitmap(width: 10, height: 10, color: bg)
+        SpectrumRenderer.draw(
+            [Float.nan, .infinity], into: &base, x: 0, y: 0, width: 10, height: 10, palette: redPalette
+        )
+        // NaN bar (left slot) stays background; +inf bar (right slot) fills full.
+        XCTAssertTrue(isBackground(base, x: 1, y: 9), "NaN level should render as silent")
+        XCTAssertFalse(isBackground(base, x: 8, y: 0), "+inf level should clamp to a full bar")
+        XCTAssertEqual(base.pixels.count, 10 * 10 * 4)
+    }
+
     // MARK: - 6. A rect partly off-bounds clips without crashing
 
     /// A rect whose right/bottom edges extend past the base is clipped to the base
