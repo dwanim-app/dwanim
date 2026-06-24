@@ -21,16 +21,23 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         "cbuttons.bmp": (136, 36),
         "titlebar.bmp": (344, 87),
         "shufrep.bmp":  (92, 85),
+        // posbar's canonical/modal sheet is 307x10. A minority of skins ship it
+        // as a short strip (2-9px tall) that intentionally omits the thumb, or
+        // 248px wide (track only); those are not chased here — the canonical
+        // 307x10 keeps the ~96.5% modal majority correct.
         "posbar.bmp":   (307, 10),
         "numbers.bmp":  (99, 13),
         "monoster.bmp": (58, 24),
         "playpaus.bmp": (42, 9),
-        // volume ships as 68x420 (some skins 68x433); rects must fit 420.
-        "volume.bmp":   (68, 420),
+        // volume's nominal content height is 420 (28 frames x 15), but a share of
+        // real skins ship it TRIMMED to 418/419px. The last frame's bottom is
+        // capped at 418 so rects must fit 418 (not 420) to stay in-bounds there.
+        "volume.bmp":   (68, 418),
         // balance is NARROWER than volume: canonical frame is 47 wide, and a
         // large share of real skins ship balance.bmp at exactly 47px wide, so
-        // rects must fit 47 (not 68) to stay in-bounds on those sheets.
-        "balance.bmp":  (47, 420),
+        // rects must fit 47 (not 68). Its bottom is likewise capped at 418 to fit
+        // the trimmed 418/419px sheets, so rects must fit 418 (not 420).
+        "balance.bmp":  (47, 418),
         // text.bmp is 155 wide; height varies (18 / 73 / 74). Use the SMALLEST
         // observed height so any rect fitting here fits every real sheet.
         "text.bmp":     (155, 18)
@@ -71,14 +78,100 @@ final class SpriteCoordinatesFitTests: XCTestCase {
             return
         }
         XCTAssertEqual(balance.count, 28, "balance must have 28 stacked frames")
-        for rect in balance {
+        for (index, rect) in balance.enumerated() {
             XCTAssertEqual(
                 rect.width, 47,
                 "\(rect.name): balance frame width must be 47 (canonical), not "
                     + "68 — a 68-wide frame overruns 47px-wide balance sheets")
-            XCTAssertEqual(
-                rect.height, 15, "\(rect.name): balance frame height must be 15")
+            // Every frame is 15 tall except the LAST, whose bottom is capped at
+            // 418 to fit the trimmed 418/419px sheets (see
+            // testBalanceMaxBottomIsPinnedTo418). That final frame is therefore
+            // 13 tall (418 - 27*15); all earlier frames remain 15.
+            if index == balance.count - 1 {
+                XCTAssertEqual(
+                    rect.height, 13,
+                    "\(rect.name): last balance frame is capped at 13 (bottom 418)")
+            } else {
+                XCTAssertEqual(
+                    rect.height, 15, "\(rect.name): balance frame height must be 15")
+            }
         }
+    }
+
+    /// Pins the volume slider's maximum bottom edge to 418px. Volume's nominal
+    /// content height is 28 * 15 = 420, but a meaningful share of real skins ship
+    /// volume.bmp trimmed to 418/419px; a 420-bottom last frame (level27) overruns
+    /// those sheets, and `SpriteCutter` then drops it, leaving the 28-frame set
+    /// incomplete and the slider blank at that level. Capping the last frame's
+    /// bottom at 418 keeps every level in-bounds. Asserts directly against the
+    /// coordinate table so it does not rely on the fit fixtures above.
+    func testVolumeMaxBottomIsPinnedTo418() {
+        guard let volume = SpriteCoordinates.mainWindow["volume.bmp"] else {
+            XCTFail("volume.bmp missing from the coordinate table")
+            return
+        }
+        XCTAssertEqual(volume.count, 28, "volume must have 28 stacked frames")
+        let maxBottom = volume.map { $0.y + $0.height }.max()
+        XCTAssertEqual(
+            maxBottom, 418,
+            "volume max bottom edge must be 418, not 420 — a 420 bottom overruns "
+                + "the 418/419px-tall volume sheets and drops the whole sheet")
+        for rect in volume {
+            XCTAssertEqual(rect.width, 68, "\(rect.name): volume frame width must be 68")
+        }
+    }
+
+    /// Pins the balance slider's maximum bottom edge to 418px, the same trim the
+    /// volume sheet needs (balance shares the 28 * 15 = 420 nominal height and the
+    /// same 418/419px real-sheet exposure). A 420 bottom overruns those sheets and
+    /// `SpriteCutter` drops the whole balance control. Asserts directly against
+    /// the coordinate table.
+    func testBalanceMaxBottomIsPinnedTo418() {
+        guard let balance = SpriteCoordinates.mainWindow["balance.bmp"] else {
+            XCTFail("balance.bmp missing from the coordinate table")
+            return
+        }
+        let maxBottom = balance.map { $0.y + $0.height }.max()
+        XCTAssertEqual(
+            maxBottom, 418,
+            "balance max bottom edge must be 418, not 420 — a 420 bottom overruns "
+                + "the 418/419px-tall balance sheets and drops the whole sheet")
+    }
+
+    /// Pins the canonical posbar geometry to 307x10. The seek track is 248 wide
+    /// at x=0, and the two 29-wide thumb sub-bitmaps live at x=248 and x=278, so
+    /// the rects occupy x 0..306 (right edge 307) and are all 10px tall. These
+    /// coordinates are correct on the ~96.5% modal 307x10 sheet and MUST NOT be
+    /// shrunk to chase the 248-wide / short-strip minorities: clamping the thumb
+    /// x would corrupt the canonical majority. Asserts directly against the table.
+    func testPosbarGeometryIsPinnedToCanonical307x10() {
+        guard let posbar = SpriteCoordinates.mainWindow["posbar.bmp"] else {
+            XCTFail("posbar.bmp missing from the coordinate table")
+            return
+        }
+        let byName = Dictionary(uniqueKeysWithValues: posbar.map { ($0.name, $0) })
+
+        let track = try? XCTUnwrap(byName["track"])
+        XCTAssertEqual(track?.x, 0, "track x")
+        XCTAssertEqual(track?.y, 0, "track y")
+        XCTAssertEqual(track?.width, 248, "track width must be 248 (canonical seek track)")
+        XCTAssertEqual(track?.height, 10, "track height must be 10 (canonical)")
+
+        let thumb = try? XCTUnwrap(byName["thumb"])
+        XCTAssertEqual(thumb?.x, 248, "thumb x must be 248 — the dynamic thumb lives here")
+        XCTAssertEqual(thumb?.width, 29, "thumb width must be 29")
+        XCTAssertEqual(thumb?.height, 10, "thumb height must be 10")
+
+        let thumbPressed = try? XCTUnwrap(byName["thumbPressed"])
+        XCTAssertEqual(thumbPressed?.x, 278, "thumbPressed x must be 278")
+        XCTAssertEqual(thumbPressed?.width, 29, "thumbPressed width must be 29")
+        XCTAssertEqual(thumbPressed?.height, 10, "thumbPressed height must be 10")
+
+        let maxRight = posbar.map { $0.x + $0.width }.max()
+        XCTAssertEqual(
+            maxRight, 307,
+            "posbar max right edge must be 307 (canonical sheet width); do not "
+                + "shrink the thumb x to chase 248-wide minority sheets")
     }
 
     /// Every sheet declared in the coordinate table must have a standard-size
