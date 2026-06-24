@@ -22,6 +22,9 @@ enum PlaybackMath {
         sampleRate: Double
     ) -> AVAudioFramePosition {
         guard sampleRate > 0 else { return 0 }
+        // A non-finite time would trap in the AVAudioFramePosition (Int64)
+        // conversion below; treat it as the start.
+        guard time.isFinite else { return 0 }
         let frames = (time * sampleRate).rounded()
         return AVAudioFramePosition(frames)
     }
@@ -55,6 +58,9 @@ enum PlaybackMath {
         to upperBound: TimeInterval
     ) -> TimeInterval {
         guard upperBound > 0 else { return 0 }
+        // NaN would survive min/max and propagate; map it to the start. (±inf
+        // already clamp correctly to upperBound / 0.)
+        guard !value.isNaN else { return 0 }
         return Swift.min(Swift.max(value, 0), upperBound)
     }
 }

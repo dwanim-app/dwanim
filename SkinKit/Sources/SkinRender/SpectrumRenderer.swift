@@ -85,7 +85,10 @@ public enum SpectrumRenderer {
         let baseHeight = base.height
 
         for barIndex in 0..<barCount {
-            let level = min(max(levels[barIndex], 0), 1)
+            // NaN would survive min/max and trap the Int() conversion below, so
+            // treat a NaN level as silent. (±inf clamp correctly to 1 / 0.)
+            let raw = levels[barIndex]
+            let level = raw.isNaN ? 0 : min(max(raw, 0), 1)
             // Filled height in pixels, bottom-up; rounds so 0.5 fills ~half.
             let filledHeight = Int((Double(level) * Double(height)).rounded())
             guard filledHeight > 0 else { continue }

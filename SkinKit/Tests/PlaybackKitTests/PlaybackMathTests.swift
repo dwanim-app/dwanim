@@ -70,4 +70,20 @@ final class PlaybackMathTests: XCTestCase {
         XCTAssertEqual(PlaybackMath.clamp(4.5, to: 0), 0)
         XCTAssertEqual(PlaybackMath.clamp(-1, to: 0), 0)
     }
+
+    // MARK: - Non-finite input (must never trap downstream)
+
+    func testClampMapsNaNToZeroAndInfinitiesToBounds() {
+        XCTAssertEqual(PlaybackMath.clamp(.nan, to: 10), 0)
+        XCTAssertEqual(PlaybackMath.clamp(.infinity, to: 10), 10)
+        XCTAssertEqual(PlaybackMath.clamp(-.infinity, to: 10), 0)
+    }
+
+    func testFrameForNonFiniteTimeIsZero() {
+        // Guards the AVAudioFramePosition (Int64) conversion, which traps on
+        // NaN/inf — the root of the seek(to: NaN) crash.
+        XCTAssertEqual(PlaybackMath.frame(forTime: .nan, sampleRate: sampleRate), 0)
+        XCTAssertEqual(PlaybackMath.frame(forTime: .infinity, sampleRate: sampleRate), 0)
+        XCTAssertEqual(PlaybackMath.frame(forTime: -.infinity, sampleRate: sampleRate), 0)
+    }
 }

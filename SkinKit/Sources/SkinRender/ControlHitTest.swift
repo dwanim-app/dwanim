@@ -95,6 +95,30 @@ public enum ControlHitTest {
         return control(atX: point.x, y: point.y)
     }
 
+    /// Convert a skin-space point (top-left origin, unscaled pixels) to a
+    /// view/layer-space point (the NON-flipped, bottom-left origin, scaled
+    /// coordinates the window draws into). This is the FORWARD draw map — the
+    /// exact inverse of `skinPoint(...)`:
+    ///   `x = skinX * scale`
+    ///   `y = viewHeight - skinY * scale`
+    ///
+    /// The y-flip is REQUIRED and MUST match `skinPoint`'s flip. Click routing is
+    /// verified correct with that flip (clicking the visible play button fires
+    /// `.play`), so anything sharing this coordinate space — e.g. the region
+    /// window mask — must use this same flip, or it lands vertically mirrored
+    /// relative to where pixels and clicks actually go. (`CGContext.draw`
+    /// auto-orients an image in a bottom-left context; a `CAShapeLayer` path does
+    /// not, so the mask needs the flip applied explicitly here.)
+    public static func viewPoint(
+        skinX: Int,
+        skinY: Int,
+        viewHeight: Double,
+        scale: Int
+    ) -> (x: Double, y: Double) {
+        let s = Double(scale)
+        return (x: Double(skinX) * s, y: viewHeight - Double(skinY) * s)
+    }
+
     // MARK: - Hit rect (public, for tests/debug)
 
     /// The hit rect for a control: its `MainWindowLayout` draw position plus the

@@ -222,6 +222,37 @@ final class ControlHitTestTests: XCTestCase {
         XCTAssertEqual(inner.y, 5, "y = floor((viewHeight - viewY)/scale)")
     }
 
+    // MARK: - viewPoint (forward map; region-mask orientation guard)
+
+    /// `viewPoint` is the FORWARD draw map and MUST be the exact inverse of
+    /// `skinPoint` (including the y-flip). The region window mask relies on this:
+    /// if it didn't flip while clicks do, the silhouette would be vertically
+    /// mirrored. Skin row 0 must map to the visual TOP (high y in the bottom-left
+    /// view), and a skin pixel must round-trip back through `skinPoint`.
+    func testViewPointIsInverseOfSkinPointWithYFlip() {
+        let viewHeight = 232.0 // 116px window at scale 2
+
+        // Skin top (row 0) -> visual top -> HIGH y (== viewHeight), not 0.
+        let top = ControlHitTest.viewPoint(skinX: 0, skinY: 0, viewHeight: viewHeight, scale: 2)
+        XCTAssertEqual(top.x, 0, accuracy: 1e-9)
+        XCTAssertEqual(top.y, viewHeight, accuracy: 1e-9, "skin row 0 maps to the visual top (high y)")
+
+        // Skin bottom (row 116) -> view y 0.
+        let bottom = ControlHitTest.viewPoint(skinX: 0, skinY: 116, viewHeight: viewHeight, scale: 2)
+        XCTAssertEqual(bottom.y, 0, accuracy: 1e-9)
+
+        // Round-trip interior skin pixels: viewPoint(corner) then sample inside the
+        // pixel cell (+1 view-pt) and map back with skinPoint.
+        for (sx, sy) in [(10, 5), (137, 58), (274, 115)] {
+            let vp = ControlHitTest.viewPoint(skinX: sx, skinY: sy, viewHeight: viewHeight, scale: 2)
+            let back = ControlHitTest.skinPoint(
+                viewX: vp.x + 1, viewY: vp.y - 1, viewHeight: viewHeight, scale: 2
+            )
+            XCTAssertEqual(back.x, sx, "x round-trip for (\(sx),\(sy))")
+            XCTAssertEqual(back.y, sy, "y round-trip for (\(sx),\(sy))")
+        }
+    }
+
     // MARK: - Misses
 
     func testPointOutsideEveryControlReturnsNil() {
