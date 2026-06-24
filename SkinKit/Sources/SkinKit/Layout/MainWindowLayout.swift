@@ -27,6 +27,30 @@ public enum MainWindowLayout {
     public static let windowWidth = 275
     public static let windowHeight = 116
 
+    // MARK: - Dynamic-content origins
+    //
+    // Top-left destinations for the dynamic text/number overlays the player
+    // patches onto the composed base buffer (the song title and the time
+    // display). These are NOT static-sprite elements, so they live here as
+    // standalone origins rather than in `elements`. Clean-room from the public
+    // format layout.
+
+    /// Top-left of the song-title text region (the scrolling track name strip,
+    /// upper area of the window).
+    // provisional — tune at render
+    public static let titleTextOrigin = (x: 111, y: 27)
+
+    /// Width of the song-title display region, in pixels. The title is clipped
+    /// to this width so a long track name cannot bleed past the strip into the
+    /// rest of the window (mono/stereo, the window edge). The classic title
+    /// display is roughly ~150px wide.
+    // provisional — tune at render
+    public static let titleTextWidth = 150
+
+    /// Top-left of the MM:SS time display (digits beside the title, upper-left).
+    // provisional — tune at render
+    public static let timeDisplayOrigin = (x: 48, y: 26)
+
     /// Static controls to composite over `main.bmp`, in draw order (back to
     /// front). The background itself is NOT in this list — the compositor draws
     /// `main.bmp`/`background` first, then overlays these.

@@ -45,66 +45,20 @@ public enum MainWindowComposer {
             return nil
         }
 
-        var pixels = background.pixels // a COPY of the background buffer
+        // Start from a COPY of the background buffer, then overlay each element
+        // through the shared `SkinCanvas.overlay` blit primitive (the
+        // static/dynamic compositing seam). `overlay` clips to bounds and skips
+        // any size-inconsistent sprite, so missing or malformed sprites are
+        // fault-tolerant here too.
+        var canvas = DecodedBitmap(width: width, height: height, pixels: background.pixels)
 
         for element in elements {
             guard let sprite = skin.sprite(sheet: element.sheet, name: element.sprite) else {
                 continue // fault tolerant: skip missing sprites
             }
-            // Skip a sprite whose buffer is shorter (or longer) than its declared
-            // dimensions: copying it would read out of range and trap. Skipping
-            // keeps the other elements compositing — fault tolerant, never traps.
-            guard sprite.pixels.count == sprite.width * sprite.height * 4 else {
-                continue
-            }
-            overwrite(
-                &pixels,
-                canvasWidth: width,
-                canvasHeight: height,
-                with: sprite,
-                atX: element.x,
-                atY: element.y
-            )
+            SkinCanvas.overlay(sprite, onto: &canvas, x: element.x, y: element.y)
         }
 
-        return DecodedBitmap(width: width, height: height, pixels: pixels)
-    }
-
-    // MARK: - Overwrite
-
-    /// Copies `sprite`'s pixels into `canvas` at top-left `(originX, originY)`,
-    /// row by row, clipping any part that falls outside the canvas bounds.
-    private static func overwrite(
-        _ canvas: inout [UInt8],
-        canvasWidth: Int,
-        canvasHeight: Int,
-        with sprite: DecodedBitmap,
-        atX originX: Int,
-        atY originY: Int
-    ) {
-        // Visible column range within the sprite, clipped to the canvas.
-        let startColumn = max(0, -originX)
-        let endColumn = min(sprite.width, canvasWidth - originX)
-        guard startColumn < endColumn else { return }
-
-        // Visible row range within the sprite, clipped to the canvas.
-        let startRow = max(0, -originY)
-        let endRow = min(sprite.height, canvasHeight - originY)
-        guard startRow < endRow else { return }
-
-        let visibleWidth = endColumn - startColumn
-        let byteCount = visibleWidth * 4
-
-        for row in startRow..<endRow {
-            let spriteRowStart = (row * sprite.width + startColumn) * 4
-            let canvasX = originX + startColumn
-            let canvasY = originY + row
-            let canvasRowStart = (canvasY * canvasWidth + canvasX) * 4
-
-            canvas.replaceSubrange(
-                canvasRowStart..<(canvasRowStart + byteCount),
-                with: sprite.pixels[spriteRowStart..<(spriteRowStart + byteCount)]
-            )
-        }
+        return canvas
     }
 }
