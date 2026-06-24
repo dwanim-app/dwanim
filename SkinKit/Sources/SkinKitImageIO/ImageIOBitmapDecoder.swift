@@ -17,8 +17,8 @@ import SkinKit
 ///   `NoneSkipLast` keeps color channels straight (CoreGraphics never
 ///   premultiplies when there is no meaningful alpha), which is exactly the
 ///   "straight RGBA" we want for fully opaque source images such as BMP.
-/// - A CoreGraphics context has a bottom-left origin, so the image is drawn
-///   flipped vertically to land top-left-first in the buffer.
+/// - A bitmap context's first buffer row is the top of the image, so a straight
+///   draw (no coordinate flip) already lands the image top-left-first.
 public struct ImageIOBitmapDecoder: BitmapDecoding {
 
     public init() {}

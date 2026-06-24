@@ -7,7 +7,7 @@ import Foundation
 /// can be found; any per-entry defect is surfaced later by `extract(_:)`
 /// returning `nil`, so a single damaged entry can never make the rest of the
 /// archive unreadable.
-public struct ZipArchive {
+public struct ZipArchive: Sendable {
 
     // MARK: - Stored state
 
@@ -121,7 +121,7 @@ enum CompressionMethod {
 // MARK: - Central directory record
 
 /// Internal companion to `ZipEntry` carrying the data needed for extraction.
-struct CentralRecord {
+struct CentralRecord: Sendable {
     let entry: ZipEntry
     let method: UInt16
     let crc: UInt32

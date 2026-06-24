@@ -164,4 +164,16 @@ final class SpriteCutterTests: XCTestCase {
         ])
         XCTAssertTrue(result.isEmpty)
     }
+
+    // MARK: - Criterion 5: undersized backing buffer is skipped, never traps
+
+    func testUndersizedSheetBufferSkipsRectsWithoutCrash() {
+        // `DecodedBitmap` does not enforce that `pixels.count == width*height*4`,
+        // so a sheet can claim to be 4x4 (64 bytes) while holding far fewer. An
+        // in-bounds rect must be skipped rather than reading past the buffer and
+        // trapping; if the guard were missing, this process would abort here.
+        let undersized = DecodedBitmap(width: 4, height: 4, pixels: [0, 0, 0, 0])
+        let result = SpriteCutter.cut(undersized, rects: [SpriteRect(name: "x", x: 0, y: 0, width: 2, height: 2)])
+        XCTAssertEqual(result, [:])
+    }
 }

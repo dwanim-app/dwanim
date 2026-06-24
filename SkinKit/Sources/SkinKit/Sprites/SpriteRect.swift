@@ -8,7 +8,7 @@ import Foundation
 /// **top-left** corner, `x` grows rightward and `y` downward, both in whole
 /// pixels. The rectangle covers the half-open range `x..<(x + width)` by
 /// `y..<(y + height)`.
-public struct SpriteRect: Equatable {
+public struct SpriteRect: Equatable, Sendable {
     /// A stable identifier for the sprite within its sheet (e.g. `"play"`).
     public let name: String
     /// Left edge of the rectangle, in pixels from the sheet's left edge.

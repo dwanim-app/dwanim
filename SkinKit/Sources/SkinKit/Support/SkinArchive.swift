@@ -12,7 +12,7 @@ import Foundation
 /// Construction throws only what `ZipArchive` throws (no usable archive).
 /// All per-entry faults are inherited from `ZipArchive.extract(_:)`, which
 /// returns `nil` rather than throwing, so lookups never throw.
-public struct SkinArchive {
+public struct SkinArchive: Sendable {
 
     // MARK: - Stored state
 

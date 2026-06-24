@@ -4,7 +4,7 @@ import Foundation
 
 /// The only fatal failure mode for opening an archive. Per-entry problems are
 /// reported by `ZipArchive.extract(_:)` returning `nil`, never by throwing.
-public enum ZipError: Error {
+public enum ZipError: Error, Sendable {
     /// No End-Of-Central-Directory record could be located in the data.
     case notAZipArchive
 }
@@ -12,7 +12,7 @@ public enum ZipError: Error {
 // MARK: - ZipEntry
 
 /// One file recorded in the archive's central directory.
-public struct ZipEntry {
+public struct ZipEntry: Sendable {
     /// The entry path exactly as stored in the archive.
     public let path: String
     /// Number of bytes the file occupies in compressed form.

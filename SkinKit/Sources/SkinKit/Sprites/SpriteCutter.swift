@@ -37,6 +37,13 @@ public enum SpriteCutter {
         guard rect.x + rect.width <= sheet.width, rect.y + rect.height <= sheet.height else { return nil }
 
         let bytesPerPixel = 4
+        // The rect is in-bounds for the *declared* size, but `DecodedBitmap`
+        // does not enforce that its backing buffer actually holds
+        // `width * height * bytesPerPixel` bytes. An undersized buffer would make
+        // the unsafe row copies below read out of range and trap, so skip such a
+        // malformed sheet rather than fault.
+        guard sheet.pixels.count >= sheet.width * sheet.height * bytesPerPixel else { return nil }
+
         let sheetStride = sheet.width * bytesPerPixel
         let spriteStride = rect.width * bytesPerPixel
 

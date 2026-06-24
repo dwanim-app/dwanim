@@ -9,7 +9,7 @@ import Foundation
 /// (non-premultiplied) alpha. Keeping this type free of any image framework
 /// lets the core module describe decoded images without depending on platform
 /// graphics libraries; concrete decoders live in separate modules.
-public struct DecodedBitmap: Equatable {
+public struct DecodedBitmap: Equatable, Sendable {
     /// Image width in pixels.
     public let width: Int
     /// Image height in pixels.
