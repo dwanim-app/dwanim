@@ -38,6 +38,14 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
     /// Whether the user intends playback to be running. Survives engine
     /// pauses and is used to decide whether a seek should resume.
     private var wantsToPlay = false
+    /// Set when a segment drains naturally (end of track). While set, the
+    /// render clock is gone (the node has been stopped by the finish path), so
+    /// `currentTime` must report the end of the track rather than fall back to
+    /// the seek base — otherwise the reported position blips backward toward 0
+    /// on the finishing poll. Cleared whenever fresh playback is armed
+    /// (`play`/`seek`/`load`). This does not alter the seek/pause/stop base
+    /// arithmetic; it only governs the read-time fallback after a finish.
+    private var reachedEnd = false
 
     // MARK: - Completion gating
 
@@ -81,6 +89,10 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         guard file != nil else { return }
         startEngineIfNeeded()
         wantsToPlay = true
+        // Fresh playback is being armed, so the previous track is no longer at
+        // its end. Resume of a paused node is also handled here (the flag was
+        // already false in that case).
+        reachedEnd = false
 
         // Schedule from the current seek base if nothing is pending; if a
         // segment is already scheduled (e.g. after pause) just resume the node.
@@ -113,6 +125,7 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         // generation first means that handler is ignored.
         generation &+= 1
         hasPendingSegment = false
+        reachedEnd = false
         playerNode.stop()
 
         seekBaseTime = clamped
@@ -129,15 +142,31 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 
     public var currentTime: TimeInterval {
         let base = seekBaseTime
+        // Only trust the render clock once it is actually valid. During the
+        // transient right after `playerNode.play()` the engine is spinning up:
+        // `lastRenderTime`/`playerTime` is non-nil but `sampleTime` is stale
+        // (zero or negative), which would momentarily drag the reported time
+        // back toward the seek base. Until the clock is valid, hold at the base.
         guard sampleRate > 0,
               let nodeTime = playerNode.lastRenderTime,
+              nodeTime.isSampleTimeValid,
               let playerTime = playerNode.playerTime(forNodeTime: nodeTime)
         else {
+            // After a natural finish the node is stopped, so there is no render
+            // clock to read. Report the end of the track (not the seek base) so
+            // the position never blips backward on the finishing poll.
+            if reachedEnd {
+                return PlaybackMath.clamp(duration, to: duration)
+            }
             return PlaybackMath.clamp(base, to: duration)
         }
-        let elapsed = PlaybackMath.time(
-            forFrame: playerTime.sampleTime,
-            sampleRate: sampleRate
+        // A stale/negative sample time must never subtract from the base.
+        let elapsed = max(
+            0,
+            PlaybackMath.time(
+                forFrame: playerTime.sampleTime,
+                sampleRate: sampleRate
+            )
         )
         return PlaybackMath.clamp(base + elapsed, to: duration)
     }
@@ -147,7 +176,12 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
     }
 
     public var isPlaying: Bool {
-        playerNode.isPlaying
+        // The player node can report `isPlaying == true` even when the engine
+        // never actually started rendering (e.g. a no-output-device/route
+        // failure that `startEngineIfNeeded()` swallowed). Reflect real state by
+        // also requiring the engine to be running, so a failed start cannot
+        // masquerade as playing.
+        engine.isRunning && playerNode.isPlaying
     }
 
     // MARK: - Volume
@@ -207,15 +241,31 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
             guard token == self.generation else { return }
             self.hasPendingSegment = false
             self.wantsToPlay = false
+            // The track drained on its own; mark it so `currentTime` reports the
+            // end position while the render clock is gone (see `reachedEnd`).
+            self.reachedEnd = true
             self.onPlaybackFinished?()
         }
     }
 
     // MARK: - Engine lifecycle
 
+    /// The most recent error thrown by `engine.start()`, captured for future
+    /// surfacing. Not yet exposed through the protocol — the full state/error
+    /// callback is a separate backlog item.
+    private var lastStartError: Error?
+
     private func startEngineIfNeeded() {
         guard !engine.isRunning else { return }
-        try? engine.start()
+        do {
+            try engine.start()
+            lastStartError = nil
+        } catch {
+            // Swallow here as before (no protocol surface yet), but record the
+            // failure so `isPlaying` (engine.isRunning && …) reports honestly
+            // and the cause is available for future diagnostics.
+            lastStartError = error
+        }
     }
 
     private func reconnect(using format: AVAudioFormat) {
@@ -232,6 +282,7 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         seekBaseTime = 0
         wantsToPlay = false
         hasPendingSegment = false
+        reachedEnd = false
         playerNode.stop()
     }
 }

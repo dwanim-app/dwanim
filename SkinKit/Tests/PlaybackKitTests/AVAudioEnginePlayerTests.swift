@@ -114,6 +114,42 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         XCTAssertEqual(player.currentTime, 0)
     }
 
+    // MARK: - currentTime invariants (spin-up transient, Bug 1)
+
+    /// Right after `play()` the render clock may be spinning up: `playerTime`
+    /// can be `nil`, the node time may not be sample-time-valid, or `sampleTime`
+    /// can be stale/negative. In every one of those states `currentTime` must
+    /// hold at the (non-negative) base and never read back below zero — a stale
+    /// or negative sample time must never subtract. This is deterministic and
+    /// needs no output device: whatever the transient, the value stays `>= 0`.
+    func testCurrentTimeNeverNegativeDuringPlayTransient() throws {
+        let url = try synthWAV(duration: 1.0)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        player.play()
+        for _ in 0..<200 {
+            XCTAssertGreaterThanOrEqual(
+                player.currentTime,
+                0,
+                "currentTime must never blip below zero during spin-up"
+            )
+        }
+        player.stop()
+    }
+
+    /// With nothing loaded the engine cannot be running, so `isPlaying` must be
+    /// `false` even though `play()` was called — the engine-running guard (Bug
+    /// 2) prevents a no-device/empty engine from masquerading as playing.
+    func testIsPlayingFalseWhenEngineNotRunning() {
+        let player = AVAudioEnginePlayer()
+        player.play() // no file loaded, engine never starts rendering
+        XCTAssertFalse(
+            player.isPlaying,
+            "a never-started engine must not report isPlaying == true"
+        )
+    }
+
     // MARK: - Volume
 
     func testVolumeRoundTrips() {
