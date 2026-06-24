@@ -223,4 +223,174 @@ final class BitmapTextTests: XCTestCase {
         XCTAssertEqual(pixel(base, x: 0, y: 0).0, bgColor.0)
         XCTAssertEqual(base.pixels.count, 80 * 20 * 4)
     }
+
+    // MARK: - 6. Scrolling marquee
+    //
+    // The scrolling entry renders the title shifted left by an `offset`, with a
+    // fixed separator gap appended so it loops seamlessly, PIXEL-clipped to the
+    // window `[x, x + maxWidth)`. These tests use full-cell solid glyphs so that
+    // every column of a cell carries the glyph color — that makes the per-pixel
+    // clip boundaries crisp and directly assertable.
+
+    /// `pixelWidth` mirrors how `draw()` advances: one glyph cell per character,
+    /// whether or not a glyph exists. So "AB" is two cells wide.
+    func testPixelWidthMatchesPerCharacterAdvance() {
+        XCTAssertEqual(BitmapText.pixelWidth(of: "AB"), 2 * glyphCellWidth)
+        XCTAssertEqual(BitmapText.pixelWidth(of: "A B"), 3 * glyphCellWidth) // space counts
+        XCTAssertEqual(BitmapText.pixelWidth(of: ""), 0)
+    }
+
+    /// The scroll cycle is the text width plus a fixed, non-zero separator gap; it
+    /// is strictly wider than the text alone (the separator is what makes the loop
+    /// read as a gap rather than the title abutting itself).
+    func testScrollCycleWidthIsTextPlusNonZeroSeparator() {
+        let textWidth = BitmapText.pixelWidth(of: "AB")
+        let cycle = BitmapText.scrollCycleWidth(of: "AB")
+        XCTAssertGreaterThan(cycle, textWidth)
+    }
+
+    /// At offset 0 with a long title, the first glyph lands at `x`; content that
+    /// would fall past the right edge is NOT drawn; and — crucially — no pixel is
+    /// ever written at a column `< x` or `>= x + maxWidth`. We prove the latter by
+    /// pre-filling the whole base with background and asserting the columns just
+    /// outside the window on both sides stay untouched.
+    func testScrollingOffsetZeroClipsToWindowAndNeverWritesOutside() {
+        var base = solidBitmap(width: 80, height: 20, color: bgColor)
+        let x = 10
+        let maxWidth = 3 * glyphCellWidth // room for exactly three cells
+        let y = 5
+
+        // Long run of full-cell A glyphs.
+        BitmapText.drawScrolling(
+            "AAAAAAAA", from: skinWithAB(), onto: &base, x: x, y: y, maxWidth: maxWidth, offset: 0
+        )
+
+        // First glyph column lands exactly at the window's left edge.
+        XCTAssertEqual(pixel(base, x: x, y: y).0, colorA.0)
+        // Inside the window: still glyph color.
+        XCTAssertEqual(pixel(base, x: x + maxWidth - 1, y: y).0, colorA.0)
+        // The column just LEFT of the window was never written.
+        XCTAssertEqual(pixel(base, x: x - 1, y: y).0, bgColor.0)
+        // The column at the right edge (x + maxWidth) is OUTSIDE -> untouched.
+        XCTAssertEqual(pixel(base, x: x + maxWidth, y: y).0, bgColor.0)
+        // Well past the right edge: still background (no bleed to the buffer edge).
+        XCTAssertEqual(pixel(base, x: x + maxWidth + 2, y: y).0, bgColor.0)
+    }
+
+    /// Increasing the offset by one pixel shifts the rendered content one pixel to
+    /// the left: a glyph boundary visible at column `c` for offset `O` appears at
+    /// `c - 1` for offset `O + 1`. We detect the A→(gap) boundary using a title
+    /// whose glyph then runs out, so there is a color transition to track.
+    func testIncreasingOffsetShiftsContentLeftByOnePixel() {
+        let x = 10
+        let maxWidth = 6 * glyphCellWidth
+        let y = 5
+
+        // Two A cells then the rest blank (no glyph), giving a clear A→bg edge
+        // inside the window that we can locate and watch move left.
+        let title = "AAXXXXXXXX" // X has no glyph in skinWithAB -> blank cells
+        func firstBackgroundColumn(offset: Int) -> Int? {
+            var base = solidBitmap(width: 100, height: 20, color: bgColor)
+            BitmapText.drawScrolling(
+                title, from: skinWithAB(), onto: &base, x: x, y: y, maxWidth: maxWidth, offset: offset
+            )
+            for col in x..<(x + maxWidth) where pixel(base, x: col, y: y).0 == bgColor.0 {
+                return col
+            }
+            return nil
+        }
+
+        guard let edge0 = firstBackgroundColumn(offset: 0),
+              let edge1 = firstBackgroundColumn(offset: 1) else {
+            return XCTFail("expected an A→background edge inside the window at both offsets")
+        }
+        // One more pixel scrolled off the left -> the edge moved one pixel left.
+        XCTAssertEqual(edge1, edge0 - 1)
+    }
+
+    /// Wrap-around: scrolling by exactly one full cycle (text width + separator)
+    /// renders identically to offset 0 — the loop is seamless.
+    func testWrapAroundOneCycleIsIdenticalToOffsetZero() {
+        let x = 8
+        let maxWidth = 4 * glyphCellWidth
+        let y = 4
+        let title = "ABABABAB"
+        let cycle = BitmapText.scrollCycleWidth(of: title)
+
+        var base0 = solidBitmap(width: 90, height: 20, color: bgColor)
+        var baseCycle = solidBitmap(width: 90, height: 20, color: bgColor)
+        BitmapText.drawScrolling(title, from: skinWithAB(), onto: &base0, x: x, y: y, maxWidth: maxWidth, offset: 0)
+        BitmapText.drawScrolling(title, from: skinWithAB(), onto: &baseCycle, x: x, y: y, maxWidth: maxWidth, offset: cycle)
+
+        XCTAssertEqual(base0.pixels, baseCycle.pixels)
+    }
+
+    /// A glyph straddling the RIGHT edge is pixel-clipped: only its in-window
+    /// columns are drawn, never beyond `x + maxWidth`. We choose a maxWidth that
+    /// cuts a glyph in half and assert the in-window half is glyph color while the
+    /// first out-of-window column stays background.
+    func testPartialGlyphClippedAtRightEdge() {
+        var base = solidBitmap(width: 80, height: 20, color: bgColor)
+        let x = 10
+        let y = 5
+        // 2.5 cells wide: the third glyph cell is half inside, half outside.
+        let maxWidth = 2 * glyphCellWidth + glyphCellWidth / 2
+
+        BitmapText.drawScrolling(
+            "AAAAAAAA", from: skinWithAB(), onto: &base, x: x, y: y, maxWidth: maxWidth, offset: 0
+        )
+
+        // Last in-window column is glyph color (the straddling glyph's left half).
+        XCTAssertEqual(pixel(base, x: x + maxWidth - 1, y: y).0, colorA.0)
+        // The first out-of-window column was never written.
+        XCTAssertEqual(pixel(base, x: x + maxWidth, y: y).0, bgColor.0)
+    }
+
+    /// Likewise at the LEFT edge: a glyph partly scrolled off the left is clipped
+    /// so nothing is ever written at a column `< x`. With offset 2 (less than one
+    /// cell) the first cell is partly off-screen; the column just left of `x` stays
+    /// background.
+    func testPartialGlyphClippedAtLeftEdge() {
+        var base = solidBitmap(width: 80, height: 20, color: bgColor)
+        let x = 10
+        let y = 5
+        let maxWidth = 4 * glyphCellWidth
+
+        BitmapText.drawScrolling(
+            "AAAAAAAA", from: skinWithAB(), onto: &base, x: x, y: y, maxWidth: maxWidth, offset: 2
+        )
+
+        // Window left edge shows glyph color (the partly-scrolled first cell).
+        XCTAssertEqual(pixel(base, x: x, y: y).0, colorA.0)
+        // The column just left of the window was never written.
+        XCTAssertEqual(pixel(base, x: x - 1, y: y).0, bgColor.0)
+    }
+
+    /// Short text (pixel width <= maxWidth) is STATIC: the offset is ignored, so
+    /// any offset yields identical output (and the same as the plain `draw`).
+    func testShortTextIgnoresOffsetAndDrawsStatic() {
+        let x = 6
+        let y = 5
+        let maxWidth = 1000 // far wider than "AB"
+
+        var byDraw = solidBitmap(width: 60, height: 20, color: bgColor)
+        BitmapText.draw("AB", from: skinWithAB(), onto: &byDraw, x: x, y: y, maxWidth: maxWidth)
+
+        var atZero = solidBitmap(width: 60, height: 20, color: bgColor)
+        var atBig = solidBitmap(width: 60, height: 20, color: bgColor)
+        BitmapText.drawScrolling("AB", from: skinWithAB(), onto: &atZero, x: x, y: y, maxWidth: maxWidth, offset: 0)
+        BitmapText.drawScrolling("AB", from: skinWithAB(), onto: &atBig, x: x, y: y, maxWidth: maxWidth, offset: 37)
+
+        // Static for any offset, and identical to the plain left-aligned draw.
+        XCTAssertEqual(atZero.pixels, atBig.pixels)
+        XCTAssertEqual(atZero.pixels, byDraw.pixels)
+    }
+
+    /// Empty text is a no-op: the base is unchanged for any offset.
+    func testScrollingEmptyTextIsNoOp() {
+        let original = solidBitmap(width: 60, height: 20, color: bgColor)
+        var base = original
+        BitmapText.drawScrolling("", from: skinWithAB(), onto: &base, x: 4, y: 5, maxWidth: 30, offset: 17)
+        XCTAssertEqual(base.pixels, original.pixels)
+    }
 }

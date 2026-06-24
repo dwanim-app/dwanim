@@ -199,6 +199,20 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
 
     private var timer: Timer?
 
+    // MARK: Title marquee
+
+    /// Horizontal scroll offset (pixels) for the title marquee, advanced each
+    /// redraw tick when the title overflows its display region. Kept bounded by
+    /// `BitmapText.scrollCycleWidth` at draw time so it never grows without limit.
+    private var titleScrollOffset = 0
+    /// Redraw-tick counter, used to slow the marquee to a readable pace: the
+    /// offset advances one pixel every `titleScrollTickInterval` ticks rather than
+    /// every tick (25 Hz would scroll far too fast at 1px/tick).
+    private var titleScrollTick = 0
+    /// Advance the marquee one pixel every Nth tick. At the ~25 Hz redraw this is
+    /// ~8 px/sec — a readable classic-marquee pace.
+    private static let titleScrollTickInterval = 3
+
     // MARK: Spectrum wiring
 
     /// The engine's PCM tap source (the same object backing `core`). Kept so the
@@ -265,6 +279,9 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
 
         redraw()
         let timer = Timer(timeInterval: 0.04, repeats: true) { [weak self] _ in
+            // Advance the title marquee at the timer cadence (NOT on the
+            // mouse-driven redraws, so a click does not jerk the scroll).
+            self?.advanceTitleScroll()
             self?.redraw()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -325,6 +342,26 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
 
     // MARK: Redraw
 
+    /// Advance the title marquee for one redraw tick. Only scrolls when the title
+    /// actually overflows its display region (`pixelWidth > titleTextWidth`);
+    /// otherwise the offset is reset to 0 so a short title stays static and a
+    /// later long title starts from the left. The offset moves one pixel every
+    /// `titleScrollTickInterval` ticks (a readable pace) and is kept bounded by the
+    /// scroll cycle so it never grows without limit.
+    private func advanceTitleScroll() {
+        let title = core.currentTrack?.title ?? ""
+        guard BitmapText.pixelWidth(of: title) > MainWindowLayout.titleTextWidth else {
+            titleScrollOffset = 0
+            titleScrollTick = 0
+            return
+        }
+        titleScrollTick += 1
+        guard titleScrollTick >= InteractiveController.titleScrollTickInterval else { return }
+        titleScrollTick = 0
+        let cycle = BitmapText.scrollCycleWidth(of: title)
+        titleScrollOffset = (titleScrollOffset + 1) % max(1, cycle)
+    }
+
     /// Recompose the window from the live core state and swap the view image.
     ///
     /// Pipeline mirrors the plain window/--png path: compose the base, overlay the
@@ -349,13 +386,17 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
 
         // Title overlay: the current track's title (the user's file-name stem),
         // clipped to the title display width. Empty when nothing is selected.
-        BitmapText.draw(
+        // `drawScrolling` is static when the title fits and a marquee when it
+        // overflows, so we always route through it and let the current scroll
+        // offset ride; for a short title the offset is simply ignored.
+        BitmapText.drawScrolling(
             core.currentTrack?.title ?? "",
             from: skin,
             onto: &composed,
             x: MainWindowLayout.titleTextOrigin.x,
             y: MainWindowLayout.titleTextOrigin.y,
-            maxWidth: MainWindowLayout.titleTextWidth
+            maxWidth: MainWindowLayout.titleTextWidth,
+            offset: titleScrollOffset
         )
 
         // Spectrum overlay: read the latest stashed samples (audio thread wrote
