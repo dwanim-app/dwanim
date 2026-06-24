@@ -18,10 +18,10 @@ public enum SpriteCoordinates {
 
     /// Sheet filename (lowercased, e.g. `"cbuttons.bmp"`) -> sprites it contains.
     ///
-    /// SCOPE: the **main player window** only. The equalizer and playlist
-    /// windows are deferred to a future increment.
+    /// SCOPE: the **main player window** only. The playlist window lives in its
+    /// own table (`playlistWindow`); the equalizer window is deferred.
     // TODO: future increment — add eqmain.bmp / eq_ex.bmp (equalizer window)
-    //       and pledit.bmp (playlist window) sprite tables.
+    //       sprite tables.
     public static let mainWindow: [String: [SpriteRect]] = [
         "main.bmp": mainBackground,
         "cbuttons.bmp": controlButtons,
@@ -34,6 +34,81 @@ public enum SpriteCoordinates {
         "playpaus.bmp": playPauseStatus,
         "numbers.bmp": numbers,
         "text.bmp": text
+    ]
+
+    /// Sheet filename (lowercased) -> sprites it contains, for the classic
+    /// **playlist (PLEDIT) window**.
+    ///
+    /// SCOPE: the resizable playlist window FRAME — the chrome that the window
+    /// composites from `pledit.bmp` (title bar, side edges, bottom frame, and the
+    /// small scrollbar handle). The row-text colors/font come from `pledit.txt`
+    /// (parsed separately into `PlaylistColors`), not from this sheet.
+    public static let playlistWindow: [String: [SpriteRect]] = [
+        "pledit.bmp": playlistFrame
+    ]
+
+    // MARK: - pledit.bmp (playlist window frame)
+    //
+    // Clean-room from the public PLEDIT layout. The classic playlist window is a
+    // resizable frame composited from edge/corner pieces packed into the top and
+    // left portions of `pledit.bmp`, plus a tiny scrollbar handle.
+    //
+    // FIT BUDGET (balance-bug lesson): the real `pledit.bmp` was measured across
+    // the ~200-skin corpus. Width is 280 in 188/191 skins (smallest non-degenerate
+    // 276); height is 186 (modal) or 190, smallest 186. So EVERY rect here is kept
+    // inside 276 x 186 — the smallest real sheet — so none is silently dropped by
+    // `SpriteCutter` on a real skin (an out-of-bounds rect would make the piece
+    // vanish, exactly the failure the balance/volume pins guard against). The
+    // public layout's native pieces all live well inside that box; we deliberately
+    // do NOT declare any rect that would overrun 276 x 186.
+    //
+    // Layout convention (top-left origin):
+    //   * Title-bar row, y = 0, height 20: a left corner, a tiled centre fill, and
+    //     a right corner. The active (focused) title strip is the top row; the
+    //     inactive strip is the next row down (y = 21). The centre fill tiles
+    //     horizontally to span whatever width the window is stretched to.
+    //   * Side edges, height 29, tiled vertically down the window body: the left
+    //     edge at x = 0 and the right edge just to its right, taken from the rows
+    //     below the title bar.
+    //   * Bottom frame, height 38: a bottom-left corner, a tiled bottom fill, and a
+    //     bottom-right corner. The bottom-right corner also carries the lower
+    //     "draggable"/resize title strip and the resize affordance.
+    //   * Scrollbar handle: a small knob drawn in the right edge track.
+    //
+    // DEFERRED (documented, not modelled here): the playlist action buttons
+    // (add / remove / select / misc / list menus) and the time/visualizer
+    // mini-display live in the bottom-right region as tiny 8x18-class micro
+    // sprites whose exact packing the public spec leaves under-pinned; they are
+    // NOT needed to composite the resizable frame in the next increment and are
+    // intentionally left to a later pass. Pieces are sized to FIT 276 x 186, not
+    // to reproduce every micro-button.
+
+    private static let playlistFrame: [SpriteRect] = [
+        // --- Title bar (top row, active), y = 0, height 20 ---
+        SpriteRect(name: "titleBarLeftCorner",      x: 0,   y: 0,  width: 25,  height: 20),
+        // Centre fill, tiled horizontally to the stretched width.
+        SpriteRect(name: "titleBarFillActive",      x: 26,  y: 0,  width: 100, height: 20),
+        SpriteRect(name: "titleBarRightCorner",     x: 153, y: 0,  width: 25,  height: 20),
+        // --- Title bar (inactive row), y = 21, height 20 ---
+        SpriteRect(name: "titleBarLeftCornerInactive",  x: 0,   y: 21, width: 25,  height: 20),
+        SpriteRect(name: "titleBarFillInactive",         x: 26,  y: 21, width: 100, height: 20),
+        SpriteRect(name: "titleBarRightCornerInactive",  x: 153, y: 21, width: 25,  height: 20),
+
+        // --- Side edges (tiled vertically down the body), height 29 ---
+        // Taken from the band below the title bar. Left edge and the narrower
+        // right edge (which carries the scrollbar track) sit side by side.
+        SpriteRect(name: "leftEdge",  x: 0,  y: 42, width: 25, height: 29),
+        SpriteRect(name: "rightEdge", x: 26, y: 42, width: 20, height: 29),
+
+        // --- Bottom frame, height 38, taken from the lower band (y = 72) ---
+        SpriteRect(name: "bottomLeftCorner",  x: 0,   y: 72, width: 125, height: 38),
+        // Centre fill, tiled horizontally across the stretched bottom.
+        SpriteRect(name: "bottomFill",        x: 126, y: 72, width: 25,  height: 38),
+        // Right corner carries the resize affordance + lower draggable strip.
+        SpriteRect(name: "bottomRightCorner", x: 150, y: 72, width: 125, height: 38),
+
+        // --- Scrollbar handle (small knob in the right-edge track) ---
+        SpriteRect(name: "scrollHandle", x: 52, y: 53, width: 8, height: 18)
     ]
 
     // MARK: - main.bmp (window background)

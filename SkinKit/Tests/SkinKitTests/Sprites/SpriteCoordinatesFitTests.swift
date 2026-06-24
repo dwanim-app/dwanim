@@ -40,11 +40,24 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         "balance.bmp":  (47, 418),
         // text.bmp is 155 wide; height varies (18 / 73 / 74). Use the SMALLEST
         // observed height so any rect fitting here fits every real sheet.
-        "text.bmp":     (155, 18)
+        "text.bmp":     (155, 18),
+        // pledit.bmp (playlist window frame). Measured across the ~200-skin
+        // corpus: width is 280 in 188/191 skins (smallest non-degenerate 276);
+        // height is 186 (modal, 127 skins) or 190 (60 skins), smallest 186. Use
+        // the SMALLEST real sheet — 276 x 186 — so any rect fitting here fits
+        // every real pledit.bmp. See testPleditStandardSizeIsMeasuredSmallest for
+        // the NON-circular pin to those measured numbers.
+        "pledit.bmp":   (276, 186)
     ]
 
+    /// Every sheet across BOTH the main-window and playlist-window tables, so a
+    /// newly added playlist sheet is covered by the same fit guard.
+    private var allSheets: [String: [SpriteRect]] {
+        SpriteCoordinates.mainWindow.merging(SpriteCoordinates.playlistWindow) { a, _ in a }
+    }
+
     func testEverySpriteRectFitsItsStandardSheetDimensions() {
-        for (sheet, rects) in SpriteCoordinates.mainWindow {
+        for (sheet, rects) in allSheets {
             guard let dims = Self.standardDimensions[sheet] else {
                 XCTFail("no standard dimensions declared for sheet \(sheet)")
                 continue
@@ -174,14 +187,77 @@ final class SpriteCoordinatesFitTests: XCTestCase {
                 + "shrink the thumb x to chase 248-wide minority sheets")
     }
 
-    /// Every sheet declared in the coordinate table must have a standard-size
+    /// Every sheet declared in either coordinate table must have a standard-size
     /// entry here, so a newly added sheet cannot silently skip the fit check.
     func testEveryTableSheetHasStandardDimensions() {
-        for sheet in SpriteCoordinates.mainWindow.keys {
+        for sheet in allSheets.keys {
             XCTAssertNotNil(
                 Self.standardDimensions[sheet],
                 "sheet \(sheet) is in the coordinate table but has no standard "
                     + "dimensions in the fit test")
+        }
+    }
+
+    // MARK: - pledit.bmp (playlist window frame) — balance-bug guard
+
+    /// NON-CIRCULAR pin: the standard pledit.bmp size used by the fit test must
+    /// equal the values actually MEASURED from the real corpus, not whatever the
+    /// coordinate table happens to declare. Measured June 2026 over ~200 skins
+    /// (191 carried pledit.bmp): width was 280 in 188 skins, smallest
+    /// non-degenerate 276 (S.E.wsz); height was 186 in 127 skins and 190 in 60,
+    /// smallest 186. The fit floor is the SMALLEST real sheet, 276 x 186. If a
+    /// future edit widens this floor past the real minimum, this test fails —
+    /// which is exactly the balance-bug class (declaring a sheet bigger than real
+    /// skins ship, so rects silently overrun and the piece vanishes).
+    func testPleditStandardSizeIsMeasuredSmallest() {
+        let dims = Self.standardDimensions["pledit.bmp"]
+        XCTAssertEqual(
+            dims?.width, 276,
+            "pledit.bmp fit width must be the smallest measured real width (276), "
+                + "not the modal 280 — a rect fitting 280 could overrun the 276px skins")
+        XCTAssertEqual(
+            dims?.height, 186,
+            "pledit.bmp fit height must be the smallest measured real height (186)")
+    }
+
+    /// The playlist frame must declare the core pieces needed to composite the
+    /// resizable window — title corners + fills (active and inactive), side edges,
+    /// the bottom frame, and the scrollbar handle — and every one must fit inside
+    /// the smallest real sheet (276 x 186). Asserts directly against the table so
+    /// it does not lean on the generic fit loop.
+    func testPlaylistFrameHasCorePiecesThatFitTheSmallestRealSheet() {
+        guard let frame = SpriteCoordinates.playlistWindow["pledit.bmp"] else {
+            XCTFail("pledit.bmp missing from the playlist coordinate table")
+            return
+        }
+        let names = Set(frame.map(\.name))
+        let required: Set<String> = [
+            "titleBarLeftCorner", "titleBarFillActive", "titleBarRightCorner",
+            "titleBarLeftCornerInactive", "titleBarFillInactive", "titleBarRightCornerInactive",
+            "leftEdge", "rightEdge",
+            "bottomLeftCorner", "bottomFill", "bottomRightCorner",
+            "scrollHandle"
+        ]
+        XCTAssertTrue(
+            required.isSubset(of: names),
+            "playlist frame is missing core pieces: \(required.subtracting(names))")
+
+        // Hard fit floor: the smallest real pledit.bmp is 276 x 186. No rect may
+        // overrun it (the balance-bug failure mode: SpriteCutter drops an
+        // out-of-bounds rect, so the piece silently disappears on real skins).
+        for rect in frame {
+            XCTAssertGreaterThanOrEqual(rect.x, 0, "\(rect.name): x >= 0")
+            XCTAssertGreaterThanOrEqual(rect.y, 0, "\(rect.name): y >= 0")
+            XCTAssertGreaterThan(rect.width, 0, "\(rect.name): width > 0")
+            XCTAssertGreaterThan(rect.height, 0, "\(rect.name): height > 0")
+            XCTAssertLessThanOrEqual(
+                rect.x + rect.width, 276,
+                "\(rect.name): right edge \(rect.x + rect.width) overruns smallest "
+                    + "real pledit width 276")
+            XCTAssertLessThanOrEqual(
+                rect.y + rect.height, 186,
+                "\(rect.name): bottom edge \(rect.y + rect.height) overruns smallest "
+                    + "real pledit height 186")
         }
     }
 }
