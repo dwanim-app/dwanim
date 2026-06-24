@@ -128,6 +128,35 @@ public enum PlaylistWindowComposer {
         return canvas
     }
 
+    // MARK: - Interior rect (public)
+
+    /// The interior content rect — the area INSIDE the frame chrome where the
+    /// track-list text is drawn — for a window of the given size, in the same
+    /// top-left-origin pixel space as `compose`'s returned bitmap.
+    ///
+    /// The interior is bounded by the title-bar band on top, the bottom-frame
+    /// band below, and the left/right edge sprites on the sides. The requested
+    /// size is clamped UP to `minimumWidth`/`minimumHeight` first (matching
+    /// `compose`), so the returned rect is always well-formed (`w`/`h` are clamped
+    /// at 0, never negative). The harness shell uses this to know where — and how
+    /// wide/tall — to draw the platform text, and feeds `h` to
+    /// `PlaylistLayout.visibleRows` as the interior height.
+    public static func interiorRect(width: Int, height: Int) -> (x: Int, y: Int, w: Int, h: Int) {
+        let canvasWidth = max(width, minimumWidth)
+        let canvasHeight = max(height, minimumHeight)
+
+        let leftInset = rect("leftEdge")?.width ?? 25
+        let rightInset = rect("rightEdge")?.width ?? 20
+        let topInset = titleBarHeight()
+        let bottomInset = bottomFrameHeight()
+
+        let x = leftInset
+        let y = topInset
+        let w = max(0, canvasWidth - leftInset - rightInset)
+        let h = max(0, canvasHeight - topInset - bottomInset)
+        return (x: x, y: y, w: w, h: h)
+    }
+
     // MARK: - Bar (corner | tiled fill | corner)
 
     /// Compose one horizontal bar at row `y`: the left corner at x=0, the centre

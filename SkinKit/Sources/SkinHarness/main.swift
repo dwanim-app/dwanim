@@ -44,6 +44,7 @@ private struct Arguments {
 private let usage = "Usage: SkinHarness <path.wsz> [--png <out.png>] [--scale N] [--title <text>]"
     + "\n   or: SkinHarness --play <audiofile>"
     + "\n   or: SkinHarness --interactive <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
+    + "\n   or: SkinHarness --playlist <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
     + "\n   or: SkinHarness --default-skin <audiofile> [<audiofile>...] [--scale N]"
 
 private func parseArguments(_ argv: [String]) -> Arguments {
@@ -263,6 +264,22 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
 // `.wsz` arguments. `runInteractiveMode` never returns (it drives the run loop).
 if CommandLine.arguments.contains("--interactive") {
     runInteractiveMode()
+}
+
+// Playlist snapshot: `--playlist-snapshot <skin.wsz> <out.png>` renders the
+// playlist window + a synthetic track list to a PNG offscreen (no window, no run
+// loop). Dispatched before `--playlist` so it is matched as its own subcommand.
+if CommandLine.arguments.contains("--playlist-snapshot") {
+    runPlaylistSnapshotMode()
+}
+
+// Playlist mode: `--playlist <skin.wsz> <audiofile>...` opens the classic
+// playlist (PLEDIT) window for a skin and draws the live track list. It is
+// handled in `PlaylistMode.swift`; dispatch here before skin-path parsing so its
+// positional audio files are not mistaken for extra `.wsz` arguments.
+// `runPlaylistMode` never returns (it drives the run loop).
+if CommandLine.arguments.contains("--playlist") {
+    MainActor.assumeIsolated { runPlaylistMode() }
 }
 
 // Default-skin mode: `--default-skin <audiofile>...` opens the app's OWN
