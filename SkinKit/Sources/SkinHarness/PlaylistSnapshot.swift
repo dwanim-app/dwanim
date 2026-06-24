@@ -11,11 +11,14 @@ import SkinRender
 // track-list view can be verified without opening the blocking window.
 //
 // Usage:
-//   SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N]
+//   SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N] [--selected I]
 //
 // The synthetic titles are injected here ONLY for the snapshot; they exercise
-// the row layout, the current-row highlight, and clip-to-interior behavior. They
-// are generic placeholders — no brand names.
+// the row layout, the now-playing-row color, the SELECTED-row highlight
+// (selectedBackground, distinct from the now-playing row), and clip-to-interior
+// behavior. They are generic placeholders — no brand names. `--selected I` injects
+// a selected index (default `snapshotSelectedIndex`); pass it to verify a
+// specific row's highlight.
 
 /// Synthetic track titles for the snapshot — enough to overflow the interior so
 /// the visible-row clamp is exercised. Generic placeholders (the user's own files
@@ -37,6 +40,11 @@ private let snapshotTitles = [
 
 /// The index marked as the currently playing row in the snapshot.
 private let snapshotCurrentIndex = 4
+/// The index marked as the SELECTED row in the snapshot — distinct from the
+/// now-playing row so the snapshot shows the `selectedBackground` highlight and
+/// the `currentText` now-playing row as two different rows. Overridable via
+/// `--selected`.
+private let snapshotSelectedIndex = 2
 
 func runPlaylistSnapshotMode() -> Never {
     guard let flagIndex = CommandLine.arguments.firstIndex(of: "--playlist-snapshot") else {
@@ -45,6 +53,7 @@ func runPlaylistSnapshotMode() -> Never {
 
     var positionals: [String] = []
     var scale = 2
+    var selectedIndex = snapshotSelectedIndex
     var index = flagIndex + 1
     while index < CommandLine.arguments.count {
         let arg = CommandLine.arguments[index]
@@ -55,6 +64,13 @@ func runPlaylistSnapshotMode() -> Never {
             }
             scale = value
             index += 2
+        } else if arg == "--selected" {
+            guard index + 1 < CommandLine.arguments.count,
+                  let value = Int(CommandLine.arguments[index + 1]), value >= 0 else {
+                snapshotFail("--selected requires a non-negative integer row index.")
+            }
+            selectedIndex = value
+            index += 2
         } else {
             positionals.append(arg)
             index += 1
@@ -62,7 +78,7 @@ func runPlaylistSnapshotMode() -> Never {
     }
 
     guard positionals.count >= 2 else {
-        snapshotFail("Usage: SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N]")
+        snapshotFail("Usage: SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N] [--selected I]")
     }
     let skinPath = positionals[0]
     let outPath = positionals[1]
@@ -122,6 +138,7 @@ func runPlaylistSnapshotMode() -> Never {
         skin: skin,
         tracks: tracks,
         currentIndex: snapshotCurrentIndex,
+        selectedIndex: selectedIndex,
         scrollRow: 0,
         skinWidth: frame.width,
         skinHeight: frame.height,

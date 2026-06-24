@@ -6,11 +6,11 @@ import PlayerCore
 import SkinKit
 import SkinRender
 
-// The playlist window's content view + controller + the shared track-list text
-// drawing. Split out of `PlaylistMode.swift` to keep each file small (the
-// harness's "thin shell, small files" convention). The text drawing is factored
-// into a free function so the live view AND the offscreen snapshot draw the list
-// the same way.
+// The shared track-list text drawing for the classic playlist (PLEDIT) window:
+// the `drawPlaylistTrackList` routine plus its private CoreText line helper and
+// the skin-driven `PlaylistTextStyle`. Factored out of `PlaylistView.swift` so it
+// has ONE home (per §12: one primary type per file) and so the live view AND the
+// offscreen snapshot draw the list the same way and cannot drift.
 
 // MARK: - Track-list text drawing (shared by live view + snapshot)
 
@@ -25,15 +25,19 @@ import SkinRender
 /// pixels to context units. The interior rect (top-left origin, skin pixels) is
 /// flipped into the bottom-left context space here.
 ///
-/// Each visible row draws its title in the pledit font at `normalText`, except
-/// the current track which draws at `currentText` over a `selectedBackground`
-/// fill (so the now-playing row reads at a glance). Rows are clipped to the
-/// interior, and a too-long title is truncated by the clip (no wrapping).
+/// Each visible row draws its title in the pledit font at `normalText`. The
+/// `selectedIndex` row (if visible) gets a `selectedBackground` fill — the user's
+/// chosen-but-not-yet-playing highlight; the `currentIndex` row draws its title at
+/// `currentText` so the now-playing row reads at a glance. When a row is BOTH
+/// selected and current it gets the selection fill and the current text color.
+/// Rows are clipped to the interior, and a too-long title is truncated by the
+/// clip (no wrapping).
 func drawPlaylistTrackList(
     in context: CGContext,
     skin: Skin,
     tracks: [Track],
     currentIndex: Int?,
+    selectedIndex: Int? = nil,
     scrollRow: Int,
     skinWidth: Int,
     skinHeight: Int,
@@ -78,8 +82,9 @@ func drawPlaylistTrackList(
             skinHeight: skinHeight, scale: scale
         )
 
+        let isSelected = (row == selectedIndex)
         let isCurrent = (row == currentIndex)
-        if isCurrent, let selBG = style.selectedBackground {
+        if isSelected, let selBG = style.selectedBackground {
             context.setFillColor(selBG)
             context.fill(rowRect)
         }
@@ -204,195 +209,4 @@ struct PlaylistTextStyle {
             alpha: 1
         )
     }
-}
-
-// MARK: - Live content view
-
-/// The playlist window's content view: draws the scaled frame bitmap (nearest
-/// neighbor) and the visible track list (CoreText), and forwards mouse-wheel
-/// scrolls to the controller. NON-flipped (bottom-left origin), like
-/// `SkinImageView`; the text drawing flips into this space itself.
-final class PlaylistContentView: NSView {
-    private var frameImage: CGImage
-    private let skin: Skin
-    private let scale: Int
-    private let skinWidth: Int
-    private let skinHeight: Int
-
-    /// Pulled fresh each redraw so the list reflects the live core.
-    var tracksProvider: () -> [Track] = { [] }
-    var currentIndexProvider: () -> Int? = { nil }
-    var scrollRowProvider: () -> Int = { 0 }
-    /// Called on a wheel scroll with the signed row delta; the controller clamps
-    /// and stores it, then triggers a redraw.
-    var onScroll: ((_ rowDelta: Int) -> Void)?
-
-    init(frameImage: CGImage, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int, frame: NSRect) {
-        self.frameImage = frameImage
-        self.skin = skin
-        self.scale = scale
-        self.skinWidth = skinWidth
-        self.skinHeight = skinHeight
-        super.init(frame: frame)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.interpolationQuality = .none
-        context.draw(frameImage, in: bounds)
-
-        drawPlaylistTrackList(
-            in: context,
-            skin: skin,
-            tracks: tracksProvider(),
-            currentIndex: currentIndexProvider(),
-            scrollRow: scrollRowProvider(),
-            skinWidth: skinWidth,
-            skinHeight: skinHeight,
-            scale: scale
-        )
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        // One wheel notch ~= scroll by a row. `scrollingDeltaY > 0` is an upward
-        // scroll (content moves down -> toward the top of the list), so a positive
-        // delta DECREASES the scroll row. Quantize to at least one row per event
-        // so a small trackpad nudge still moves the list.
-        let dy = event.scrollingDeltaY
-        guard dy != 0 else { return }
-        let rows = max(1, Int(abs(dy).rounded(.up) / 10))
-        onScroll?(dy > 0 ? -rows : rows)
-    }
-}
-
-// MARK: - Default window geometry
-
-/// Default unscaled playlist-window size (skin pixels). Kept in a plain,
-/// non-actor-isolated namespace so the headless snapshot path can read it too
-/// (the controller is `@MainActor`; these constants are not UI state). Wide
-/// enough for a readable title column and tall enough for ~14 rows.
-enum PlaylistWindowGeometry {
-    static let defaultWidth = 275
-    static let defaultHeight = 232
-}
-
-// MARK: - Controller
-
-/// Owns the playlist window: the view, the core, the scroll position, and
-/// teardown. The list is static (no playback timer needed for the list view);
-/// scroll events drive a redraw. Kept minimal — click-to-play and resize are
-/// deferred to later increments.
-@MainActor
-final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationDelegate {
-    private let core: PlayerCore
-    private weak var view: PlaylistContentView?
-    private let interiorHeight: Int
-    private var scrollRow = 0
-
-    init(core: PlayerCore, interiorHeight: Int) {
-        self.core = core
-        self.interiorHeight = interiorHeight
-        super.init()
-    }
-
-    func attach(view: PlaylistContentView) {
-        self.view = view
-        view.tracksProvider = { [weak self] in self?.core.playlist ?? [] }
-        view.currentIndexProvider = { [weak self] in self?.core.currentIndex }
-        view.scrollRowProvider = { [weak self] in self?.scrollRow ?? 0 }
-        view.onScroll = { [weak self] rowDelta in self?.scrollBy(rowDelta) }
-    }
-
-    /// Apply a row delta, clamped by the pure helper, and redraw if it moved.
-    private func scrollBy(_ rowDelta: Int) {
-        let layout = PlaylistLayout.visibleRows(
-            trackCount: core.playlist.count,
-            scrollRow: scrollRow + rowDelta,
-            interiorHeight: interiorHeight,
-            rowHeight: PlaylistTextStyle.rowHeight
-        )
-        guard layout.scrollRow != scrollRow else { return }
-        scrollRow = layout.scrollRow
-        view?.needsDisplay = true
-    }
-
-    // MARK: NSWindowDelegate / NSApplicationDelegate
-
-    func windowWillClose(_ notification: Notification) {
-        NSApp.terminate(nil)
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
-    }
-}
-
-// Hold the controller for the process lifetime so it is not deallocated once the
-// run loop starts (the run loop owns no strong reference to it).
-private var livePlaylistController: PlaylistWindowController?
-
-// MARK: - Window setup
-
-/// Build and show the playlist window, then run the app. Never returns.
-@MainActor
-func openPlaylistWindow(skin: Skin, core: PlayerCore, scale: Int) -> Never {
-    let width = PlaylistWindowGeometry.defaultWidth
-    let height = PlaylistWindowGeometry.defaultHeight
-
-    guard let frame = PlaylistWindowComposer.compose(skin, width: width, height: height),
-          let image = CGImageConversion.makeImage(from: frame) else {
-        FileHandle.standardError.write(Data("Could not build the playlist frame image.\n".utf8))
-        exit(1)
-    }
-
-    let scaled: (image: CGImage, width: Int, height: Int)
-    do {
-        scaled = try scaledImage(image, scale: scale)
-    } catch {
-        FileHandle.standardError.write(Data("Failed to scale the playlist frame: \(error)\n".utf8))
-        exit(1)
-    }
-
-    let app = NSApplication.shared
-    app.setActivationPolicy(.regular)
-
-    let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
-    // Compose returns the CLAMPED size; use the frame's actual dimensions so the
-    // text layout matches the bitmap exactly.
-    let view = PlaylistContentView(
-        frameImage: scaled.image,
-        skin: skin,
-        scale: scale,
-        skinWidth: frame.width,
-        skinHeight: frame.height,
-        frame: contentRect
-    )
-
-    let interior = PlaylistWindowComposer.interiorRect(width: frame.width, height: frame.height)
-    let controller = PlaylistWindowController(core: core, interiorHeight: interior.h)
-    controller.attach(view: view)
-    livePlaylistController = controller
-
-    let window = NSWindow(
-        contentRect: contentRect,
-        styleMask: [.titled, .closable, .miniaturizable],
-        backing: .buffered,
-        defer: false
-    )
-    window.title = "Playlist"
-    window.delegate = controller
-    window.contentView = view
-    window.center()
-    window.makeKeyAndOrderFront(nil)
-
-    app.delegate = controller
-    app.activate(ignoringOtherApps: true)
-    app.run()
-
-    exit(0)
 }

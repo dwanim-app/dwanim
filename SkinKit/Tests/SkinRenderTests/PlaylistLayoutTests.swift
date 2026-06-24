@@ -192,6 +192,162 @@ final class PlaylistLayoutTests: XCTestCase {
         XCTAssertEqual(v.count, 0)
     }
 
+    // MARK: - row(atInteriorY:): map an interior y to an absolute track index
+    //
+    // `atInteriorY` is a y measured from the interior TOP (0 at the top edge,
+    // increasing downward), the same orientation the rows are laid out in. It
+    // returns the ABSOLUTE track index under that y (clampedScroll + y/rowHeight),
+    // or nil when the y is outside the filled rows / below the last visible track /
+    // for degenerate geometry. It clamps `scrollRow` exactly as `visibleRows`
+    // does, and a y inside a partially visible last row still hits it.
+
+    func testRowAtInteriorYFirstVisibleRowAtTop() {
+        // y in the first row's band -> the scrolled-to row index.
+        let row = PlaylistLayout.row(
+            atInteriorY: 0, trackCount: 30, scrollRow: 5, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertEqual(row, 5)
+    }
+
+    func testRowAtInteriorYWithinFirstRowBand() {
+        // Anywhere in [0, rowHeight) maps to the first visible row.
+        let row = PlaylistLayout.row(
+            atInteriorY: 9, trackCount: 30, scrollRow: 5, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertEqual(row, 5)
+    }
+
+    func testRowAtInteriorYSecondRowBand() {
+        // [rowHeight, 2*rowHeight) -> second visible row.
+        let row = PlaylistLayout.row(
+            atInteriorY: 10, trackCount: 30, scrollRow: 5, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertEqual(row, 6)
+    }
+
+    func testRowAtInteriorYLastVisibleRowWhenFull() {
+        // 30 tracks, scroll 5, 10 rows fit -> last visible row is index 14, whose
+        // band is [90, 100). A y at 95 hits it.
+        let row = PlaylistLayout.row(
+            atInteriorY: 95, trackCount: 30, scrollRow: 5, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertEqual(row, 14)
+    }
+
+    func testRowAtInteriorYInGapBelowLastTrackIsNil() {
+        // Fewer tracks than fit: 4 tracks, room for 10. The filled rows occupy
+        // [0,40); a y at 55 is in the empty gap below the last track -> nil.
+        let row = PlaylistLayout.row(
+            atInteriorY: 55, trackCount: 4, scrollRow: 0, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertNil(row)
+    }
+
+    func testRowAtInteriorYOnLastFilledRowWhenFewerThanFit() {
+        // 4 tracks, room for 10. Row 3's band is [30,40); a y at 35 hits the last
+        // track. The very next band [40,50) would be the empty gap (nil above).
+        let row = PlaylistLayout.row(
+            atInteriorY: 35, trackCount: 4, scrollRow: 0, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertEqual(row, 3)
+    }
+
+    func testRowAtInteriorYNegativeYIsNil() {
+        // A click above the interior top is not a row.
+        let row = PlaylistLayout.row(
+            atInteriorY: -1, trackCount: 30, scrollRow: 5, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertNil(row)
+    }
+
+    func testRowAtInteriorYAtOrBeyondInteriorBottomIsNil() {
+        // y == interiorHeight is past the last pixel row (half-open) -> nil, even
+        // though more tracks exist below the scroll window.
+        let row = PlaylistLayout.row(
+            atInteriorY: 100, trackCount: 30, scrollRow: 5, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertNil(row)
+        let beyond = PlaylistLayout.row(
+            atInteriorY: 250, trackCount: 30, scrollRow: 5, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertNil(beyond)
+    }
+
+    func testRowAtInteriorYPartialLastRowStillHits() {
+        // 105px interior, 10px rows -> 11 rows reported visible, the 11th partial.
+        // 30 tracks, scroll 0: the 11th visible row (index 10) sits in [100,110)
+        // but the interior ends at 105. A y at 104 (inside both the row band and
+        // the interior) still hits the partial row.
+        let row = PlaylistLayout.row(
+            atInteriorY: 104, trackCount: 30, scrollRow: 0, interiorHeight: 105, rowHeight: 10
+        )
+        XCTAssertEqual(row, 10)
+    }
+
+    func testRowAtInteriorYClampedScrollMatchesVisibleRows() {
+        // Over-scroll is clamped exactly as visibleRows clamps it: 30 tracks,
+        // scroll 999, 10 fit -> clamped to 20. y=0 then maps to row 20.
+        let row = PlaylistLayout.row(
+            atInteriorY: 0, trackCount: 30, scrollRow: 999, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertEqual(row, 20)
+    }
+
+    func testRowAtInteriorYAtBottomClampMapsToFinalTrack() {
+        // 30 tracks, scroll 999 clamps to 20, 10 rows fit -> visible 20..<30. The
+        // band [90,100) is the last track, index 29.
+        let row = PlaylistLayout.row(
+            atInteriorY: 95, trackCount: 30, scrollRow: 999, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertEqual(row, 29)
+    }
+
+    func testRowAtInteriorYInPartialBandPastLastTrackIsNil() {
+        // 105px interior, 10px rows -> 11 reported rows, but only 5 tracks. Scroll
+        // 0: filled rows are 0..<5 occupying [0,50); the partial 11th band and
+        // everything from y>=50 is below the last track -> nil.
+        let row = PlaylistLayout.row(
+            atInteriorY: 60, trackCount: 5, scrollRow: 0, interiorHeight: 105, rowHeight: 10
+        )
+        XCTAssertNil(row)
+    }
+
+    func testRowAtInteriorYEmptyListIsNil() {
+        let row = PlaylistLayout.row(
+            atInteriorY: 5, trackCount: 0, scrollRow: 0, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertNil(row)
+    }
+
+    func testRowAtInteriorYNegativeTrackCountIsNil() {
+        let row = PlaylistLayout.row(
+            atInteriorY: 5, trackCount: -3, scrollRow: 0, interiorHeight: 100, rowHeight: 10
+        )
+        XCTAssertNil(row)
+    }
+
+    func testRowAtInteriorYZeroRowHeightIsNil() {
+        // Guards divide-by-zero.
+        let row = PlaylistLayout.row(
+            atInteriorY: 5, trackCount: 30, scrollRow: 0, interiorHeight: 100, rowHeight: 0
+        )
+        XCTAssertNil(row)
+    }
+
+    func testRowAtInteriorYZeroInteriorHeightIsNil() {
+        let row = PlaylistLayout.row(
+            atInteriorY: 0, trackCount: 30, scrollRow: 0, interiorHeight: 0, rowHeight: 10
+        )
+        XCTAssertNil(row)
+    }
+
+    func testRowAtInteriorYNegativeRowHeightIsNil() {
+        let row = PlaylistLayout.row(
+            atInteriorY: 5, trackCount: 30, scrollRow: 0, interiorHeight: 100, rowHeight: -10
+        )
+        XCTAssertNil(row)
+    }
+
     // MARK: - interiorRect: inside the frame chrome, well-formed
 
     func testInteriorRectInsetByFrameChrome() {

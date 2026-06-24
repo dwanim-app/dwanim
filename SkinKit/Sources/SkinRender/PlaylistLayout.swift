@@ -82,6 +82,56 @@ public enum PlaylistLayout {
         return Visible(firstVisible: clamped, lastVisible: last, scrollRow: clamped)
     }
 
+    // MARK: - Row hit (interior y -> absolute track index)
+
+    /// The absolute track index under a point INSIDE the interior, or `nil` when
+    /// the point is not on a filled row.
+    ///
+    /// - Parameters:
+    ///   - atInteriorY: y measured from the interior TOP (0 at the top edge,
+    ///     increasing DOWNWARD), in the same pixel space rows are laid out in.
+    ///     A negative y (above the top edge) is `nil`.
+    ///   - trackCount: total rows in the list (clamped at 0; negative is empty).
+    ///   - scrollRow: requested scroll position in WHOLE rows; clamped EXACTLY as
+    ///     `visibleRows` clamps it, so a row hit lines up with what is drawn.
+    ///   - interiorHeight: pixel height of the interior. Non-positive -> `nil`.
+    ///   - rowHeight: pixel height of one row. Non-positive -> `nil`.
+    ///
+    /// The index is `clampedScroll + atInteriorY / rowHeight`. It returns `nil`
+    /// when `atInteriorY` is outside the interior (`< 0` or `>= interiorHeight`,
+    /// half-open) or when the computed index is past the last visible track (the
+    /// empty gap below the last row when fewer tracks than fit, or any row index
+    /// `>= trackCount`). A y inside a PARTIALLY visible last row still hits it, so
+    /// this stays consistent with `visibleRows` reporting that partial row.
+    public static func row(
+        atInteriorY: Int,
+        trackCount: Int,
+        scrollRow: Int,
+        interiorHeight: Int,
+        rowHeight: Int
+    ) -> Int? {
+        let tracks = max(0, trackCount)
+        // Degenerate geometry / empty list / a y outside the interior is not a row.
+        guard interiorHeight > 0, rowHeight > 0, tracks > 0 else { return nil }
+        guard atInteriorY >= 0, atInteriorY < interiorHeight else { return nil }
+
+        // Use the SAME visible-row layout the shell draws with, so the clamp and
+        // the visible window line up exactly (no drift between draw and hit-test).
+        let layout = visibleRows(
+            trackCount: tracks,
+            scrollRow: scrollRow,
+            interiorHeight: interiorHeight,
+            rowHeight: rowHeight
+        )
+        guard layout.count > 0 else { return nil }
+
+        let index = layout.firstVisible + atInteriorY / rowHeight
+        // Past the last visible track (empty gap below a short list, or any index
+        // at/after the visible window's end) is not a row.
+        guard index < layout.lastVisible else { return nil }
+        return index
+    }
+
     /// The number of rows that fit in `interiorHeight` at `rowHeight`, rounding UP
     /// so a partially visible last row still counts. At least 1 when both inputs
     /// are positive (a row that does not fully fit is still drawn and clipped);
