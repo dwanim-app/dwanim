@@ -14,12 +14,20 @@ enum CGImageConversion {
     /// Pixel layout for the decoded buffer.
     ///
     /// The buffer bytes are laid out R, G, B, A per pixel. We pair byte order
-    /// `.byteOrder32Big` with `CGImageAlphaInfo.last` so CoreGraphics reads the
-    /// first byte as red and the trailing byte as alpha. The source data is
-    /// fully opaque straight RGBA, so treating the last channel as (opaque)
-    /// alpha reproduces the original colors without premultiplication artifacts.
+    /// `.byteOrder32Big` with `CGImageAlphaInfo.premultipliedLast` so
+    /// CoreGraphics reads the first byte as red and the trailing byte as alpha,
+    /// and HONORS that alpha as transparency.
+    ///
+    /// A fully-opaque bitmap (alpha 0xFF everywhere) is unaffected by
+    /// premultiplication — `rgb * 1.0 == rgb` — so the common unmasked case
+    /// renders identically to a straight-alpha bridge. When a shape mask has
+    /// zeroed the alpha of out-of-region pixels, premultiplication makes those
+    /// pixels fully transparent, which is exactly what a shaped window / alpha
+    /// PNG needs. (The DecodedBitmap carries straight alpha; for the only two
+    /// alpha values we ever produce here — 0xFF and 0x00 — straight and
+    /// premultiplied representations coincide, so no precision is lost.)
     static let bitmapInfo = CGBitmapInfo(
-        rawValue: CGImageAlphaInfo.last.rawValue
+        rawValue: CGImageAlphaInfo.premultipliedLast.rawValue
             | CGBitmapInfo.byteOrder32Big.rawValue
     )
 

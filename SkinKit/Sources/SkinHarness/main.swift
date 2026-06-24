@@ -92,7 +92,16 @@ private func parseArguments(_ argv: [String]) -> Arguments {
 
 // MARK: - Loading
 
-private func loadComposedImage(at path: String, title: String) -> CGImage {
+/// The composed image plus whether a custom (non-rectangular) shape was applied.
+/// `isShaped` is `true` only when the skin declared region polygons and the mask
+/// actually zeroed some out-of-region alpha; the window path uses it to decide
+/// between a normal titled window and a borderless transparent (shaped) one.
+private struct ComposedResult {
+    var image: CGImage
+    var isShaped: Bool
+}
+
+private func loadComposedImage(at path: String, title: String) -> ComposedResult {
     let url = URL(fileURLWithPath: path)
 
     let data: Data
@@ -135,10 +144,28 @@ private func loadComposedImage(at path: String, title: String) -> CGImage {
         y: MainWindowLayout.timeDisplayOrigin.y
     )
 
+    // Non-rectangular window shape: if the skin declared region polygons, build a
+    // visibility mask at the composed bitmap's size and zero the alpha of every
+    // out-of-region pixel. This is applied AFTER compose + text (compose itself
+    // stays rectangular / opaque). A nil or empty region leaves the bitmap fully
+    // opaque, so unshaped skins behave exactly as before.
+    var isShaped = false
+    if let region = skin.region, !region.polygons.isEmpty {
+        let mask = RegionCoverage.mask(
+            region,
+            width: composed.width,
+            height: composed.height
+        )
+        RegionCoverage.applyMask(mask, to: &composed)
+        // Only treat as shaped if the mask actually carved something away; a
+        // region that happens to cover the whole canvas stays rectangular.
+        isShaped = mask.contains(false)
+    }
+
     guard let image = CGImageConversion.makeImage(from: composed) else {
         fail("Could not build an image from the composed main window for skin at \(path).")
     }
-    return image
+    return ComposedResult(image: image, isShaped: isShaped)
 }
 
 // MARK: - Modes
@@ -154,7 +181,7 @@ private func runPNGMode(image: CGImage, output: String, scale: Int) {
     }
 }
 
-private func runWindowMode(image: CGImage, scale: Int) {
+private func runWindowMode(image: CGImage, scale: Int, isShaped: Bool) {
     let scaled: (image: CGImage, width: Int, height: Int)
     do {
         scaled = try scaledImage(image, scale: scale)
@@ -166,13 +193,30 @@ private func runWindowMode(image: CGImage, scale: Int) {
     app.setActivationPolicy(.regular)
 
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
-    let window = NSWindow(
-        contentRect: contentRect,
-        styleMask: [.titled, .closable, .miniaturizable],
-        backing: .buffered,
-        defer: false
-    )
-    window.title = "SkinHarness"
+
+    // A shaped skin carries transparent pixels outside its region. To let those
+    // show through as a non-rectangular window, the window must be borderless and
+    // non-opaque with a clear background; otherwise use the normal titled chrome.
+    let window: NSWindow
+    if isShaped {
+        window = NSWindow(
+            contentRect: contentRect,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.isMovableByWindowBackground = true
+    } else {
+        window = NSWindow(
+            contentRect: contentRect,
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "SkinHarness"
+    }
     window.contentView = SkinImageView(image: scaled.image, frame: contentRect)
     window.center()
     window.makeKeyAndOrderFront(nil)
@@ -184,10 +228,10 @@ private func runWindowMode(image: CGImage, scale: Int) {
 // MARK: - Entry point
 
 private let arguments = parseArguments(CommandLine.arguments)
-private let composedImage = loadComposedImage(at: arguments.skinPath, title: arguments.title)
+private let composed = loadComposedImage(at: arguments.skinPath, title: arguments.title)
 
 if let output = arguments.pngOutput {
-    runPNGMode(image: composedImage, output: output, scale: arguments.scale)
+    runPNGMode(image: composed.image, output: output, scale: arguments.scale)
 } else {
-    runWindowMode(image: composedImage, scale: arguments.scale)
+    runWindowMode(image: composed.image, scale: arguments.scale, isShaped: composed.isShaped)
 }
