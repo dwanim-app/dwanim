@@ -46,7 +46,7 @@ let package = Package(
             name: "SkinHarness",
             dependencies: [
                 "SkinKit", "SkinKitImageIO", "SkinRender",
-                "PlayerCore", "PlayerControl", "PlaybackKit"
+                "PlayerCore", "PlayerControl", "PlaybackKit", "SpectrumKit"
             ]
         )
     ]

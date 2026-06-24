@@ -83,4 +83,20 @@ final class MainWindowLayoutTests: XCTestCase {
             MainWindowLayout.elements.contains { $0.sheet == "balance.bmp" },
             "layout is missing a balance slider background")
     }
+
+    /// The visualization frame is a non-empty rect that fits entirely inside the
+    /// 275x116 main window, so the spectrum renderer always draws in-bounds.
+    func testVisualizationFrameFitsTheWindow() {
+        let frame = MainWindowLayout.visualizationFrame
+        XCTAssertGreaterThan(frame.width, 0, "vis frame width must be positive")
+        XCTAssertGreaterThan(frame.height, 0, "vis frame height must be positive")
+        XCTAssertGreaterThanOrEqual(frame.x, 0, "vis frame x must be >= 0")
+        XCTAssertGreaterThanOrEqual(frame.y, 0, "vis frame y must be >= 0")
+        XCTAssertLessThanOrEqual(
+            frame.x + frame.width, MainWindowLayout.windowWidth,
+            "vis frame right edge exceeds window width")
+        XCTAssertLessThanOrEqual(
+            frame.y + frame.height, MainWindowLayout.windowHeight,
+            "vis frame bottom edge exceeds window height")
+    }
 }
