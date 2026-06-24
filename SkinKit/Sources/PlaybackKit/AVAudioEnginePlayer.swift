@@ -57,13 +57,6 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 
     public var onPlaybackFinished: (() -> Void)?
 
-    // MARK: - Audio tap
-
-    /// The installed PCM tap callback, if any. Set by `installTap`, cleared by
-    /// `removeTap`. The tap block on `mainMixerNode` reads this; it fires on an
-    /// audio render thread, so consumers must thread-hop before touching UI.
-    fileprivate var tapBuffer: ((_ monoSamples: [Float], _ sampleRate: Double) -> Void)?
-
     // MARK: - Init
 
     public init() {
@@ -311,9 +304,15 @@ extension AVAudioEnginePlayer: AudioTapProviding {
     ) {
         // AVAudioEngine permits only one tap per bus, so remove-then-install to
         // be safe if a tap was already present (calling `installTap` twice must
-        // not crash). Storing the closure lets `removeTap` clear it later.
+        // not crash).
         engine.mainMixerNode.removeTap(onBus: 0)
-        tapBuffer = onBuffer
+
+        // Capture the callback DIRECTLY in the tap block (a local `let` the block
+        // closes over) instead of reading a shared mutable property on the audio
+        // render thread. The block keeps the closure alive for the life of the
+        // tap; `removeTap(onBus:)` tears the block down, releasing it. The audio
+        // thread therefore never reads shared mutable state.
+        let callback = onBuffer
 
         // `format: nil` adopts the bus's own (output) format. Installing before
         // or after `engine.start()` is fine — the block simply will not fire
@@ -322,20 +321,20 @@ extension AVAudioEnginePlayer: AudioTapProviding {
             onBus: 0,
             bufferSize: 1024,
             format: nil
-        ) { [weak self] buffer, _ in
+        ) { buffer, _ in
             // Fires on an audio render thread. Downmix to mono and hand off; the
-            // consumer is responsible for thread-hopping before touching UI.
-            guard let self,
-                  let callback = self.tapBuffer,
-                  let mono = AVAudioEnginePlayer.monoSamples(from: buffer)
-            else { return }
+            // consumer is responsible for thread-hopping before touching UI. No
+            // shared mutable state is read here — `callback` is captured by value.
+            guard let mono = AVAudioEnginePlayer.monoSamples(from: buffer) else { return }
             callback(mono, buffer.format.sampleRate)
         }
     }
 
     public func removeTap() {
+        // `removeTap(onBus:)` synchronously tears down the in-flight block,
+        // releasing its captured callback; it is idempotent, so calling it with
+        // no tap present is harmless.
         engine.mainMixerNode.removeTap(onBus: 0)
-        tapBuffer = nil
     }
 
     /// Averages every channel of `buffer` into a single mono `[Float]` frame.

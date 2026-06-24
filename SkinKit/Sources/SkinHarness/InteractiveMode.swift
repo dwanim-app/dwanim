@@ -26,7 +26,7 @@ import SpectrumKit
 //   3. Open the skin window, reusing the same scale + region-mask pipeline as the
 //      plain window mode. The content view accepts mouse clicks.
 //   4. mouseDown -> skin-space coords -> ControlHitTest -> a PlayerCore action.
-//   5. A ~0.2s repeating main-run-loop timer recomposes the window from the live
+//   5. A ~0.04s (25 Hz) repeating main-run-loop timer recomposes the window from the live
 //      PlayerCore state (time + title overlays, optional pressed-button feedback)
 //      and swaps the view's image.
 //
@@ -188,7 +188,7 @@ private final class LatestSamples {
 /// and the redraw timer (main thread) reads that snapshot, runs the
 /// `SpectrumAnalyzer`, and draws the bars via `SpectrumRenderer`. The analyzer and
 /// all SkinRender drawing stay on the main thread.
-private final class InteractiveController {
+private final class InteractiveController: NSObject, NSWindowDelegate, NSApplicationDelegate {
     private let skin: Skin
     private let core: PlayerCore
     private let view: InteractiveSkinView
@@ -211,9 +211,16 @@ private final class InteractiveController {
     /// visualization frame width.
     private let analyzer: SpectrumAnalyzer
 
-    /// Number of spectrum bars. Chosen so each bar gets a few pixels across the
-    /// provisional vis frame width (~76px): 19 bars ≈ 4px/slot.
-    private static let barCount = 19
+    /// Number of spectrum bars, DERIVED from the visualization-frame width so the
+    /// two stay coupled: ~4px per bar across the frame (`max(1, width / 4)` →
+    /// 19 bars at the provisional 76px). Deriving it (rather than hardcoding 19
+    /// against a provisional 76) means that if the frame is later retuned the bar
+    /// count follows, instead of `slotWidth` silently rounding to 0 and the vis
+    /// area going blank. The lower bound of 1 keeps the analyzer well-formed even
+    /// for a degenerate frame.
+    private static func barCount(forVisWidth width: Int) -> Int {
+        max(1, width / 4)
+    }
 
     init(skin: Skin, core: PlayerCore, view: InteractiveSkinView, scale: Int, tap: AudioTapProviding?) {
         self.skin = skin
@@ -221,7 +228,21 @@ private final class InteractiveController {
         self.view = view
         self.scale = scale
         self.tap = tap
-        self.analyzer = SpectrumAnalyzer(barCount: InteractiveController.barCount)
+
+        let visWidth = MainWindowLayout.visualizationFrame.width
+        let bars = InteractiveController.barCount(forVisWidth: visWidth)
+        // Guard: if the frame is so narrow that even a single bar can't get a
+        // full pixel slot, the vis area would draw blank. Surface it rather than
+        // failing silently (one-line stderr note; the harness keeps running).
+        if visWidth < bars {
+            FileHandle.standardError.write(Data(
+                ("Warning: visualization frame width (\(visWidth)px) is narrower than the "
+                    + "derived bar count (\(bars)); the spectrum may render blank.\n").utf8
+            ))
+        }
+        self.analyzer = SpectrumAnalyzer(barCount: bars)
+
+        super.init()
 
         view.onMouseDown = { [weak self] viewX, viewY, viewHeight in
             self?.handleMouseDown(viewX: viewX, viewY: viewY, viewHeight: viewHeight)
@@ -256,6 +277,27 @@ private final class InteractiveController {
         timer?.invalidate()
         timer = nil
         tap?.removeTap()
+    }
+
+    // MARK: NSWindowDelegate
+
+    /// The window is closing — tear down before the process exits. Without this,
+    /// closing the titled fallback window would leave the ~25 Hz `redraw()` timer
+    /// firing against a dead view and the audio tap still installed. We stop the
+    /// timer + remove the tap, then terminate the app so the run loop exits
+    /// cleanly. (The borderless region window has no close button, but wiring the
+    /// delegate there too keeps teardown correct if it is ever closed.)
+    func windowWillClose(_ notification: Notification) {
+        stop()
+        NSApp.terminate(nil)
+    }
+
+    // MARK: NSApplicationDelegate
+
+    /// Belt-and-suspenders: quit once the last window closes, so any close path
+    /// that bypasses `windowWillClose` still exits the process cleanly.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 
     // MARK: Mouse
@@ -460,6 +502,12 @@ private func openInteractiveWindow(
         )
     }
 
+    // Build the controller first so it can serve as the window delegate: closing
+    // the window then routes through `windowWillClose` → `stop()` (timer +tap
+    // teardown) → clean app termination.
+    let controller = InteractiveController(skin: skin, core: core, view: contentView, scale: scale, tap: tap)
+    liveController = controller
+
     let window: NSWindow
     if let maskLayer {
         window = NSWindow(
@@ -482,12 +530,17 @@ private func openInteractiveWindow(
         )
         window.title = "SkinHarness"
     }
+    // Both window paths get the delegate: the titled fallback so its close button
+    // tears down cleanly, and the borderless region window (no close button) so a
+    // programmatic close/terminate is still correct teardown.
+    window.delegate = controller
     window.contentView = contentView
     window.center()
     window.makeKeyAndOrderFront(nil)
 
-    let controller = InteractiveController(skin: skin, core: core, view: contentView, scale: scale, tap: tap)
-    liveController = controller
+    // Belt and suspenders: also exit when the last window closes, in case a close
+    // path bypasses the delegate.
+    app.delegate = controller
     controller.start()
 
     app.activate(ignoringOtherApps: true)
