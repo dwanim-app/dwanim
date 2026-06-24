@@ -22,7 +22,7 @@ final class DwennimmenMarkTests: XCTestCase {
         XCTAssertLessThanOrEqual(bounds.maxY, DwennimmenMark.designSize)
     }
 
-    /// Both horns start at the shared top-centre point (50, 27), so the mark
+    /// Both horns start at the shared top-centre peak (50, 22), so the mark
     /// reads as a single emblem meeting at a peak rather than two stray strokes.
     /// The bounding box is therefore horizontally centred on x = 50.
     func testHornsAreHorizontallyCentred() {
@@ -41,14 +41,30 @@ final class DwennimmenMarkTests: XCTestCase {
         XCTAssertEqual(leftGap, rightGap, accuracy: 0.5)
     }
 
-    /// Including the dot extends the bounds upward to cover the dot at (50, 12)
-    /// with radius 5 (top edge at y = 7), above the horns' top point (y ~ 27).
+    /// Including the dot extends the bounds upward to cover the dot at (50, 10)
+    /// with radius 5 (top edge at y = 5), above the horns' top reach (y ~ 16).
     func testDotExtendsBoundsUpward() {
         let withoutDot = DwennimmenMark.designPath().boundingRect
         let withDot = DwennimmenMark.designPath(includesDot: true).boundingRect
         XCTAssertLessThan(withDot.minY, withoutDot.minY)
         let expectedTop = DwennimmenMark.dotCenter.y - DwennimmenMark.dotRadius
         XCTAssertEqual(withDot.minY, expectedTop, accuracy: 0.5)
+    }
+
+    /// The mark fills a balanced, near-square region: the horns reach wide
+    /// (left/right flanks well out from centre) and tall (peak area down to the
+    /// bottom curl), so the silhouette reads as a pair of bold horns rather than a
+    /// thin or lopsided squiggle. Guards against the geometry collapsing inward.
+    func testHornsFillABalancedRegion() {
+        let bounds = DwennimmenMark.designPath().boundingRect
+        // Wide: each flank sits at least 30 units out from the x = 50 centre.
+        XCTAssertLessThanOrEqual(bounds.minX, 20)
+        XCTAssertGreaterThanOrEqual(bounds.maxX, 80)
+        // Tall: the horns span a good fraction of the design height.
+        XCTAssertGreaterThanOrEqual(bounds.height, 45)
+        // Roughly square aspect, so it sits well in a square tile / icon.
+        let aspect = bounds.width / bounds.height
+        XCTAssertEqual(aspect, 1, accuracy: 0.45)
     }
 
     /// The fit transform maps the design space into a target rect as the largest
@@ -65,6 +81,6 @@ final class DwennimmenMarkTests: XCTestCase {
         // The dot centre maps to the centre of the target rect's square.
         let mappedDot = DwennimmenMark.dotCenter.applying(transform)
         XCTAssertEqual(mappedDot.x, 100, accuracy: 1e-9) // 50 + 50 offset
-        XCTAssertEqual(mappedDot.y, 12, accuracy: 1e-9)
+        XCTAssertEqual(mappedDot.y, 10, accuracy: 1e-9)
     }
 }

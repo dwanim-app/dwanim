@@ -41,7 +41,7 @@ struct EmblemTile: View {
                 DwennimmenMark()
                     .stroke(
                         DwanimTheme.goldGradient,
-                        style: StrokeStyle(lineWidth: side * 0.05, lineCap: .round, lineJoin: .round)
+                        style: StrokeStyle(lineWidth: side * 0.075, lineCap: .round, lineJoin: .round)
                     )
                 dot
             }

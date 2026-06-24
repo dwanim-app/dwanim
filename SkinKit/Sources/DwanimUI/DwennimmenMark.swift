@@ -34,7 +34,7 @@ public struct DwennimmenMark: Shape {
     public static let designSize: CGFloat = 100
 
     /// Centre of the top dot in design space, and its radius.
-    public static let dotCenter = CGPoint(x: 50, y: 12)
+    public static let dotCenter = CGPoint(x: 50, y: 10)
     public static let dotRadius: CGFloat = 5
 
     // MARK: - Shape
@@ -50,46 +50,49 @@ public struct DwennimmenMark: Shape {
     /// y down), optionally including the top dot as a sub-path. Pure CoreGraphics
     /// so the anchor points can be asserted in tests without a view.
     ///
-    /// Left horn: starts at the top-centre point (50, 27), sweeps up-left and
-    /// curls down into an inward (clockwise) spiral. Right horn: the exact mirror
-    /// about x = 50. The control points mirror the approved mockup.
+    /// Each horn is ONE bold sweep: from the shared top-centre peak (50, 22) it
+    /// arcs up and OUT over the shoulder to the outer flank, runs down the
+    /// outside, then curls across the bottom and spirals UP-AND-IN to a single
+    /// clean inner terminus — one loop, not a stack of over-curls, so it stays
+    /// legible as a ram's horn down to small sizes. The right horn is the exact
+    /// mirror about x = 50 (x' = 100 - x).
     public static func designPath(includesDot: Bool = false) -> Path {
         var path = Path()
 
-        // Left horn.
-        path.move(to: CGPoint(x: 50, y: 27))
+        // Left horn: peak -> outer flank -> bottom curl -> inner spiral terminus.
+        path.move(to: CGPoint(x: 50, y: 22))
         path.addCurve(
-            to: CGPoint(x: 15, y: 37),
-            control1: CGPoint(x: 37, y: 13),
-            control2: CGPoint(x: 17, y: 17)
+            to: CGPoint(x: 16, y: 44),
+            control1: CGPoint(x: 30, y: 16),
+            control2: CGPoint(x: 16, y: 24)
         )
         path.addCurve(
-            to: CGPoint(x: 39, y: 53),
-            control1: CGPoint(x: 13, y: 55),
-            control2: CGPoint(x: 29, y: 63)
+            to: CGPoint(x: 44, y: 70),
+            control1: CGPoint(x: 16, y: 66),
+            control2: CGPoint(x: 30, y: 72)
         )
         path.addCurve(
-            to: CGPoint(x: 33, y: 41),
-            control1: CGPoint(x: 46, y: 45),
-            control2: CGPoint(x: 41, y: 35)
+            to: CGPoint(x: 38, y: 48),
+            control1: CGPoint(x: 54, y: 68),
+            control2: CGPoint(x: 52, y: 50)
         )
 
         // Right horn: mirror of the left about x = 50 (x' = 100 - x).
-        path.move(to: CGPoint(x: 50, y: 27))
+        path.move(to: CGPoint(x: 50, y: 22))
         path.addCurve(
-            to: CGPoint(x: 85, y: 37),
-            control1: CGPoint(x: 63, y: 13),
-            control2: CGPoint(x: 83, y: 17)
+            to: CGPoint(x: 84, y: 44),
+            control1: CGPoint(x: 70, y: 16),
+            control2: CGPoint(x: 84, y: 24)
         )
         path.addCurve(
-            to: CGPoint(x: 61, y: 53),
-            control1: CGPoint(x: 87, y: 55),
-            control2: CGPoint(x: 71, y: 63)
+            to: CGPoint(x: 56, y: 70),
+            control1: CGPoint(x: 84, y: 66),
+            control2: CGPoint(x: 70, y: 72)
         )
         path.addCurve(
-            to: CGPoint(x: 67, y: 41),
-            control1: CGPoint(x: 54, y: 45),
-            control2: CGPoint(x: 59, y: 35)
+            to: CGPoint(x: 62, y: 48),
+            control1: CGPoint(x: 46, y: 68),
+            control2: CGPoint(x: 48, y: 50)
         )
 
         if includesDot {
