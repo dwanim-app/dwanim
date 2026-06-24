@@ -156,4 +156,47 @@ final class RegionParserTests: XCTestCase {
         XCTAssertEqual(flatRegion.polygons.first?.points, expected)
         XCTAssertEqual(pairRegion.polygons.first?.points, expected)
     }
+
+    // MARK: - Criterion (h): absurd NumPoints must not overflow / crash
+
+    func testHugeNumPointsDoesNotCrash() {
+        // `Int.max`: the old `count * 2` overflowed and trapped (SIGTRAP) before
+        // any bounds check. The polygon can never be filled by the short list, so
+        // it is skipped and parsing returns without crashing.
+        let intMax = """
+        [Normal]
+        NumPoints=9223372036854775807
+        PointList=0,0,1,1
+        """
+        let intMaxRegion = RegionParser.parse(intMax)
+        XCTAssertTrue(intMaxRegion.polygons.isEmpty)
+
+        // A moderately-huge value (well within Int but far larger than the list)
+        // is likewise skipped.
+        let huge = """
+        [Normal]
+        NumPoints=999999999
+        PointList=0,0,1,1
+        """
+        let hugeRegion = RegionParser.parse(huge)
+        XCTAssertTrue(hugeRegion.polygons.isEmpty)
+    }
+
+    func testNormalPolygonSurvivesAlongsideHugeNumPoints() {
+        // An unfillable absurd count is skipped, but a normal polygon declared
+        // alongside it still parses. Order: huge first, then a fillable 3-vertex
+        // polygon whose six ints follow in the flat list.
+        let text = """
+        [Normal]
+        NumPoints=9223372036854775807,3
+        PointList=20,20,30,20,25,30
+        """
+
+        let region = RegionParser.parse(text)
+
+        XCTAssertEqual(region.polygons.count, 1)
+        XCTAssertEqual(region.polygons[0].points, [
+            .init(x: 20, y: 20), .init(x: 30, y: 20), .init(x: 25, y: 30)
+        ])
+    }
 }

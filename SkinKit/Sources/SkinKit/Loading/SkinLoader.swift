@@ -46,7 +46,12 @@ public enum SkinLoader {
             guard let bytes = archive.file(named: sheet),
                   let bitmap = decoder.decode(bytes)
             else { continue }
-            sprites[sheet.lowercased()] = SpriteCutter.cut(bitmap, rects: rects)
+            // A sheet may decode but yield nothing — e.g. it is so small that
+            // every rect falls out of bounds. Per the doc above, such a sheet is
+            // omitted entirely rather than stored as an empty dict.
+            let cut = SpriteCutter.cut(bitmap, rects: rects)
+            guard !cut.isEmpty else { continue }
+            sprites[sheet.lowercased()] = cut
         }
         return sprites
     }

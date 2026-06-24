@@ -27,7 +27,10 @@ import Foundation
 /// - non-numeric entries in either list are dropped before slicing;
 /// - if the point list runs out mid-polygon, the incomplete trailing polygon is
 ///   dropped and only the fully-formed polygons are returned;
-/// - polygons declaring a non-positive vertex count are skipped.
+/// - polygons declaring a non-positive vertex count are skipped;
+/// - a polygon whose declared vertex count exceeds what the point list could
+///   ever supply is skipped (parsing continues), so an absurd `NumPoints` value
+///   can never overflow or crash.
 // TODO: future increment — also parse the `[Equalizer]` and `[WindowShade]`
 //       sections (equalizer window and shade-mode shapes).
 public enum RegionParser {
@@ -65,7 +68,12 @@ public enum RegionParser {
         var result: [SkinRegion.Polygon] = []
         var cursor = 0
         for count in counts {
-            guard count > 0 else { continue }
+            // Bound `count` BEFORE multiplying: a `NumPoints` value parsed from an
+            // untrusted file can be as large as `Int.max`, so `count * 2` would
+            // overflow and trap. The total vertex budget is `coordinates.count / 2`,
+            // so any `count` larger than that can never be filled — skip it (and
+            // keep parsing the rest), matching the existing "drop unfillable" rule.
+            guard count > 0, count <= coordinates.count / 2 else { continue }
             let needed = count * 2
             guard cursor + needed <= coordinates.count else { break }
             let slice = coordinates[cursor ..< cursor + needed]

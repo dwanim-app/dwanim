@@ -45,7 +45,23 @@ public struct Skin: Sendable {
 
     /// Looks up a single sprite by its sheet and name, or `nil` if either the
     /// sheet or the sprite within it is absent.
+    ///
+    /// Sheets are stored under their lowercased filename (see `SkinLoader`), so
+    /// the `sheet` argument is lowercased here to match — a caller may pass the
+    /// original-cased filename (e.g. `"CBUTTONS.BMP"`). The sprite `name` keys are
+    /// authored lowercase in `SpriteCoordinates` and are matched exactly.
     public func sprite(sheet: String, name: String) -> DecodedBitmap? {
-        sprites[sheet]?[name]
+        sprites[sheet.lowercased()]?[name]
+    }
+
+    /// The vis color at `index`, or `fallback` (default opaque black) if out of
+    /// range.
+    ///
+    /// `visColors` is the raw parsed `viscolor.txt` array, whose length varies in
+    /// real files (the nominal 24 is not guaranteed). Render code that indexes
+    /// fixed slots should go through this accessor to avoid an out-of-range trap.
+    public func visColor(at index: Int, fallback: RGBColor = RGBColor(r: 0, g: 0, b: 0)) -> RGBColor {
+        guard index >= 0, index < visColors.count else { return fallback }
+        return visColors[index]
     }
 }

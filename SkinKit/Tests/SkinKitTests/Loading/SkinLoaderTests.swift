@@ -215,4 +215,25 @@ final class SkinLoaderTests: XCTestCase {
         XCTAssertEqual(skin.playlist?.normalText, RGBColor(r: 0x11, g: 0x22, b: 0x33))
         XCTAssertEqual(skin.playlist?.font, "Café")
     }
+
+    // MARK: - Criterion 8: decodable-but-empty sheet leaves no entry
+
+    func testSheetThatCutsToEmptyIsAbsentOthersStillCut() throws {
+        // cbuttons.bmp decodes to a 1x1 bitmap, so every one of its 23x18 rects
+        // falls out of bounds and `SpriteCutter.cut` returns [:]. The loader must
+        // omit the sheet entirely rather than store an empty dict. numbers.bmp is
+        // sized normally and must still be present.
+        let data = ZipFixtureBuilder.build(entries: [
+            entry("cbuttons.bmp", sheetBytes(width: 1, height: 1)),
+            entry("numbers.bmp", sheetBytes(width: 90, height: 13))
+        ])
+
+        let skin = try SkinLoader.load(data, decoder: StubDecoder())
+
+        // Decoding succeeded (the sheet is not "missing"), but it cut to nothing,
+        // so there is no key at all — not even an empty dict.
+        XCTAssertNil(skin.sprites["cbuttons.bmp"])
+        XCTAssertFalse(skin.sprites.keys.contains("cbuttons.bmp"))
+        XCTAssertNotNil(skin.sprites["numbers.bmp"]?["digit0"])
+    }
 }

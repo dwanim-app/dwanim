@@ -47,6 +47,50 @@ final class SkinTests: XCTestCase {
         XCTAssertNil(skin.sprite(sheet: "cbuttons.bmp", name: "stop"))
     }
 
+    // MARK: - Convenience lookup: sheet casing matches storage
+
+    func testSpriteLookupLowercasesSheetArgument() {
+        // Sprites are stored under the lowercased sheet filename; the accessor
+        // must lowercase its `sheet` argument so an original-cased filename still
+        // resolves.
+        let skin = Skin(
+            sprites: ["cbuttons.bmp": ["play": bitmap(tag: 9)]],
+            visColors: [], playlist: nil, region: nil
+        )
+        XCTAssertEqual(skin.sprite(sheet: "CBUTTONS.BMP", name: "play"), bitmap(tag: 9))
+    }
+
+    // MARK: - Safe vis-color accessor
+
+    func testVisColorInRangeReturnsStoredColor() {
+        let colors = [
+            RGBColor(r: 10, g: 20, b: 30),
+            RGBColor(r: 40, g: 50, b: 60)
+        ]
+        let skin = Skin(sprites: [:], visColors: colors, playlist: nil, region: nil)
+
+        XCTAssertEqual(skin.visColor(at: 0), RGBColor(r: 10, g: 20, b: 30))
+        XCTAssertEqual(skin.visColor(at: 1), RGBColor(r: 40, g: 50, b: 60))
+    }
+
+    func testVisColorOutOfRangeReturnsFallback() {
+        let colors = [RGBColor(r: 10, g: 20, b: 30)]
+        let skin = Skin(sprites: [:], visColors: colors, playlist: nil, region: nil)
+
+        // Default fallback is opaque black.
+        XCTAssertEqual(skin.visColor(at: -1), RGBColor(r: 0, g: 0, b: 0))
+        XCTAssertEqual(skin.visColor(at: 1), RGBColor(r: 0, g: 0, b: 0))
+        XCTAssertEqual(skin.visColor(at: 99), RGBColor(r: 0, g: 0, b: 0))
+    }
+
+    func testVisColorCustomFallbackHonored() {
+        let skin = Skin(sprites: [:], visColors: [], playlist: nil, region: nil)
+        let fallback = RGBColor(r: 255, g: 0, b: 255)
+
+        XCTAssertEqual(skin.visColor(at: 0, fallback: fallback), fallback)
+        XCTAssertEqual(skin.visColor(at: -5, fallback: fallback), fallback)
+    }
+
     // MARK: - Cross-sheet namespacing (no collision)
 
     func testSameSpriteNameInTwoSheetsDoesNotCollide() {
