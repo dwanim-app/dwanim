@@ -33,16 +33,20 @@ public enum SkinLoader {
 
     // MARK: - Sprites
 
-    /// Cuts every sheet listed in `SpriteCoordinates.mainWindow`, keyed by the
-    /// lowercased sheet filename. Each sheet is read and decoded **exactly once**;
-    /// sheets that are absent or that the decoder rejects are omitted entirely
-    /// (no empty entry is left behind).
+    /// Cuts every sheet listed in `SpriteCoordinates.mainWindow` and
+    /// `SpriteCoordinates.playlistWindow`, keyed by the lowercased sheet filename.
+    /// Each sheet is read and decoded **exactly once**; sheets that are absent or
+    /// that the decoder rejects are omitted entirely (no empty entry is left
+    /// behind).
     private static func loadSprites(
         from archive: SkinArchive,
         decoder: BitmapDecoding
     ) -> [String: [String: DecodedBitmap]] {
         var sprites: [String: [String: DecodedBitmap]] = [:]
-        for (sheet, rects) in SpriteCoordinates.mainWindow {
+        // The main-window and playlist-window tables key disjoint sheets (no sheet
+        // filename appears in both), so a single merged pass is unambiguous.
+        let tables = [SpriteCoordinates.mainWindow, SpriteCoordinates.playlistWindow]
+        for (sheet, rects) in tables.flatMap({ $0 }) {
             guard let bytes = archive.file(named: sheet),
                   let bitmap = decoder.decode(bytes)
             else { continue }

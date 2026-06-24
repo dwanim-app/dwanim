@@ -88,6 +88,44 @@ final class SpriteCoordinatesTests: XCTestCase {
         XCTAssertEqual(names, Set((0...9).map { "digit\($0)" }))
     }
 
+    // MARK: - playlist window table
+
+    func testPlaylistWindowContainsPledit() {
+        XCTAssertTrue(
+            SpriteCoordinates.playlistWindow.keys.contains("pledit.bmp"),
+            "playlistWindow should contain pledit.bmp")
+    }
+
+    func testPlaylistWindowKeysAreLowercasedBmpFilenames() {
+        for key in SpriteCoordinates.playlistWindow.keys {
+            XCTAssertEqual(key, key.lowercased(), "sheet key \(key) should be lowercased")
+            XCTAssertTrue(key.hasSuffix(".bmp"), "sheet key \(key) should be a .bmp filename")
+        }
+    }
+
+    func testPlaylistAndMainWindowTablesKeyDisjointSheets() {
+        let main = Set(SpriteCoordinates.mainWindow.keys)
+        let pl = Set(SpriteCoordinates.playlistWindow.keys)
+        XCTAssertTrue(
+            main.isDisjoint(with: pl),
+            "main-window and playlist-window tables must not share a sheet "
+                + "filename (SkinLoader merges them in one pass): \(main.intersection(pl))")
+    }
+
+    func testPlaylistFrameSpriteGeometryIsSane() {
+        for (sheet, rects) in SpriteCoordinates.playlistWindow {
+            XCTAssertFalse(rects.isEmpty, "sheet \(sheet) should declare at least one sprite")
+            let names = rects.map(\.name)
+            XCTAssertEqual(Set(names).count, names.count, "duplicate sprite name in \(sheet)")
+            for rect in rects {
+                XCTAssertGreaterThanOrEqual(rect.x, 0, "\(sheet)/\(rect.name) x >= 0")
+                XCTAssertGreaterThanOrEqual(rect.y, 0, "\(sheet)/\(rect.name) y >= 0")
+                XCTAssertGreaterThan(rect.width, 0, "\(sheet)/\(rect.name) width > 0")
+                XCTAssertGreaterThan(rect.height, 0, "\(sheet)/\(rect.name) height > 0")
+            }
+        }
+    }
+
     func testMainBackgroundIsFullPlayerSize() {
         // main.bmp is the whole 275x116 window background; if present it must be
         // a single full-size rect.
