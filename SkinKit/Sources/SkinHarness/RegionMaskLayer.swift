@@ -17,43 +17,53 @@ import SkinKit
 //     TOP-LEFT origin, x rightward / y downward.
 //   - The content view shows the composed image at an integer `scale`, so a skin
 //     pixel spans `scale` view points.
-//   - AppKit / CoreAnimation layers are BOTTOM-LEFT origin by default (y upward).
-//     So the y axis must be FLIPPED about the (scaled) skin height.
+//   - The displayed content is NOT vertically flipped: `CGImageConversion`
+//     produces a top-left-origin CGImage and `SkinImageView` draws it
+//     right-side-up in a non-flipped `NSView`, so skin row 0 appears at the
+//     visual TOP. The `CAShapeLayer` mask shares that same layer space, so the
+//     mask must use the SAME (no-flip) y mapping to align with where each skin
+//     row actually draws. (An earlier vertical flip masked the mirrored shape.)
 //
 // A skin pixel `(px, py)` therefore maps to layer point:
 //     x = px * scale
-//     y = (skinHeight - py) * scale
+//     y = py * scale
 //
 // Each `Polygon` becomes a sub-path: move to the first vertex, line to the rest,
-// then close. The mask path is the union of all polygons (even-odd fill), which
-// matches `RegionCoverage`'s union semantics for the visible region.
+// then close. The mask path is the union of all polygons, filled with the
+// NON-ZERO winding rule so overlapping polygons OR together (true union),
+// matching `RegionCoverage`'s union semantics for the visible region.
 
 enum RegionMaskLayer {
 
     /// Builds the mask path for `region` in the content view's coordinate space,
-    /// where the view shows a `skinWidth x skinHeight` image at integer `scale`.
+    /// where the view shows the image at integer `scale`.
+    ///
+    /// `skinHeight` is the image's pixel height; it is accepted for call-site
+    /// stability but is NOT used to flip the y axis (the displayed content is not
+    /// flipped, so the mask must not be either — see the type-level note).
     ///
     /// Returns `nil` if the region has no fillable polygon (fewer than 3 points
     /// in every polygon), so the caller can fall back to an unshaped window.
     static func maskPath(
         for region: SkinRegion,
-        skinHeight: Int,
+        skinHeight _: Int,
         scale: Int
     ) -> CGPath? {
         let fillable = region.polygons.filter { $0.points.count >= 3 }
         guard !fillable.isEmpty else { return nil }
 
         let scaleD = CGFloat(scale)
-        let heightD = CGFloat(skinHeight)
         let path = CGMutablePath()
 
         for polygon in fillable {
             let points = polygon.points
-            // Map skin (top-left, y-down) -> layer (bottom-left, y-up), scaled.
+            // Map skin (top-left, y-down) -> content-layer space, scaled. The
+            // displayed content is NOT flipped, so the mask uses the same y (no
+            // vertical mirror) to align with where each skin row actually draws.
             func mapped(_ p: SkinRegion.Point) -> CGPoint {
                 CGPoint(
                     x: CGFloat(p.x) * scaleD,
-                    y: (heightD - CGFloat(p.y)) * scaleD
+                    y: CGFloat(p.y) * scaleD
                 )
             }
             path.move(to: mapped(points[0]))
@@ -70,9 +80,10 @@ enum RegionMaskLayer {
     /// the region declares no fillable polygon.
     ///
     /// The shape layer's frame matches the content view's bounds and its `path`
-    /// is built in that same (bottom-left origin) space; assigning it to the
+    /// is built in that same (no-flip) content-layer space; assigning it to the
     /// content view layer's `mask` clips the OPAQUE content to the region outline.
-    /// Even-odd fill matches the union semantics of the pure coverage math.
+    /// The NON-ZERO winding fill OR-s overlapping polygons, matching the union
+    /// semantics of the pure coverage math.
     static func make(
         for region: SkinRegion,
         skinHeight: Int,
@@ -86,7 +97,7 @@ enum RegionMaskLayer {
         let layer = CAShapeLayer()
         layer.frame = CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight)
         layer.path = path
-        layer.fillRule = .evenOdd
+        layer.fillRule = .nonZero
         // Any opaque fill color works: the shape layer is used purely as a mask;
         // CoreAnimation uses the rendered shape's alpha as the mask coverage.
         layer.fillColor = NSColor.white.cgColor
