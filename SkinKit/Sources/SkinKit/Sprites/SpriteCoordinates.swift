@@ -98,6 +98,22 @@ public enum SpriteCoordinates {
     // MARK: - posbar.bmp (seek/position bar)
     //
     // The position-bar track plus the slider thumb in normal and pressed states.
+    // Canonical sheet is 307x10: a 248-wide seek track at x=0, then two 29-wide
+    // slider-thumb sub-bitmaps — normal at x=248, pressed at x=278 — all 10px
+    // tall (248 + 29 + 29 = 306, so the rects occupy x 0..306 on a 307-wide,
+    // 10-tall sheet). These coordinates are correct and in-bounds on the modal
+    // real sheet (307x10, ~96.5% of skins) and MUST NOT be shrunk: the dynamic
+    // thumb genuinely lives at x=248/278, so clamping it would corrupt the
+    // canonical skins.
+    //
+    // Two real-sheet minorities exist and are deliberately NOT chased by changing
+    // these rects: (1) a few skins ship a 248-wide posbar — on those the `track`
+    // still fits (right edge 248) and only the two thumb sub-bitmaps fall out of
+    // bounds, so the static seek-bar background still renders and only the
+    // dynamic thumb is missing; (2) a few skins ship a SHORT strip (2-9px tall)
+    // that intentionally omits the thumb — those legitimately trade away the
+    // slider thumb. Pinning the canonical 307x10 here keeps the modal majority
+    // correct rather than corrupting them to chase those minorities.
 
     private static let positionBar: [SpriteRect] = [
         SpriteRect(name: "track",        x: 0,   y: 0, width: 248, height: 10),
@@ -109,11 +125,18 @@ public enum SpriteCoordinates {
     //
     // 28 stacked position frames (one per level), each 68 wide and 15 tall,
     // stacked from y=0. The slider thumb is baked into each frame, so there is no
-    // separate thumb sprite. 28 * 15 = 420, exactly filling the standard sheet
-    // height (some skins ship a slightly taller 433px sheet; the extra rows are
-    // unused and the frames still start at y=0).
+    // separate thumb sprite. 28 * 15 = 420 is the nominal content height, and the
+    // most common real sheet is taller still (433px). But a meaningful share of
+    // real skins ship the sheet TRIMMED a pixel or two short (418/419px), and
+    // there a 420-bottom last frame (level27, y=405..420) overruns the sheet —
+    // `SpriteCutter` then drops it, and because it drops only the offending rect
+    // the whole 28-frame set is left incomplete. To keep every level present on
+    // those trimmed sheets, the last frame's bottom is capped at 418 (so
+    // declaredMaxBottom = 418, in-bounds on the 418/419px sheets); level27 is the
+    // highest-volume frame, so cropping its last rows is the least-visible trim.
 
-    private static let volume: [SpriteRect] = sliderBackgrounds(count: 28, width: 68, height: 15)
+    private static let volume: [SpriteRect] =
+        sliderBackgrounds(count: 28, width: 68, height: 15, maxBottom: 418)
 
     // MARK: - balance.bmp (balance slider)
     //
@@ -123,11 +146,16 @@ public enum SpriteCoordinates {
     // balance knob graphic only occupies the left portion of the strip, so the
     // canonical sheet is authored 47 wide. A 47-wide frame is in-bounds on both
     // 47-wide and 68-wide balance sheets; a 68-wide frame would overrun the many
-    // skins that ship balance at 47px. 28 * 15 = 420, the standard content
-    // height (some skins ship a slightly taller 433px sheet; the extra rows are
-    // unused and the frames still start at y=0).
+    // skins that ship balance at 47px.
+    //
+    // The vertical extent shares volume's exposure: 28 * 15 = 420 is nominal, but
+    // a share of real skins ship balance TRIMMED to 418/419px, where a 420-bottom
+    // last frame overruns and `SpriteCutter` drops it (leaving the set
+    // incomplete). The last frame's bottom is therefore capped at 418 (so
+    // declaredMaxBottom = 418), matching the volume fix.
 
-    private static let balance: [SpriteRect] = sliderBackgrounds(count: 28, width: 47, height: 15)
+    private static let balance: [SpriteRect] =
+        sliderBackgrounds(count: 28, width: 47, height: 15, maxBottom: 418)
 
     // MARK: - monoster.bmp (mono / stereo indicators)
     //
@@ -182,9 +210,24 @@ public enum SpriteCoordinates {
 
     /// Builds `count` vertically stacked slider background frames named
     /// `level0 ... level(count-1)`, top to bottom.
-    private static func sliderBackgrounds(count: Int, width: Int, height: Int) -> [SpriteRect] {
+    ///
+    /// `maxBottom`, when supplied, caps the bottom edge of the LAST frame so the
+    /// stack never overruns a sheet of that pixel height. The earlier frames are
+    /// unaffected (they end well above the cap); only the final frame is cropped
+    /// to `maxBottom - lastFrameTop` rows. This keeps all `count` frames present
+    /// on real sheets that ship a few pixels short of the nominal `count*height`,
+    /// where dropping the overrunning last frame would otherwise make
+    /// `SpriteCutter` reject it (the dependent control would lose that level).
+    private static func sliderBackgrounds(
+        count: Int, width: Int, height: Int, maxBottom: Int? = nil
+    ) -> [SpriteRect] {
         (0..<count).map { level in
-            SpriteRect(name: "level\(level)", x: 0, y: level * height, width: width, height: height)
+            let top = level * height
+            var frameHeight = height
+            if let maxBottom, level == count - 1, top + height > maxBottom {
+                frameHeight = maxBottom - top
+            }
+            return SpriteRect(name: "level\(level)", x: 0, y: top, width: width, height: frameHeight)
         }
     }
 
