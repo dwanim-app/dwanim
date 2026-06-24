@@ -9,11 +9,14 @@ let package = Package(
     products: [
         .library(name: "SkinKit", targets: ["SkinKit"]),
         .library(name: "SkinKitImageIO", targets: ["SkinKitImageIO"]),
-        .library(name: "SkinRender", targets: ["SkinRender"])
+        .library(name: "SkinRender", targets: ["SkinRender"]),
+        .library(name: "PlayerCore", targets: ["PlayerCore"])
     ],
     targets: [
         .target(name: "SkinKit"),
         .testTarget(name: "SkinKitTests", dependencies: ["SkinKit"]),
+        .target(name: "PlayerCore"),
+        .testTarget(name: "PlayerCoreTests", dependencies: ["PlayerCore"]),
         .target(name: "SkinKitImageIO", dependencies: ["SkinKit"]),
         .testTarget(
             name: "SkinKitImageIOTests",
