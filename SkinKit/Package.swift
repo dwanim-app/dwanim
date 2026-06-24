@@ -17,6 +17,10 @@ let package = Package(
         .testTarget(
             name: "SkinKitImageIOTests",
             dependencies: ["SkinKitImageIO", "SkinKit"]
+        ),
+        .executableTarget(
+            name: "SkinHarness",
+            dependencies: ["SkinKit", "SkinKitImageIO"]
         )
     ]
 )
