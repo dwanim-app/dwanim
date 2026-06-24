@@ -42,6 +42,8 @@ private struct Arguments {
 }
 
 private let usage = "Usage: SkinHarness <path.wsz> [--png <out.png>] [--scale N] [--title <text>]"
+    + "\n   or: SkinHarness --play <audiofile>"
+    + "\n   or: SkinHarness --interactive <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
 
 private func parseArguments(_ argv: [String]) -> Arguments {
     var skinPath: String?
@@ -252,6 +254,15 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
 }
 
 // MARK: - Entry point
+
+// Interactive mode is a separate path: `--interactive <skin.wsz> <audiofile>...`
+// opens the rendered skin window and wires its transport buttons to a live
+// `PlayerCore`. It is handled in `InteractiveMode.swift`; dispatch here before
+// skin-path parsing so its positional audio files are not mistaken for extra
+// `.wsz` arguments. `runInteractiveMode` never returns (it drives the run loop).
+if CommandLine.arguments.contains("--interactive") {
+    runInteractiveMode()
+}
 
 // Play mode is a separate path: `--play <audiofile>` exercises the audio engine
 // end to end instead of rendering a skin. It is handled in `PlayMode.swift`;
