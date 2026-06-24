@@ -253,6 +253,18 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
 
 // MARK: - Entry point
 
+// Play mode is a separate path: `--play <audiofile>` exercises the audio engine
+// end to end instead of rendering a skin. It is handled in `PlayMode.swift`;
+// dispatch here before skin-path parsing so the audio path is not mistaken for a
+// `.wsz` argument. `runPlayMode` never returns (it drives the run loop and exits).
+if let playIndex = CommandLine.arguments.firstIndex(of: "--play") {
+    let valueIndex = playIndex + 1
+    guard valueIndex < CommandLine.arguments.count else {
+        fail("Missing value for --play. Usage: SkinHarness --play <path-to-audio>")
+    }
+    runPlayMode(path: CommandLine.arguments[valueIndex])
+}
+
 private let arguments = parseArguments(CommandLine.arguments)
 private let composed = loadComposedImage(at: arguments.skinPath, title: arguments.title)
 

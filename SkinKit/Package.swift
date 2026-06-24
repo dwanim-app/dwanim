@@ -35,7 +35,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "SkinHarness",
-            dependencies: ["SkinKit", "SkinKitImageIO", "SkinRender"]
+            dependencies: ["SkinKit", "SkinKitImageIO", "SkinRender", "PlayerCore", "PlaybackKit"]
         )
     ]
 )
