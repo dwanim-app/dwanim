@@ -418,17 +418,26 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
         // PlayerCore's transport). kbps is drawn straight; kHz is round(Hz/1000).
         // `drawNumber` is right-aligned and clips to its field, so a large
         // uncompressed bitrate (e.g. ~1411 kbps) never overflows the 3-cell box.
-        // With nothing loaded the boxes are left blank (no draw).
+        // The kbps box is drawn only when the bitrate is known (> 0); it is
+        // currently deferred (always 0 until async asset loading lands at M5), so
+        // the box stays blank rather than showing "0". With nothing loaded both
+        // boxes are left blank (no draw).
         if let format, core.currentTrack != nil {
-            BitmapText.drawNumber(
-                format.bitrateKbps,
-                from: skin,
-                onto: &composed,
-                x: MainWindowLayout.kbpsDisplayOrigin.x,
-                y: MainWindowLayout.kbpsDisplayOrigin.y,
-                digits: MainWindowLayout.kbpsDisplayDigits
-            )
-            let khz = Int((format.sampleRateHz / 1000).rounded())
+            if format.bitrateKbps > 0 {
+                BitmapText.drawNumber(
+                    format.bitrateKbps,
+                    from: skin,
+                    onto: &composed,
+                    x: MainWindowLayout.kbpsDisplayOrigin.x,
+                    y: MainWindowLayout.kbpsDisplayOrigin.y,
+                    digits: MainWindowLayout.kbpsDisplayDigits
+                )
+            }
+            // Guard the Double->Int conversion: `Int(NaN/Inf)` traps, matching the
+            // isFinite guards on every other Double->Int in the codebase.
+            let khz = format.sampleRateHz.isFinite
+                ? Int((format.sampleRateHz / 1000).rounded())
+                : 0
             BitmapText.drawNumber(
                 khz,
                 from: skin,

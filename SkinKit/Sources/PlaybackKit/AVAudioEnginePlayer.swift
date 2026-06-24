@@ -29,9 +29,11 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
     private var processingFormat: AVAudioFormat?
     private var totalFrames: AVAudioFramePosition = 0
     private var sampleRate: Double = 0
-    /// The loaded file's bitrate in kbps, computed once on load from the audio
-    /// asset's estimated data rate. `0` when unknown or nothing is loaded.
-    /// Surfaced via `TrackFormatProviding` for the kbps number box.
+    /// The loaded file's bitrate in kbps. Deferred: always `0` for now.
+    /// Surfaced via `TrackFormatProviding` for the kbps number box. The accurate
+    /// compressed-audio bitrate needs the async `AVAsset.load(.estimatedDataRate)`
+    /// API, which arrives with the strict-concurrency work at M5; until then this
+    /// stays `0` so the kbps box reads blank.
     private var loadedBitrateKbps: Int = 0
 
     // MARK: - Position state
@@ -82,46 +84,12 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         processingFormat = format
         totalFrames = loaded.length
         sampleRate = format.sampleRate
-        loadedBitrateKbps = Self.estimatedBitrateKbps(of: url)
+        // Bitrate stays 0 (deferred to M5): the accurate value needs the async
+        // `AVAsset.load(.estimatedDataRate)` API. `sampleRate` above is accurate
+        // and synchronous, so kHz is reported now and kbps reads blank.
 
         resetPositionState()
         reconnect(using: format)
-    }
-
-    /// The estimated bitrate of the audio at `url`, in kbps, or `0` if it cannot
-    /// be determined. Computed once at load, off the render path.
-    ///
-    /// Primary source is the first audio track's `estimatedDataRate`
-    /// (bits/second) from an `AVURLAsset`, converted to kbps (/1000). That is
-    /// populated for COMPRESSED containers (MP3/AAC/…). For UNCOMPRESSED LPCM
-    /// (e.g. WAV/AIFF) AVFoundation reports `estimatedDataRate == 0`, so we fall
-    /// back to deriving the effective rate from the track's stream format
-    /// (sampleRate × bitsPerChannel × channels) — e.g. ~1411 kbps for
-    /// 44.1k/16-bit/stereo. A non-finite/non-positive result everywhere maps to
-    /// `0` (unknown).
-    private static func estimatedBitrateKbps(of url: URL) -> Int {
-        let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .audio).first else { return 0 }
-
-        let estimated = track.estimatedDataRate // Float, bits/second
-        if estimated.isFinite, estimated > 0 {
-            return Int((estimated / 1000).rounded())
-        }
-
-        // LPCM fallback: derive bits/second from the stream's basic description.
-        for description in track.formatDescriptions {
-            // `formatDescriptions` is `[Any]` of `CMFormatDescription`.
-            let formatDescription = description as! CMFormatDescription
-            guard let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(
-                formatDescription
-            )?.pointee else { continue }
-            let bitsPerSecond = asbd.mSampleRate
-                * Double(asbd.mBitsPerChannel)
-                * Double(asbd.mChannelsPerFrame)
-            guard bitsPerSecond.isFinite, bitsPerSecond > 0 else { continue }
-            return Int((bitsPerSecond / 1000).rounded())
-        }
-        return 0
     }
 
     // MARK: - Transport
@@ -335,12 +303,14 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 
 /// The loaded track's format facts (kHz / kbps), kept separate from transport.
 ///
-/// Both values are computed once on `load` and read directly here. `sampleRateHz`
-/// is the loaded file's processing-format sample rate; `bitrateKbps` is the audio
-/// asset's estimated data rate converted to kbps. Both are `0` when nothing is
-/// loaded (the kbps/kHz number boxes then read blank). This is opt-in and never
-/// flows through `PlayerCore`'s transport — a consumer casts the engine to this
-/// protocol, exactly like the PCM tap.
+/// `sampleRateHz` is the loaded file's processing-format sample rate, captured
+/// synchronously on `load` — accurate and `0` before any load. `bitrateKbps` is
+/// DEFERRED: it always returns `0` for now (the kbps box reads blank). The
+/// accurate compressed-audio bitrate needs the async
+/// `AVAsset.load(.estimatedDataRate)` API, which lands with the strict-concurrency
+/// work at M5. This surface is opt-in and never flows through `PlayerCore`'s
+/// transport — a consumer casts the engine to this protocol, exactly like the
+/// PCM tap.
 extension AVAudioEnginePlayer: TrackFormatProviding {
 
     public var sampleRateHz: Double {
@@ -350,6 +320,8 @@ extension AVAudioEnginePlayer: TrackFormatProviding {
     }
 
     public var bitrateKbps: Int {
+        // Deferred to M5 (async asset loading): always 0 for now. See
+        // `loadedBitrateKbps`.
         loadedBitrateKbps
     }
 }

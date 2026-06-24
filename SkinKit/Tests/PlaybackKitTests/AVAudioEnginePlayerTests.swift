@@ -95,20 +95,16 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         XCTAssertEqual(player.sampleRateHz, 22_050, accuracy: 1)
     }
 
-    /// An uncompressed 44.1k/16-bit/stereo WAV reports its large effective
-    /// bitrate (~1411 kbps): the estimated data rate is positive and in the right
-    /// ballpark. (The render side clips this to the field width; here we only
-    /// prove the engine surfaces a sensible positive value.)
-    func testBitrateReportsPositiveDataRateForUncompressedStereo() throws {
+    /// Bitrate is deferred to M5 (it needs the async
+    /// `AVAsset.load(.estimatedDataRate)` API), so after any load `bitrateKbps`
+    /// stays 0 and the kbps box reads blank. The sync sampleRate facts above are
+    /// unaffected.
+    func testBitrateIsZeroPendingAsyncAssetLoading() throws {
         let url = try synthWAV(duration: 1.0, sampleRate: 44_100, channels: 2)
         let player = AVAudioEnginePlayer()
         try player.load(url)
 
-        // 44100 * 16 * 2 = 1_411_200 bits/s -> ~1411 kbps. Allow generous slack
-        // for header/estimate variation, but require it to be clearly positive
-        // and uncompressed-scale (well above any lossy rate).
-        XCTAssertGreaterThan(player.bitrateKbps, 1000)
-        XCTAssertLessThan(player.bitrateKbps, 2000)
+        XCTAssertEqual(player.bitrateKbps, 0)
     }
 
     // MARK: - Initial state
