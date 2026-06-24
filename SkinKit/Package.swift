@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "SkinRender", targets: ["SkinRender"]),
         .library(name: "PlayerCore", targets: ["PlayerCore"]),
         .library(name: "PlayerControl", targets: ["PlayerControl"]),
-        .library(name: "PlaybackKit", targets: ["PlaybackKit"])
+        .library(name: "PlaybackKit", targets: ["PlaybackKit"]),
+        .library(name: "SpectrumKit", targets: ["SpectrumKit"])
     ],
     targets: [
         .target(name: "SkinKit"),
@@ -39,11 +40,13 @@ let package = Package(
             name: "PlayerControlTests",
             dependencies: ["PlayerControl", "SkinRender", "PlayerCore"]
         ),
+        .target(name: "SpectrumKit"),
+        .testTarget(name: "SpectrumKitTests", dependencies: ["SpectrumKit"]),
         .executableTarget(
             name: "SkinHarness",
             dependencies: [
                 "SkinKit", "SkinKitImageIO", "SkinRender",
-                "PlayerCore", "PlayerControl", "PlaybackKit"
+                "PlayerCore", "PlayerControl", "PlaybackKit", "SpectrumKit"
             ]
         )
     ]

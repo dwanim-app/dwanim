@@ -51,6 +51,17 @@ public enum MainWindowLayout {
     // provisional — tune at render
     public static let timeDisplayOrigin = (x: 48, y: 26)
 
+    /// The classic main-window visualization (spectrum/oscilloscope) area: the
+    /// rectangular region the player draws the live spectrum into, just below the
+    /// title bar and to the left of the title display. `(x, y)` is the top-left
+    /// corner; `width`/`height` the region size, in window pixels.
+    ///
+    /// Clean-room from the public classic `.wsz` format layout (the ~24,43,76,16
+    /// vis region). A consumer (e.g. `SkinRender.SpectrumRenderer`) draws bars into
+    /// this rect; pixels outside it are left untouched.
+    // provisional — tune at render
+    public static let visualizationFrame = (x: 24, y: 43, width: 76, height: 16)
+
     /// Static controls to composite over `main.bmp`, in draw order (back to
     /// front). The background itself is NOT in this list — the compositor draws
     /// `main.bmp`/`background` first, then overlays these.

@@ -286,3 +286,89 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         playerNode.stop()
     }
 }
+
+// MARK: - AudioTapProviding
+
+/// Live PCM tap, kept separate from the transport surface.
+///
+/// The tap sits on `engine.mainMixerNode` — the post-mix point — so it captures
+/// whatever is actually being rendered regardless of the source file's channel
+/// layout. Each delivered buffer is downmixed to a single mono `[Float]` frame
+/// (the per-channel average) before the stored callback is invoked. This is the
+/// payoff of building transport on `AVAudioEngine` (ADR §3.3): the analyzer can
+/// observe audio without `PlayerCore` ever touching PCM.
+extension AVAudioEnginePlayer: AudioTapProviding {
+
+    public func installTap(
+        _ onBuffer: @escaping (_ monoSamples: [Float], _ sampleRate: Double) -> Void
+    ) {
+        // AVAudioEngine permits only one tap per bus, so remove-then-install to
+        // be safe if a tap was already present (calling `installTap` twice must
+        // not crash).
+        engine.mainMixerNode.removeTap(onBus: 0)
+
+        // Capture the callback DIRECTLY in the tap block (a local `let` the block
+        // closes over) instead of reading a shared mutable property on the audio
+        // render thread. The block keeps the closure alive for the life of the
+        // tap; `removeTap(onBus:)` tears the block down, releasing it. The audio
+        // thread therefore never reads shared mutable state.
+        let callback = onBuffer
+
+        // `format: nil` adopts the bus's own (output) format. Installing before
+        // or after `engine.start()` is fine — the block simply will not fire
+        // until audio flows through the mixer.
+        engine.mainMixerNode.installTap(
+            onBus: 0,
+            bufferSize: 1024,
+            format: nil
+        ) { buffer, _ in
+            // Fires on an audio render thread. Downmix to mono and hand off; the
+            // consumer is responsible for thread-hopping before touching UI. No
+            // shared mutable state is read here — `callback` is captured by value.
+            guard let mono = AVAudioEnginePlayer.monoSamples(from: buffer) else { return }
+            callback(mono, buffer.format.sampleRate)
+        }
+    }
+
+    public func removeTap() {
+        // `removeTap(onBus:)` synchronously tears down the in-flight block,
+        // releasing its captured callback; it is idempotent, so calling it with
+        // no tap present is harmless.
+        engine.mainMixerNode.removeTap(onBus: 0)
+    }
+
+    /// Averages every channel of `buffer` into a single mono `[Float]` frame.
+    ///
+    /// Returns `nil` for an empty or float-data-less buffer. A single-channel
+    /// buffer is copied through unchanged; multi-channel buffers are averaged
+    /// per frame.
+    ///
+    /// Module-internal (not public) so headless offline-render tests can drive
+    /// the exact downmix the live tap uses; it is not part of the public API.
+    static func monoSamples(from buffer: AVAudioPCMBuffer) -> [Float]? {
+        guard let channels = buffer.floatChannelData else { return nil }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return nil }
+
+        let channelCount = Int(buffer.format.channelCount)
+        guard channelCount > 0 else { return nil }
+
+        var mono = [Float](repeating: 0, count: frameLength)
+        if channelCount == 1 {
+            let samples = channels[0]
+            for frame in 0..<frameLength {
+                mono[frame] = samples[frame]
+            }
+        } else {
+            let scale = 1 / Float(channelCount)
+            for frame in 0..<frameLength {
+                var sum: Float = 0
+                for channel in 0..<channelCount {
+                    sum += channels[channel][frame]
+                }
+                mono[frame] = sum * scale
+            }
+        }
+        return mono
+    }
+}

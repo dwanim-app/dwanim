@@ -7,6 +7,7 @@ import PlayerCore
 import SkinKit
 import SkinKitImageIO
 import SkinRender
+import SpectrumKit
 
 // SkinHarness interactive mode: a dev-only path that wires the rendered skin
 // window to the audio core so clicking the transport buttons actually controls
@@ -25,7 +26,7 @@ import SkinRender
 //   3. Open the skin window, reusing the same scale + region-mask pipeline as the
 //      plain window mode. The content view accepts mouse clicks.
 //   4. mouseDown -> skin-space coords -> ControlHitTest -> a PlayerCore action.
-//   5. A ~0.2s repeating main-run-loop timer recomposes the window from the live
+//   5. A ~0.04s (25 Hz) repeating main-run-loop timer recomposes the window from the live
 //      PlayerCore state (time + title overlays, optional pressed-button feedback)
 //      and swaps the view's image.
 //
@@ -142,12 +143,52 @@ final class InteractiveSkinView: NSView {
     }
 }
 
+// MARK: - Latest-samples holder
+//
+// The single point of contact between the audio render thread (which produces
+// PCM in the tap) and the main thread (which consumes it in the redraw timer).
+// The tap does the MINIMUM on the audio thread: it just stashes the most recent
+// mono frame + sample rate under a lock. No analysis, no allocation beyond the
+// frame copy, no UI. The main thread reads the latest snapshot and runs the FFT.
+//
+// An `NSLock` (not a serial queue) keeps the audio-thread critical section tiny
+// and non-blocking-ish — store/read a small struct and return. Only the latest
+// frame is kept (older frames are simply overwritten); the analyzer always wants
+// the most recent window, so dropping stale frames is correct, not lossy.
+private final class LatestSamples {
+    private let lock = NSLock()
+    private var samples: [Float] = []
+    private var sampleRate: Double = 44_100
+
+    /// Audio-thread entry point: overwrite the stashed frame. Tiny critical
+    /// section — copy the array reference and the rate, then return.
+    func store(_ samples: [Float], sampleRate: Double) {
+        lock.lock()
+        self.samples = samples
+        self.sampleRate = sampleRate
+        lock.unlock()
+    }
+
+    /// Main-thread entry point: read the latest stashed frame + rate.
+    func latest() -> (samples: [Float], sampleRate: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (samples, sampleRate)
+    }
+}
+
 // MARK: - Controller
 
 /// Owns the live window: the skin, the core, the view, and the redraw timer. It
 /// recomposes the window each tick from the current `PlayerCore` state and swaps
 /// the view's image, and routes mouse-down hits to `apply(_:to:)`.
-private final class InteractiveController {
+///
+/// It also owns the spectrum visualizer wiring: an audio tap stashes the latest
+/// mono samples into a lock-guarded `LatestSamples` (audio thread, minimum work),
+/// and the redraw timer (main thread) reads that snapshot, runs the
+/// `SpectrumAnalyzer`, and draws the bars via `SpectrumRenderer`. The analyzer and
+/// all SkinRender drawing stay on the main thread.
+private final class InteractiveController: NSObject, NSWindowDelegate, NSApplicationDelegate {
     private let skin: Skin
     private let core: PlayerCore
     private let view: InteractiveSkinView
@@ -158,11 +199,50 @@ private final class InteractiveController {
 
     private var timer: Timer?
 
-    init(skin: Skin, core: PlayerCore, view: InteractiveSkinView, scale: Int) {
+    // MARK: Spectrum wiring
+
+    /// The engine's PCM tap source (the same object backing `core`). Kept so the
+    /// tap can be installed in `start()` and removed in `stop()`.
+    private let tap: AudioTapProviding?
+    /// Lock-guarded latest mono samples, written by the audio thread and read by
+    /// the main-thread redraw timer.
+    private let latestSamples = LatestSamples()
+    /// FFT spectrum analyzer (main-thread only). `barCount` is chosen to fit the
+    /// visualization frame width.
+    private let analyzer: SpectrumAnalyzer
+
+    /// Number of spectrum bars, DERIVED from the visualization-frame width so the
+    /// two stay coupled: ~4px per bar across the frame (`max(1, width / 4)` →
+    /// 19 bars at the provisional 76px). Deriving it (rather than hardcoding 19
+    /// against a provisional 76) means that if the frame is later retuned the bar
+    /// count follows, instead of `slotWidth` silently rounding to 0 and the vis
+    /// area going blank. The lower bound of 1 keeps the analyzer well-formed even
+    /// for a degenerate frame.
+    private static func barCount(forVisWidth width: Int) -> Int {
+        max(1, width / 4)
+    }
+
+    init(skin: Skin, core: PlayerCore, view: InteractiveSkinView, scale: Int, tap: AudioTapProviding?) {
         self.skin = skin
         self.core = core
         self.view = view
         self.scale = scale
+        self.tap = tap
+
+        let visWidth = MainWindowLayout.visualizationFrame.width
+        let bars = InteractiveController.barCount(forVisWidth: visWidth)
+        // Guard: if the frame is so narrow that even a single bar can't get a
+        // full pixel slot, the vis area would draw blank. Surface it rather than
+        // failing silently (one-line stderr note; the harness keeps running).
+        if visWidth < bars {
+            FileHandle.standardError.write(Data(
+                ("Warning: visualization frame width (\(visWidth)px) is narrower than the "
+                    + "derived bar count (\(bars)); the spectrum may render blank.\n").utf8
+            ))
+        }
+        self.analyzer = SpectrumAnalyzer(barCount: bars)
+
+        super.init()
 
         view.onMouseDown = { [weak self] viewX, viewY, viewHeight in
             self?.handleMouseDown(viewX: viewX, viewY: viewY, viewHeight: viewHeight)
@@ -170,14 +250,54 @@ private final class InteractiveController {
         view.onMouseUp = { [weak self] in self?.handleMouseUp() }
     }
 
-    /// Start the ~0.2s redraw loop on the main run loop and draw the first frame.
+    /// Start the redraw loop on the main run loop and install the audio tap.
+    ///
+    /// The tap block runs on the AUDIO render thread and does the minimum: stash
+    /// the latest mono samples + sample rate under a lock. The redraw timer (main
+    /// thread) does the analysis + drawing. The timer runs at ~25 Hz so the
+    /// spectrum animates smoothly (full-window recompose per tick is acceptable
+    /// for the dev harness; the static/dynamic patch seam is a tracked M5 item).
     func start() {
+        tap?.installTap { [weak self] samples, sampleRate in
+            // AUDIO THREAD: minimum work — stash and return.
+            self?.latestSamples.store(samples, sampleRate: sampleRate)
+        }
+
         redraw()
-        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.04, repeats: true) { [weak self] _ in
             self?.redraw()
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    /// Stop the redraw loop and remove the audio tap. Optional teardown; safe if
+    /// nothing was installed.
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        tap?.removeTap()
+    }
+
+    // MARK: NSWindowDelegate
+
+    /// The window is closing — tear down before the process exits. Without this,
+    /// closing the titled fallback window would leave the ~25 Hz `redraw()` timer
+    /// firing against a dead view and the audio tap still installed. We stop the
+    /// timer + remove the tap, then terminate the app so the run loop exits
+    /// cleanly. (The borderless region window has no close button, but wiring the
+    /// delegate there too keeps teardown correct if it is ever closed.)
+    func windowWillClose(_ notification: Notification) {
+        stop()
+        NSApp.terminate(nil)
+    }
+
+    // MARK: NSApplicationDelegate
+
+    /// Belt-and-suspenders: quit once the last window closes, so any close path
+    /// that bypasses `windowWillClose` still exits the process cleanly.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 
     // MARK: Mouse
@@ -236,6 +356,24 @@ private final class InteractiveController {
             x: MainWindowLayout.titleTextOrigin.x,
             y: MainWindowLayout.titleTextOrigin.y,
             maxWidth: MainWindowLayout.titleTextWidth
+        )
+
+        // Spectrum overlay: read the latest stashed samples (audio thread wrote
+        // them), run the analyzer (main thread), and draw the bars into the vis
+        // frame. With no audio flowing the samples are empty -> all-zero levels ->
+        // the vis area is left as background. Drawn before the pressed-sprite so a
+        // button press still reads on top.
+        let snapshot = latestSamples.latest()
+        let levels = analyzer.process(snapshot.samples, sampleRate: snapshot.sampleRate)
+        let vis = MainWindowLayout.visualizationFrame
+        SpectrumRenderer.draw(
+            levels,
+            into: &composed,
+            x: vis.x,
+            y: vis.y,
+            width: vis.width,
+            height: vis.height,
+            palette: skin.visColors
         )
 
         // Pressed-button feedback: while a transport/toggle button is held, draw
@@ -311,12 +449,15 @@ func runInteractiveMode() -> Never {
         let stem = url.deletingPathExtension().lastPathComponent
         return Track(url: url, title: stem)
     }
-    let core = PlayerCore(engine: AVAudioEnginePlayer())
+    // Keep the concrete engine so it can be opt-in cast to `AudioTapProviding`
+    // for the spectrum tap (PCM must never flow through PlayerCore's transport).
+    let engine = AVAudioEnginePlayer()
+    let core = PlayerCore(engine: engine)
     core.load(tracks)
 
     // Open the window, reusing the existing scale + region-mask pipeline.
     let region = skin.region.flatMap { $0.polygons.isEmpty ? nil : $0 }
-    openInteractiveWindow(skin: skin, core: core, region: region, scale: arguments.scale)
+    openInteractiveWindow(skin: skin, core: core, tap: engine, region: region, scale: arguments.scale)
 }
 
 /// Build and show the skin window, reusing the same opaque-content + window-level
@@ -325,6 +466,7 @@ func runInteractiveMode() -> Never {
 private func openInteractiveWindow(
     skin: Skin,
     core: PlayerCore,
+    tap: AudioTapProviding?,
     region: SkinRegion?,
     scale: Int
 ) -> Never {
@@ -360,6 +502,12 @@ private func openInteractiveWindow(
         )
     }
 
+    // Build the controller first so it can serve as the window delegate: closing
+    // the window then routes through `windowWillClose` → `stop()` (timer +tap
+    // teardown) → clean app termination.
+    let controller = InteractiveController(skin: skin, core: core, view: contentView, scale: scale, tap: tap)
+    liveController = controller
+
     let window: NSWindow
     if let maskLayer {
         window = NSWindow(
@@ -382,12 +530,17 @@ private func openInteractiveWindow(
         )
         window.title = "SkinHarness"
     }
+    // Both window paths get the delegate: the titled fallback so its close button
+    // tears down cleanly, and the borderless region window (no close button) so a
+    // programmatic close/terminate is still correct teardown.
+    window.delegate = controller
     window.contentView = contentView
     window.center()
     window.makeKeyAndOrderFront(nil)
 
-    let controller = InteractiveController(skin: skin, core: core, view: contentView, scale: scale)
-    liveController = controller
+    // Belt and suspenders: also exit when the last window closes, in case a close
+    // path bypasses the delegate.
+    app.delegate = controller
     controller.start()
 
     app.activate(ignoringOtherApps: true)
