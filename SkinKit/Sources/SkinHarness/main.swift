@@ -2,23 +2,24 @@ import AppKit
 import Foundation
 import SkinKit
 import SkinKitImageIO
+import SkinRender
 
 // SkinHarness: a dev-only shell that loads a classic skin archive and draws its
-// main window background. This is the shell layer (it may import AppKit /
+// composed main window. This is the shell layer (it may import AppKit /
 // CoreGraphics / ImageIO); the SkinKit core stays platform-neutral.
 //
 // Usage: SkinHarness <path-to.wsz> [--png <out.png>] [--scale N]
 //
-// TODO: This increment renders only the main-window BACKGROUND ("main.bmp"
-// sprite "background"). Compositing the title bar, transport buttons, and
-// number displays at their on-window positions is the next increment and
-// requires the window-layout coordinate map, which is intentionally not done
-// here.
-
-// MARK: - Constants
-
-private let mainSheet = "main.bmp"
-private let backgroundSprite = "background"
+// The harness composes the main window via `MainWindowComposer` (the pure RGBA8
+// compositor in `SkinRender`): it copies the "main.bmp" background, then
+// overlays each static control from the `MainWindowLayout` coordinate table
+// (title bar, transport buttons, shuffle / repeat, position track, volume /
+// balance backgrounds, mono / stereo) at its on-window position. Missing
+// sprites are skipped (fault tolerant). The composed `DecodedBitmap` is then
+// bridged to a `CGImage` here in the shell for scaling and PNG / window output.
+//
+// TODO: the time / number display and the scrolling song title are deferred
+// (they need dynamic content plus the provisional text.bmp glyph map).
 
 // MARK: - Failure handling
 
@@ -75,7 +76,7 @@ private func parseArguments(_ argv: [String]) -> Arguments {
 
 // MARK: - Loading
 
-private func loadBackgroundImage(at path: String) -> CGImage {
+private func loadComposedImage(at path: String) -> CGImage {
     let url = URL(fileURLWithPath: path)
 
     let data: Data
@@ -92,14 +93,14 @@ private func loadBackgroundImage(at path: String) -> CGImage {
         fail("Could not load skin at \(path): \(error)")
     }
 
-    guard let bitmap = skin.sprite(sheet: mainSheet, name: backgroundSprite) else {
-        fail("Skin at \(path) has no main-window background (\(mainSheet)/\(backgroundSprite)).")
+    guard let composed = MainWindowComposer.compose(skin) else {
+        fail("Could not compose main window for skin at \(path): "
+            + "no main-window background (main.bmp/background).")
     }
 
-    guard let image = CGImageConversion.makeImage(from: bitmap) else {
-        fail("Could not build an image from the main-window background.")
+    guard let image = CGImageConversion.makeImage(from: composed) else {
+        fail("Could not build an image from the composed main window for skin at \(path).")
     }
-
     return image
 }
 
@@ -146,10 +147,10 @@ private func runWindowMode(image: CGImage, scale: Int) {
 // MARK: - Entry point
 
 private let arguments = parseArguments(CommandLine.arguments)
-private let backgroundImage = loadBackgroundImage(at: arguments.skinPath)
+private let composedImage = loadComposedImage(at: arguments.skinPath)
 
 if let output = arguments.pngOutput {
-    runPNGMode(image: backgroundImage, output: output, scale: arguments.scale)
+    runPNGMode(image: composedImage, output: output, scale: arguments.scale)
 } else {
-    runWindowMode(image: backgroundImage, scale: arguments.scale)
+    runWindowMode(image: composedImage, scale: arguments.scale)
 }

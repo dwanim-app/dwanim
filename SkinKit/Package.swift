@@ -8,7 +8,8 @@ let package = Package(
     ],
     products: [
         .library(name: "SkinKit", targets: ["SkinKit"]),
-        .library(name: "SkinKitImageIO", targets: ["SkinKitImageIO"])
+        .library(name: "SkinKitImageIO", targets: ["SkinKitImageIO"]),
+        .library(name: "SkinRender", targets: ["SkinRender"])
     ],
     targets: [
         .target(name: "SkinKit"),
@@ -18,9 +19,14 @@ let package = Package(
             name: "SkinKitImageIOTests",
             dependencies: ["SkinKitImageIO", "SkinKit"]
         ),
+        .target(name: "SkinRender", dependencies: ["SkinKit"]),
+        .testTarget(
+            name: "SkinRenderTests",
+            dependencies: ["SkinRender", "SkinKit"]
+        ),
         .executableTarget(
             name: "SkinHarness",
-            dependencies: ["SkinKit", "SkinKitImageIO"]
+            dependencies: ["SkinKit", "SkinKitImageIO", "SkinRender"]
         )
     ]
 )
