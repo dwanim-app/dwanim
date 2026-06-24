@@ -99,4 +99,52 @@ final class MainWindowLayoutTests: XCTestCase {
             frame.y + frame.height, MainWindowLayout.windowHeight,
             "vis frame bottom edge exceeds window height")
     }
+
+    /// Every DYNAMIC overlay origin (title text, time, kbps, kHz) — the ones the
+    /// harness draws onto, not the static sprite table — must fit entirely inside
+    /// the 275x116 window. The number boxes draw RIGHT-aligned across
+    /// `digits * 9`-pixel-wide cells (one `numbers.bmp` glyph is 9px), so the
+    /// right edge is `origin.x + digits * 9`. The title text spans `titleTextWidth`.
+    func testDynamicOriginsFitTheWindow() {
+        let width = MainWindowLayout.windowWidth
+        let height = MainWindowLayout.windowHeight
+        let glyphWidth = 9
+
+        func assertOrigin(
+            _ name: String,
+            x: Int,
+            y: Int,
+            spanWidth: Int
+        ) {
+            XCTAssertGreaterThanOrEqual(x, 0, "\(name): x must be >= 0")
+            XCTAssertGreaterThanOrEqual(y, 0, "\(name): y must be >= 0")
+            XCTAssertLessThanOrEqual(
+                x + spanWidth, width,
+                "\(name): right edge \(x + spanWidth) exceeds window width \(width)")
+            XCTAssertLessThanOrEqual(
+                y, height,
+                "\(name): y \(y) exceeds window height \(height)")
+        }
+
+        assertOrigin(
+            "titleTextOrigin",
+            x: MainWindowLayout.titleTextOrigin.x,
+            y: MainWindowLayout.titleTextOrigin.y,
+            spanWidth: MainWindowLayout.titleTextWidth)
+        assertOrigin(
+            "timeDisplayOrigin",
+            x: MainWindowLayout.timeDisplayOrigin.x,
+            y: MainWindowLayout.timeDisplayOrigin.y,
+            spanWidth: 0)
+        assertOrigin(
+            "kbpsDisplayOrigin",
+            x: MainWindowLayout.kbpsDisplayOrigin.x,
+            y: MainWindowLayout.kbpsDisplayOrigin.y,
+            spanWidth: MainWindowLayout.kbpsDisplayDigits * glyphWidth)
+        assertOrigin(
+            "khzDisplayOrigin",
+            x: MainWindowLayout.khzDisplayOrigin.x,
+            y: MainWindowLayout.khzDisplayOrigin.y,
+            spanWidth: MainWindowLayout.khzDisplayDigits * glyphWidth)
+    }
 }

@@ -66,6 +66,47 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         XCTAssertEqual(player.duration, 0)
     }
 
+    // MARK: - TrackFormatProviding (kbps / kHz facts)
+
+    /// Before any load, both format facts are 0 (the kbps/kHz boxes read blank).
+    func testFormatFactsAreZeroBeforeLoad() {
+        let provider: TrackFormatProviding = AVAudioEnginePlayer()
+        XCTAssertEqual(provider.sampleRateHz, 0)
+        XCTAssertEqual(provider.bitrateKbps, 0)
+    }
+
+    /// After loading a 44.1 kHz file, `sampleRateHz` reports the processing
+    /// format's sample rate (so the kHz box shows round(44100/1000) = 44).
+    func testSampleRateReportsLoadedFileRate() throws {
+        let url = try synthWAV(duration: 1.0, sampleRate: 44_100)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        XCTAssertEqual(player.sampleRateHz, 44_100, accuracy: 1)
+    }
+
+    /// A 22.05 kHz file reports its own rate, proving the value tracks the file
+    /// (kHz box -> round(22050/1000) = 22).
+    func testSampleRateTracksDifferentFileRate() throws {
+        let url = try synthWAV(duration: 0.5, sampleRate: 22_050)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        XCTAssertEqual(player.sampleRateHz, 22_050, accuracy: 1)
+    }
+
+    /// Bitrate is deferred to M5 (it needs the async
+    /// `AVAsset.load(.estimatedDataRate)` API), so after any load `bitrateKbps`
+    /// stays 0 and the kbps box reads blank. The sync sampleRate facts above are
+    /// unaffected.
+    func testBitrateIsZeroPendingAsyncAssetLoading() throws {
+        let url = try synthWAV(duration: 1.0, sampleRate: 44_100, channels: 2)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        XCTAssertEqual(player.bitrateKbps, 0)
+    }
+
     // MARK: - Initial state
 
     func testInitialStateIsStoppedAtZero() throws {

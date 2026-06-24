@@ -29,6 +29,12 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
     private var processingFormat: AVAudioFormat?
     private var totalFrames: AVAudioFramePosition = 0
     private var sampleRate: Double = 0
+    /// The loaded file's bitrate in kbps. Deferred: always `0` for now.
+    /// Surfaced via `TrackFormatProviding` for the kbps number box. The accurate
+    /// compressed-audio bitrate needs the async `AVAsset.load(.estimatedDataRate)`
+    /// API, which arrives with the strict-concurrency work at M5; until then this
+    /// stays `0` so the kbps box reads blank.
+    private var loadedBitrateKbps: Int = 0
 
     // MARK: - Position state
 
@@ -78,6 +84,9 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         processingFormat = format
         totalFrames = loaded.length
         sampleRate = format.sampleRate
+        // Bitrate stays 0 (deferred to M5): the accurate value needs the async
+        // `AVAsset.load(.estimatedDataRate)` API. `sampleRate` above is accurate
+        // and synchronous, so kHz is reported now and kbps reads blank.
 
         resetPositionState()
         reconnect(using: format)
@@ -287,6 +296,33 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         hasPendingSegment = false
         reachedEnd = false
         playerNode.stop()
+    }
+}
+
+// MARK: - TrackFormatProviding
+
+/// The loaded track's format facts (kHz / kbps), kept separate from transport.
+///
+/// `sampleRateHz` is the loaded file's processing-format sample rate, captured
+/// synchronously on `load` — accurate and `0` before any load. `bitrateKbps` is
+/// DEFERRED: it always returns `0` for now (the kbps box reads blank). The
+/// accurate compressed-audio bitrate needs the async
+/// `AVAsset.load(.estimatedDataRate)` API, which lands with the strict-concurrency
+/// work at M5. This surface is opt-in and never flows through `PlayerCore`'s
+/// transport — a consumer casts the engine to this protocol, exactly like the
+/// PCM tap.
+extension AVAudioEnginePlayer: TrackFormatProviding {
+
+    public var sampleRateHz: Double {
+        // `sampleRate` is 0 before any load and otherwise the processing format's
+        // rate captured in `load`.
+        sampleRate
+    }
+
+    public var bitrateKbps: Int {
+        // Deferred to M5 (async asset loading): always 0 for now. See
+        // `loadedBitrateKbps`.
+        loadedBitrateKbps
     }
 }
 
