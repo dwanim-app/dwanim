@@ -13,7 +13,8 @@ let package = Package(
         .library(name: "PlayerCore", targets: ["PlayerCore"]),
         .library(name: "PlayerControl", targets: ["PlayerControl"]),
         .library(name: "PlaybackKit", targets: ["PlaybackKit"]),
-        .library(name: "SpectrumKit", targets: ["SpectrumKit"])
+        .library(name: "SpectrumKit", targets: ["SpectrumKit"]),
+        .library(name: "DwanimUI", targets: ["DwanimUI"])
     ],
     targets: [
         .target(name: "SkinKit"),
@@ -42,11 +43,17 @@ let package = Package(
         ),
         .target(name: "SpectrumKit"),
         .testTarget(name: "SpectrumKitTests", dependencies: ["SpectrumKit"]),
+        .target(name: "DwanimUI", dependencies: ["PlayerCore"]),
+        .testTarget(
+            name: "DwanimUITests",
+            dependencies: ["DwanimUI", "PlayerCore"]
+        ),
         .executableTarget(
             name: "SkinHarness",
             dependencies: [
                 "SkinKit", "SkinKitImageIO", "SkinRender",
-                "PlayerCore", "PlayerControl", "PlaybackKit", "SpectrumKit"
+                "PlayerCore", "PlayerControl", "PlaybackKit", "SpectrumKit",
+                "DwanimUI"
             ]
         )
     ]

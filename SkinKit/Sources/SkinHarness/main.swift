@@ -44,6 +44,7 @@ private struct Arguments {
 private let usage = "Usage: SkinHarness <path.wsz> [--png <out.png>] [--scale N] [--title <text>]"
     + "\n   or: SkinHarness --play <audiofile>"
     + "\n   or: SkinHarness --interactive <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
+    + "\n   or: SkinHarness --default-skin <audiofile> [<audiofile>...] [--scale N]"
 
 private func parseArguments(_ argv: [String]) -> Arguments {
     var skinPath: String?
@@ -262,6 +263,16 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
 // `.wsz` arguments. `runInteractiveMode` never returns (it drives the run loop).
 if CommandLine.arguments.contains("--interactive") {
     runInteractiveMode()
+}
+
+// Default-skin mode: `--default-skin <audiofile>...` opens the app's OWN
+// Liquid Glass dock-bar player (no `.wsz`), wired to a live `PlayerCore`. It is
+// handled in `DefaultSkinMode.swift`; dispatch here before skin-path parsing so
+// its positional audio files are not mistaken for `.wsz` arguments.
+// `runDefaultSkinMode` never returns (it drives the run loop). Hop onto the main
+// actor explicitly since the entry point is main-actor-isolated (it touches AppKit).
+if CommandLine.arguments.contains("--default-skin") {
+    MainActor.assumeIsolated { runDefaultSkinMode() }
 }
 
 // Play mode is a separate path: `--play <audiofile>` exercises the audio engine
