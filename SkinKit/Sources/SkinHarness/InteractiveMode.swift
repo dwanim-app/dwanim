@@ -218,6 +218,11 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
     /// The engine's PCM tap source (the same object backing `core`). Kept so the
     /// tap can be installed in `start()` and removed in `stop()`.
     private let tap: AudioTapProviding?
+    /// The engine's track-format source (the same object backing `core`), opt-in
+    /// cast like `tap`. Read each redraw for the kbps / kHz number boxes; `nil`
+    /// when the engine does not expose format facts. Format metadata never flows
+    /// through `PlayerCore`'s transport.
+    private let format: TrackFormatProviding?
     /// Lock-guarded latest mono samples, written by the audio thread and read by
     /// the main-thread redraw timer.
     private let latestSamples = LatestSamples()
@@ -236,12 +241,20 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
         max(1, width / 4)
     }
 
-    init(skin: Skin, core: PlayerCore, view: InteractiveSkinView, scale: Int, tap: AudioTapProviding?) {
+    init(
+        skin: Skin,
+        core: PlayerCore,
+        view: InteractiveSkinView,
+        scale: Int,
+        tap: AudioTapProviding?,
+        format: TrackFormatProviding?
+    ) {
         self.skin = skin
         self.core = core
         self.view = view
         self.scale = scale
         self.tap = tap
+        self.format = format
 
         let visWidth = MainWindowLayout.visualizationFrame.width
         let bars = InteractiveController.barCount(forVisWidth: visWidth)
@@ -399,6 +412,33 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
             offset: titleScrollOffset
         )
 
+        // kbps / kHz overlay: when a track is loaded, draw the bitrate and
+        // sample-rate number boxes from the engine's opt-in `TrackFormatProviding`
+        // facts (cast like the PCM tap; format metadata never flows through
+        // PlayerCore's transport). kbps is drawn straight; kHz is round(Hz/1000).
+        // `drawNumber` is right-aligned and clips to its field, so a large
+        // uncompressed bitrate (e.g. ~1411 kbps) never overflows the 3-cell box.
+        // With nothing loaded the boxes are left blank (no draw).
+        if let format, core.currentTrack != nil {
+            BitmapText.drawNumber(
+                format.bitrateKbps,
+                from: skin,
+                onto: &composed,
+                x: MainWindowLayout.kbpsDisplayOrigin.x,
+                y: MainWindowLayout.kbpsDisplayOrigin.y,
+                digits: MainWindowLayout.kbpsDisplayDigits
+            )
+            let khz = Int((format.sampleRateHz / 1000).rounded())
+            BitmapText.drawNumber(
+                khz,
+                from: skin,
+                onto: &composed,
+                x: MainWindowLayout.khzDisplayOrigin.x,
+                y: MainWindowLayout.khzDisplayOrigin.y,
+                digits: MainWindowLayout.khzDisplayDigits
+            )
+        }
+
         // Spectrum overlay: read the latest stashed samples (audio thread wrote
         // them), run the analyzer (main thread), and draw the bars into the vis
         // frame. With no audio flowing the samples are empty -> all-zero levels ->
@@ -491,14 +531,18 @@ func runInteractiveMode() -> Never {
         return Track(url: url, title: stem)
     }
     // Keep the concrete engine so it can be opt-in cast to `AudioTapProviding`
-    // for the spectrum tap (PCM must never flow through PlayerCore's transport).
+    // for the spectrum tap and `TrackFormatProviding` for the kbps/kHz boxes
+    // (neither PCM nor format metadata flows through PlayerCore's transport).
     let engine = AVAudioEnginePlayer()
     let core = PlayerCore(engine: engine)
     core.load(tracks)
 
     // Open the window, reusing the existing scale + region-mask pipeline.
     let region = skin.region.flatMap { $0.polygons.isEmpty ? nil : $0 }
-    openInteractiveWindow(skin: skin, core: core, tap: engine, region: region, scale: arguments.scale)
+    openInteractiveWindow(
+        skin: skin, core: core, tap: engine, format: engine,
+        region: region, scale: arguments.scale
+    )
 }
 
 /// Build and show the skin window, reusing the same opaque-content + window-level
@@ -508,6 +552,7 @@ private func openInteractiveWindow(
     skin: Skin,
     core: PlayerCore,
     tap: AudioTapProviding?,
+    format: TrackFormatProviding?,
     region: SkinRegion?,
     scale: Int
 ) -> Never {
@@ -546,7 +591,9 @@ private func openInteractiveWindow(
     // Build the controller first so it can serve as the window delegate: closing
     // the window then routes through `windowWillClose` → `stop()` (timer +tap
     // teardown) → clean app termination.
-    let controller = InteractiveController(skin: skin, core: core, view: contentView, scale: scale, tap: tap)
+    let controller = InteractiveController(
+        skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format
+    )
     liveController = controller
 
     let window: NSWindow

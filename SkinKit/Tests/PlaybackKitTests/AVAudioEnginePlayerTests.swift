@@ -66,6 +66,51 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         XCTAssertEqual(player.duration, 0)
     }
 
+    // MARK: - TrackFormatProviding (kbps / kHz facts)
+
+    /// Before any load, both format facts are 0 (the kbps/kHz boxes read blank).
+    func testFormatFactsAreZeroBeforeLoad() {
+        let provider: TrackFormatProviding = AVAudioEnginePlayer()
+        XCTAssertEqual(provider.sampleRateHz, 0)
+        XCTAssertEqual(provider.bitrateKbps, 0)
+    }
+
+    /// After loading a 44.1 kHz file, `sampleRateHz` reports the processing
+    /// format's sample rate (so the kHz box shows round(44100/1000) = 44).
+    func testSampleRateReportsLoadedFileRate() throws {
+        let url = try synthWAV(duration: 1.0, sampleRate: 44_100)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        XCTAssertEqual(player.sampleRateHz, 44_100, accuracy: 1)
+    }
+
+    /// A 22.05 kHz file reports its own rate, proving the value tracks the file
+    /// (kHz box -> round(22050/1000) = 22).
+    func testSampleRateTracksDifferentFileRate() throws {
+        let url = try synthWAV(duration: 0.5, sampleRate: 22_050)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        XCTAssertEqual(player.sampleRateHz, 22_050, accuracy: 1)
+    }
+
+    /// An uncompressed 44.1k/16-bit/stereo WAV reports its large effective
+    /// bitrate (~1411 kbps): the estimated data rate is positive and in the right
+    /// ballpark. (The render side clips this to the field width; here we only
+    /// prove the engine surfaces a sensible positive value.)
+    func testBitrateReportsPositiveDataRateForUncompressedStereo() throws {
+        let url = try synthWAV(duration: 1.0, sampleRate: 44_100, channels: 2)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        // 44100 * 16 * 2 = 1_411_200 bits/s -> ~1411 kbps. Allow generous slack
+        // for header/estimate variation, but require it to be clearly positive
+        // and uncompressed-scale (well above any lossy rate).
+        XCTAssertGreaterThan(player.bitrateKbps, 1000)
+        XCTAssertLessThan(player.bitrateKbps, 2000)
+    }
+
     // MARK: - Initial state
 
     func testInitialStateIsStoppedAtZero() throws {

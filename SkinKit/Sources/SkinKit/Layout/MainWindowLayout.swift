@@ -51,6 +51,27 @@ public enum MainWindowLayout {
     // provisional — tune at render
     public static let timeDisplayOrigin = (x: 48, y: 26)
 
+    /// Top-left of the kbps (bitrate) number box — the small numeric field in the
+    /// upper-middle row, below the title strip and left of the kHz box. Drawn from
+    /// `numbers.bmp` digits, RIGHT-aligned in `kbpsDisplayDigits` cells.
+    // provisional — tune at render
+    public static let kbpsDisplayOrigin = (x: 111, y: 43)
+
+    /// Number of digit cells in the kbps field. Classic kbps is a 3-digit box.
+    // provisional — tune at render
+    public static let kbpsDisplayDigits = 3
+
+    /// Top-left of the kHz (sample-rate) number box — the small numeric field just
+    /// right of the kbps box in the same upper-middle row. Drawn from
+    /// `numbers.bmp` digits, RIGHT-aligned in `khzDisplayDigits` cells.
+    // provisional — tune at render
+    public static let khzDisplayOrigin = (x: 156, y: 43)
+
+    /// Number of digit cells in the kHz field. Classic kHz is a 2-digit box
+    /// (e.g. 44 for 44.1 kHz, 48 for 48 kHz).
+    // provisional — tune at render
+    public static let khzDisplayDigits = 2
+
     /// The classic main-window visualization (spectrum/oscilloscope) area: the
     /// rectangular region the player draws the live spectrum into, just below the
     /// title bar and to the left of the title display. `(x, y)` is the top-left

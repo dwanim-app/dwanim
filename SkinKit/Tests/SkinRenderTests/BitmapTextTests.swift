@@ -393,4 +393,129 @@ final class BitmapTextTests: XCTestCase {
         BitmapText.drawScrolling("", from: skinWithAB(), onto: &base, x: 4, y: 5, maxWidth: 30, offset: 17)
         XCTAssertEqual(base.pixels, original.pixels)
     }
+
+    // MARK: - 7. drawNumber (right-aligned integer field)
+    //
+    // `drawNumber` paints an integer RIGHT-ALIGNED into a fixed field of `digits`
+    // numbers.bmp digit cells starting at (x, y) — the kbps / kHz number boxes.
+    // Leading positions are BLANK (the classic look: no leading zeros), the value
+    // is clipped to the low-order `digits` digits when it has more, and a negative
+    // clamps to 0. These tests use ten distinct digit colors so a single landing
+    // pixel proves which digit sprite was placed in which cell.
+
+    /// A skin with `digit0...digit9` sprites, each a distinct solid color:
+    /// `digitN -> (10*N, N, 100, 255)`.
+    private func skinWithDigits() -> Skin {
+        var digits: [String: DecodedBitmap] = [:]
+        for n in 0...9 {
+            digits["digit\(n)"] = solidBitmap(
+                width: digitCellWidth,
+                height: digitCellHeight,
+                color: (UInt8(10 * n), UInt8(n), 100, 255)
+            )
+        }
+        return makeSkin(sprites: ["numbers.bmp": digits])
+    }
+
+    /// The (red, green) landing color for `digitN`, mirroring `skinWithDigits`.
+    private func digitColor(_ n: Int) -> (UInt8, UInt8) {
+        (UInt8(10 * n), UInt8(n))
+    }
+
+    /// `44` in a 3-cell field sits RIGHT-ALIGNED in the right two cells; the left
+    /// (leading) cell stays blank (background shows through).
+    func testDrawNumberRightAlignsAndLeavesLeadingCellBlank() {
+        var base = solidBitmap(width: 80, height: 20, color: bgColor)
+        let x = 2, y = 3
+
+        BitmapText.drawNumber(44, from: skinWithDigits(), onto: &base, x: x, y: y, digits: 3)
+
+        // Cell 0 (leftmost) is a leading blank: background unchanged.
+        XCTAssertEqual(pixel(base, x: x, y: y).0, bgColor.0)
+        XCTAssertEqual(pixel(base, x: x, y: y).1, bgColor.1)
+        XCTAssertEqual(pixel(base, x: x, y: y).2, bgColor.2)
+        // Cell 1 holds the tens digit '4'.
+        XCTAssertEqual(pixel(base, x: x + digitCellWidth, y: y).0, digitColor(4).0)
+        XCTAssertEqual(pixel(base, x: x + digitCellWidth, y: y).1, digitColor(4).1)
+        // Cell 2 holds the ones digit '4'.
+        XCTAssertEqual(pixel(base, x: x + 2 * digitCellWidth, y: y).0, digitColor(4).0)
+        XCTAssertEqual(pixel(base, x: x + 2 * digitCellWidth, y: y).1, digitColor(4).1)
+    }
+
+    /// `128` exactly fills a 3-cell field: digit '1','2','8' in cells 0,1,2.
+    func testDrawNumberFillsFieldWhenDigitCountMatches() {
+        var base = solidBitmap(width: 80, height: 20, color: bgColor)
+        let x = 1, y = 2
+
+        BitmapText.drawNumber(128, from: skinWithDigits(), onto: &base, x: x, y: y, digits: 3)
+
+        XCTAssertEqual(pixel(base, x: x, y: y).0, digitColor(1).0)
+        XCTAssertEqual(pixel(base, x: x, y: y).1, digitColor(1).1)
+        XCTAssertEqual(pixel(base, x: x + digitCellWidth, y: y).0, digitColor(2).0)
+        XCTAssertEqual(pixel(base, x: x + digitCellWidth, y: y).1, digitColor(2).1)
+        XCTAssertEqual(pixel(base, x: x + 2 * digitCellWidth, y: y).0, digitColor(8).0)
+        XCTAssertEqual(pixel(base, x: x + 2 * digitCellWidth, y: y).1, digitColor(8).1)
+    }
+
+    /// Zero renders as a single '0' in the rightmost cell; the leading cells stay
+    /// blank (no leading zeros in the classic look).
+    func testDrawNumberZeroIsSingleTrailingDigit() {
+        var base = solidBitmap(width: 80, height: 20, color: bgColor)
+        let x = 4, y = 1
+
+        BitmapText.drawNumber(0, from: skinWithDigits(), onto: &base, x: x, y: y, digits: 3)
+
+        // Two leading cells blank.
+        XCTAssertEqual(pixel(base, x: x, y: y).0, bgColor.0)
+        XCTAssertEqual(pixel(base, x: x + digitCellWidth, y: y).0, bgColor.0)
+        // Rightmost cell holds '0'.
+        XCTAssertEqual(pixel(base, x: x + 2 * digitCellWidth, y: y).0, digitColor(0).0)
+        XCTAssertEqual(pixel(base, x: x + 2 * digitCellWidth, y: y).1, digitColor(0).1)
+    }
+
+    /// A value with MORE digits than the field shows the LOW-order `digits` digits
+    /// and — the clip-safety check — never writes past the field width: the column
+    /// just past the field stays untouched. `1411` in a 2-field shows '1','1'.
+    func testDrawNumberClipsToLowOrderDigitsAndNeverOverflowsField() {
+        var base = solidBitmap(width: 120, height: 20, color: bgColor)
+        let x = 5, y = 3
+        let digits = 2
+
+        BitmapText.drawNumber(1411, from: skinWithDigits(), onto: &base, x: x, y: y, digits: digits)
+
+        // Low-order two digits of 1411 are "11": cell 0 '1', cell 1 '1'.
+        XCTAssertEqual(pixel(base, x: x, y: y).0, digitColor(1).0)
+        XCTAssertEqual(pixel(base, x: x, y: y).1, digitColor(1).1)
+        XCTAssertEqual(pixel(base, x: x + digitCellWidth, y: y).0, digitColor(1).0)
+        XCTAssertEqual(pixel(base, x: x + digitCellWidth, y: y).1, digitColor(1).1)
+        // The column at the field's right edge (x + digits*cellWidth) is OUTSIDE
+        // the field and must stay background — the overflow guard.
+        let pastFieldX = x + digits * digitCellWidth
+        XCTAssertEqual(pixel(base, x: pastFieldX, y: y).0, bgColor.0)
+        XCTAssertEqual(pixel(base, x: pastFieldX, y: y).1, bgColor.1)
+        XCTAssertEqual(pixel(base, x: pastFieldX, y: y).2, bgColor.2)
+        // Well past the field, still background.
+        XCTAssertEqual(pixel(base, x: pastFieldX + digitCellWidth, y: y).0, bgColor.0)
+    }
+
+    /// A negative value clamps to 0: renders as a single '0' in the rightmost cell,
+    /// leading cells blank — identical to drawing 0.
+    func testDrawNumberNegativeClampsToZero() {
+        var negative = solidBitmap(width: 80, height: 20, color: bgColor)
+        var zero = solidBitmap(width: 80, height: 20, color: bgColor)
+        let x = 3, y = 2
+
+        BitmapText.drawNumber(-7, from: skinWithDigits(), onto: &negative, x: x, y: y, digits: 3)
+        BitmapText.drawNumber(0, from: skinWithDigits(), onto: &zero, x: x, y: y, digits: 3)
+
+        XCTAssertEqual(negative.pixels, zero.pixels)
+    }
+
+    /// drawNumber with no numbers.bmp sheet advances blank and never crashes.
+    func testDrawNumberWithNoNumbersSheetDoesNotCrash() {
+        var base = solidBitmap(width: 80, height: 20, color: bgColor)
+        BitmapText.drawNumber(192, from: makeSkin(sprites: [:]), onto: &base, x: 0, y: 0, digits: 3)
+        XCTAssertEqual(pixel(base, x: 0, y: 0).0, bgColor.0)
+        XCTAssertEqual(base.pixels.count, 80 * 20 * 4)
+    }
 }

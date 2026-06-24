@@ -195,6 +195,72 @@ public enum BitmapText {
         _ = drawTwoDigits(seconds, from: skin, onto: &base, x: penX, y: y)
     }
 
+    // MARK: - Draw number (right-aligned integer field)
+
+    /// Draw `value` as an integer RIGHT-ALIGNED in a field of `digits`
+    /// `numbers.bmp` digit cells, with the field's top-left at `(x, y)`. This is
+    /// the kbps / kHz number-box renderer (reusing the same digit-sprite path as
+    /// `drawTime`).
+    ///
+    /// Layout: the field is `digits` cells wide, each `digitCellWidth` px, filled
+    /// from the RIGHT. The value's decimal digits occupy the rightmost cells; any
+    /// LEADING cells are left BLANK — the classic kbps/kHz look shows no leading
+    /// zeros, so e.g. `44` in a 3-field reads as a blank cell then "44", and `0`
+    /// reads as a blank-blank-"0".
+    ///
+    /// Bounds / clip safety:
+    /// - A NEGATIVE value clamps to 0 (no minus sign in the classic boxes).
+    /// - A value with MORE digits than the field shows the LOW-order `digits`
+    ///   digits (value modulo 10^digits), so it NEVER writes past the field width.
+    ///   A synthesized WAV reports a large uncompressed bitrate (e.g. ~1411 kbps
+    ///   for 44.1k/16-bit/stereo); in a 3-cell kbps field that renders the low
+    ///   three digits "411" rather than overflowing into the kHz box.
+    /// - A non-positive `digits` draws nothing.
+    /// - A missing digit sprite advances blank and never crashes; edge clipping is
+    ///   handled by the overlay seam.
+    public static func drawNumber(
+        _ value: Int,
+        from skin: Skin,
+        onto base: inout DecodedBitmap,
+        x: Int,
+        y: Int,
+        digits: Int
+    ) {
+        guard digits > 0 else { return }
+
+        // Negatives clamp to 0 (no sign glyph in the classic number boxes).
+        let nonNegative = max(0, value)
+
+        // Decompose into per-cell decimal digits, RIGHT-aligned: index 0 is the
+        // rightmost (ones) cell, index `digits-1` the leftmost. `cellDigit` is the
+        // digit to draw, or nil for a leading-blank cell. Clipping to the field
+        // width is implicit: we only ever produce `digits` cells, so a value with
+        // more digits keeps only its low-order `digits` (the high digits are never
+        // emitted), which is exactly the overflow guard.
+        var remaining = nonNegative
+        var cellDigits = [Int?](repeating: nil, count: digits)
+        for index in 0..<digits {
+            cellDigits[index] = remaining % 10
+            remaining /= 10
+            // Once the value is exhausted, the higher cells stay nil (blank) —
+            // except cell 0 always shows at least a single '0' for value 0, which
+            // the first iteration already set.
+            if remaining == 0 { break }
+        }
+
+        // Paint left-to-right: cell `column` (0 = leftmost) maps to digit index
+        // `digits - 1 - column`. A nil cell is a leading blank (skip, just advance).
+        var penX = x
+        for column in 0..<digits {
+            let digitIndex = digits - 1 - column
+            if let digit = cellDigits[digitIndex],
+               let sprite = skin.sprite(sheet: "numbers.bmp", name: "digit\(digit)") {
+                SkinCanvas.overlay(sprite, onto: &base, x: penX, y: y)
+            }
+            penX += digitCellWidth
+        }
+    }
+
     // MARK: - Helpers
 
     /// Overlay `sprite` onto `base` at top-left `(x, y)`, opaque overwrite, but
