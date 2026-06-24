@@ -144,13 +144,30 @@ public enum RegionCoverage {
     ) {
         let firstCenter = xStart - 0.5
         let lastCenter = xEnd - 0.5
-        let first = max(0, Int(firstCenter.rounded(.up)))
-        let last = min(width - 1, Int(lastCenter.rounded(.down)))
+
+        // A `region.txt` vertex can be as large as `Int.max`, so a crossing x can
+        // be ~`Double(Int.max)` — a value NOT representable as `Int`, which would
+        // trap on conversion. Clamp each crossing into the canvas column range
+        // `[0, width-1]` (as Doubles, where `Int.max` is representable) BEFORE the
+        // `Int(...)` conversion. Non-finite crossings (NaN / ±inf, which a
+        // degenerate edge could yield) are skipped entirely.
+        guard firstCenter.isFinite, lastCenter.isFinite else { return }
+        let lowerBound = 0.0
+        let upperBound = Double(width - 1)
+        let first = Int(clamp(firstCenter.rounded(.up), lowerBound, upperBound))
+        let last = Int(clamp(lastCenter.rounded(.down), lowerBound, upperBound))
         guard first <= last else { return }
 
         let rowStart = y * width
         for x in first...last {
             mask[rowStart + x] = true
         }
+    }
+
+    /// Clamps `value` to the closed range `[lower, upper]`. Done in `Double` so an
+    /// out-of-`Int`-range crossing is brought back in bounds before any `Int(...)`
+    /// conversion (which would otherwise trap). Assumes `lower <= upper`.
+    private static func clamp(_ value: Double, _ lower: Double, _ upper: Double) -> Double {
+        min(max(value, lower), upper)
     }
 }

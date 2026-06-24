@@ -212,12 +212,21 @@ public enum SpriteCoordinates {
         return rects
     }
 
-    /// A stable, identifier-safe name for a font glyph cell.
-    private static func glyphName(for character: Character) -> String {
+    /// A stable, identifier-safe name for a font glyph cell. The single source of
+    /// truth for glyph naming, shared by the render-side text drawer
+    /// (`SkinRender.BitmapText`): letters/digits map to `glyph_<char>`; any other
+    /// printable character maps to `glyph_u<hex>`, where `<hex>` is the lowercased
+    /// base-16 unicode scalar value.
+    ///
+    /// Non-trapping: a character with no unicode scalar (which `Character` does
+    /// not normally produce) falls back to `glyph_u0` rather than crashing.
+    public static func glyphName(for character: Character) -> String {
         if character.isLetter || character.isNumber {
             return "glyph_\(character)"
         }
-        let scalar = character.unicodeScalars.first!.value
-        return "glyph_u\(String(scalar, radix: 16))"
+        guard let scalar = character.unicodeScalars.first else {
+            return "glyph_u0"
+        }
+        return "glyph_u\(String(scalar.value, radix: 16))"
     }
 }

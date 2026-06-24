@@ -92,13 +92,17 @@ private func parseArguments(_ argv: [String]) -> Arguments {
 
 // MARK: - Loading
 
-/// The composed image plus whether a custom (non-rectangular) shape was applied.
-/// `isShaped` is `true` only when the skin declared region polygons and the mask
-/// actually zeroed some out-of-region alpha; the window path uses it to decide
-/// between a normal titled window and a borderless transparent (shaped) one.
+/// The composed OPAQUE main-window bitmap plus the skin's region (if any).
+///
+/// The bitmap is fully opaque — compose + text are rectangular and NO alpha
+/// masking is baked in here. Geometry is kept SEPARATE from pixels: the window
+/// path shapes the window/layer with a region mask while the content stays
+/// opaque (needed for future hit-testing), and the `--png` path bakes the region
+/// into alpha on its own copy. `region` is non-nil only when the skin declared a
+/// custom shape; an empty-polygon region is normalized to `nil`.
 private struct ComposedResult {
-    var image: CGImage
-    var isShaped: Bool
+    var bitmap: DecodedBitmap
+    var region: SkinRegion?
 }
 
 private func loadComposedImage(at path: String, title: String) -> ComposedResult {
@@ -144,33 +148,30 @@ private func loadComposedImage(at path: String, title: String) -> ComposedResult
         y: MainWindowLayout.timeDisplayOrigin.y
     )
 
-    // Non-rectangular window shape: if the skin declared region polygons, build a
-    // visibility mask at the composed bitmap's size and zero the alpha of every
-    // out-of-region pixel. This is applied AFTER compose + text (compose itself
-    // stays rectangular / opaque). A nil or empty region leaves the bitmap fully
-    // opaque, so unshaped skins behave exactly as before.
-    var isShaped = false
-    if let region = skin.region, !region.polygons.isEmpty {
-        let mask = RegionCoverage.mask(
-            region,
-            width: composed.width,
-            height: composed.height
-        )
-        RegionCoverage.applyMask(mask, to: &composed)
-        // Only treat as shaped if the mask actually carved something away; a
-        // region that happens to cover the whole canvas stays rectangular.
-        isShaped = mask.contains(false)
-    }
-
-    guard let image = CGImageConversion.makeImage(from: composed) else {
-        fail("Could not build an image from the composed main window for skin at \(path).")
-    }
-    return ComposedResult(image: image, isShaped: isShaped)
+    // The composed bitmap stays OPAQUE here. The shape (if any) is applied per
+    // output mode: baked into alpha for --png, or carried as a window-level
+    // layer mask for the live window. Normalize an empty-polygon region to nil.
+    let region = skin.region.flatMap { $0.polygons.isEmpty ? nil : $0 }
+    return ComposedResult(bitmap: composed, region: region)
 }
 
 // MARK: - Modes
 
-private func runPNGMode(image: CGImage, output: String, scale: Int) {
+/// PNG export. A PNG has no "window", so baking the region into the alpha channel
+/// is the legitimate way to ship a shaped image (transparent outside the region)
+/// — and it's how the shape is visually verified. The bake happens on a COPY of
+/// the composed bitmap, so the in-memory `DecodedBitmap` stays opaque.
+private func runPNGMode(bitmap: DecodedBitmap, region: SkinRegion?, output: String, scale: Int) {
+    var shaped = bitmap
+    if let region {
+        let mask = RegionCoverage.mask(region, width: shaped.width, height: shaped.height)
+        RegionCoverage.applyMask(mask, to: &shaped)
+    }
+
+    guard let image = CGImageConversion.makeImage(from: shaped) else {
+        fail("Could not build an image from the composed main window.")
+    }
+
     do {
         let scaled = try scaledImage(image, scale: scale)
         try writePNG(scaled.image, to: URL(fileURLWithPath: output))
@@ -181,7 +182,15 @@ private func runPNGMode(image: CGImage, output: String, scale: Int) {
     }
 }
 
-private func runWindowMode(image: CGImage, scale: Int, isShaped: Bool) {
+/// Live window. The displayed content image stays OPAQUE; a non-rectangular skin
+/// is shaped at the WINDOW/LAYER level via a `CAShapeLayer` mask derived from the
+/// region polygons (geometry kept separate from pixels). When the skin declares
+/// no region, the normal titled/opaque window is used.
+private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: Int) {
+    guard let image = CGImageConversion.makeImage(from: bitmap) else {
+        fail("Could not build an image from the composed main window.")
+    }
+
     let scaled: (image: CGImage, width: Int, height: Int)
     do {
         scaled = try scaledImage(image, scale: scale)
@@ -193,12 +202,25 @@ private func runWindowMode(image: CGImage, scale: Int, isShaped: Bool) {
     app.setActivationPolicy(.regular)
 
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
+    let contentView = SkinImageView(image: scaled.image, frame: contentRect)
 
-    // A shaped skin carries transparent pixels outside its region. To let those
-    // show through as a non-rectangular window, the window must be borderless and
-    // non-opaque with a clear background; otherwise use the normal titled chrome.
+    // Build the window-level mask first: a region whose polygons cover nothing
+    // fillable yields no mask, so the skin renders as a normal rectangular window.
+    let maskLayer: CAShapeLayer? = region.flatMap { region in
+        RegionMaskLayer.make(
+            for: region,
+            skinHeight: bitmap.height,
+            scale: scale,
+            scaledWidth: scaled.width,
+            scaledHeight: scaled.height
+        )
+    }
+
     let window: NSWindow
-    if isShaped {
+    if let maskLayer {
+        // Shaped window: borderless + non-opaque + clear background so the area
+        // outside the region's layer mask reads through as transparent. The
+        // CONTENT image is unchanged (opaque); only the LAYER is masked.
         window = NSWindow(
             contentRect: contentRect,
             styleMask: [.borderless],
@@ -208,6 +230,10 @@ private func runWindowMode(image: CGImage, scale: Int, isShaped: Bool) {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.isMovableByWindowBackground = true
+
+        // Layer-back the content view and shape it with the region mask.
+        contentView.wantsLayer = true
+        contentView.layer?.mask = maskLayer
     } else {
         window = NSWindow(
             contentRect: contentRect,
@@ -217,7 +243,7 @@ private func runWindowMode(image: CGImage, scale: Int, isShaped: Bool) {
         )
         window.title = "SkinHarness"
     }
-    window.contentView = SkinImageView(image: scaled.image, frame: contentRect)
+    window.contentView = contentView
     window.center()
     window.makeKeyAndOrderFront(nil)
 
@@ -231,7 +257,16 @@ private let arguments = parseArguments(CommandLine.arguments)
 private let composed = loadComposedImage(at: arguments.skinPath, title: arguments.title)
 
 if let output = arguments.pngOutput {
-    runPNGMode(image: composed.image, output: output, scale: arguments.scale)
+    runPNGMode(
+        bitmap: composed.bitmap,
+        region: composed.region,
+        output: output,
+        scale: arguments.scale
+    )
 } else {
-    runWindowMode(image: composed.image, scale: arguments.scale, isShaped: composed.isShaped)
+    runWindowMode(
+        bitmap: composed.bitmap,
+        region: composed.region,
+        scale: arguments.scale
+    )
 }

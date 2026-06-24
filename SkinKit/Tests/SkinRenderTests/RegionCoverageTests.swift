@@ -189,6 +189,40 @@ final class RegionCoverageTests: XCTestCase {
         XCTAssertEqual(pixel(bitmap, x: 0, y: 1), [11, 22, 33, 0xFF])
     }
 
+    // MARK: - 7. Astronomically large vertex does not crash
+
+    /// A `region.txt` coordinate can be up to `Int.max`. The scanline crossing for
+    /// such a vertex is ~`Double(Int.max)`, which is NOT representable as `Int` and
+    /// would trap on a naive `Int(...)` conversion. Building a mask from a polygon
+    /// with a huge vertex must NOT crash, and must still produce a sane mask: the
+    /// span still extends across the visible canvas it covers (clamped), and the
+    /// mask stays the right size with valid in-bounds cells.
+    func testHugeVertexDoesNotCrashAndProducesSaneMask() {
+        let width = 10, height = 10
+        // A triangle whose right vertex sits astronomically far off-canvas at
+        // x = Int.max. Its left edge stays on-canvas; rows it spans should still
+        // mark columns from the left edge rightward, clamped to the canvas width.
+        let huge = region([
+            (1, 1),
+            (Int.max, 5),
+            (1, 9)
+        ])
+
+        // Must not trap on the out-of-Int-range crossing.
+        let mask = RegionCoverage.mask(huge, width: width, height: height)
+
+        // Size is correct and no spurious out-of-canvas marking occurred.
+        XCTAssertEqual(mask.count, width * height)
+        // A point near the left vertex (inside the triangle) is visible, proving
+        // the huge-vertex edge was clamped rather than skipped or trapped.
+        XCTAssertTrue(at(mask, x: 2, y: 5, width: width), "near-left interior inside")
+        // The clamp keeps marking within the canvas: the rightmost column on the
+        // mid row is marked (the span was clamped to width-1, not dropped).
+        XCTAssertTrue(at(mask, x: width - 1, y: 5, width: width), "clamped to canvas edge")
+    }
+
+    // MARK: - 8. applyMask
+
     /// A size-mismatched mask leaves the bitmap completely unchanged.
     func testApplyMaskSizeMismatchLeavesBitmapUnchanged() {
         let original = solidBitmap(width: 4, height: 3, color: (1, 2, 3))

@@ -66,7 +66,7 @@ public enum BitmapText {
             if penX + glyphCellWidth > regionEnd {
                 break
             }
-            if let sprite = skin.sprite(sheet: "text.bmp", name: glyphName(for: character)) {
+            if let sprite = skin.sprite(sheet: "text.bmp", name: SpriteCoordinates.glyphName(for: character)) {
                 SkinCanvas.overlay(sprite, onto: &base, x: penX, y: y)
             }
             // Fixed-cell font: every character advances by one cell, whether or
@@ -122,19 +122,5 @@ public enum BitmapText {
             penX += digitCellWidth
         }
         return penX
-    }
-
-    /// A stable, identifier-safe name for a font glyph cell, matching the
-    /// convention authored in `SkinKit.SpriteCoordinates`: letters/digits map to
-    /// `glyph_<char>`; any other printable character maps to `glyph_u<hex>`,
-    /// where `<hex>` is the lowercased base-16 unicode scalar value.
-    private static func glyphName(for character: Character) -> String {
-        if character.isLetter || character.isNumber {
-            return "glyph_\(character)"
-        }
-        guard let scalar = character.unicodeScalars.first else {
-            return "glyph_u0"
-        }
-        return "glyph_u\(String(scalar.value, radix: 16))"
     }
 }
