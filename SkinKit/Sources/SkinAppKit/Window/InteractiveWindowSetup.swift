@@ -51,6 +51,11 @@ public struct InteractiveWindowHandle {
 /// consumer) the controller's redraw loop is timer-only and installs NO tap — it
 /// reads this shared feed. When `nil` (the harness) the controller installs its
 /// own tap on `tap` exactly as before (unchanged single-window behavior).
+/// `onFileDrop` is an optional file-URL DROP hook wired onto the content view. It
+/// defaults to `nil` (the harness path), which leaves the view registered for NO
+/// dragged types so its drag behavior is unchanged. The real app passes a closure
+/// that routes the dropped `[URL]` to its drop handler (so dropping onto this
+/// classic main window opens a skin / audio just like the open panels).
 @discardableResult
 public func showInteractiveWindow(
     skin: Skin,
@@ -62,7 +67,8 @@ public func showInteractiveWindow(
     title: String,
     externalFeed: SpectrumFeed? = nil,
     terminatesAppOnClose: Bool = true,
-    onClose: (() -> Void)? = nil
+    onClose: (() -> Void)? = nil,
+    onFileDrop: (([URL]) -> Void)? = nil
 ) throws -> InteractiveWindowHandle {
     // Compose an initial frame just to size the window (the controller will keep
     // it updated).
@@ -75,6 +81,9 @@ public func showInteractiveWindow(
 
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
     let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
+    // Wire the optional file-URL drop hook. Setting it registers the view for
+    // `.fileURL` dragging; leaving it `nil` (harness) registers nothing.
+    contentView.onFileDrop = onFileDrop
 
     // Window-level region mask (same as the static window path): the content stays
     // opaque and the shape is carried by a CAShapeLayer mask.

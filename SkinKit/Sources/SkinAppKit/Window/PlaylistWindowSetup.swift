@@ -51,6 +51,11 @@ public struct PlaylistWindowHandle {
 /// fires `onClose` (e.g. to drop the host's retained handle) without quitting the
 /// app. In the hosted (`false`) mode the host must NOT install the returned
 /// controller as `NSApp.delegate`.
+/// `onFileDrop` is an optional file-URL DROP hook wired onto the content view; it
+/// defaults to `nil` (the harness path) so the view registers for no dragged types
+/// and its behavior is unchanged. The real app passes a closure routing the
+/// dropped `[URL]` to its drop handler, so dropping onto the playlist window opens
+/// a skin / audio (a multi-file audio drop becomes the queue) just like the panels.
 @MainActor
 @discardableResult
 public func showPlaylistWindow(
@@ -59,7 +64,8 @@ public func showPlaylistWindow(
     scale: Int,
     title: String,
     terminatesAppOnClose: Bool = true,
-    onClose: (() -> Void)? = nil
+    onClose: (() -> Void)? = nil,
+    onFileDrop: (([URL]) -> Void)? = nil
 ) throws -> PlaylistWindowHandle {
     let width = PlaylistWindowGeometry.defaultWidth
     let height = PlaylistWindowGeometry.defaultHeight
@@ -82,6 +88,10 @@ public func showPlaylistWindow(
         skinHeight: frame.height,
         frame: contentRect
     )
+    // Optional file-URL drop hook (nil for the harness — registers nothing). The
+    // base `ScaledImageView` carries the drop machinery; the playlist's click /
+    // scroll hooks are independent of it.
+    view.onFileDrop = onFileDrop
 
     // The controller re-derives the interior from the same composed-frame size, so
     // click hit-testing and the draw path share one geometry source. It also keeps

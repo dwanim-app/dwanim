@@ -145,6 +145,15 @@ final class AudioSession {
         ) { [weak self] in
             MainActor.assumeIsolated { self?.tick() }
         }
+
+        // Route a file drop onto ANY hosted classic window (main / playlist / EQ)
+        // through THIS session's one drop handler — the same handler the default
+        // SwiftUI scene uses — so dropping onto any window behaves identically.
+        // Set after the stored properties are initialized so the closure can
+        // capture `self`.
+        classicSkin.onFileDrop = { [weak self] urls in
+            self?.handleDroppedURLs(urls)
+        }
     }
 
     // MARK: Lifecycle
@@ -205,6 +214,36 @@ final class AudioSession {
     /// window).
     func presentOpenSkinPanel() {
         classicSkin.presentOpenPanel()
+    }
+
+    // MARK: Drag-and-drop
+
+    /// Handle a set of file URLs DROPPED onto any app window (the default SwiftUI
+    /// scene or any hosted classic window). The drop grants sandbox access to each
+    /// URL for this launch — exactly like an `NSOpenPanel` pick — so dropped files
+    /// are recorded + opened through the SAME paths as the open panels (mint +
+    /// persist a security-scoped bookmark, then play / apply).
+    ///
+    /// Routing (see `DropRouter`):
+    ///   - `.wsz` skin(s): apply the FIRST as the classic skin (`.lastSkin`). A
+    ///     single skin is the active face, so trailing skins in one drop are ignored.
+    ///   - audio file(s): play them. ONE audio file plays; MULTIPLE become the
+    ///     ordered playlist (drop order preserved) — identical to a multi-select in
+    ///     the audio open panel.
+    ///   - a MIXED drop (skin + audio): both are handled — the skin is applied AND
+    ///     the audio is loaded/played.
+    ///   - unsupported types: ignored gracefully (an empty classification is a no-op).
+    func handleDroppedURLs(_ urls: [URL]) {
+        let classification = DropRouter.classify(urls)
+        guard !classification.isEmpty else { return }
+        // Apply the skin first (a re-skin rebuilds the cluster), then start audio so
+        // a mixed drop ends with the freshly-applied skin showing the dropped song.
+        if let skin = classification.skins.first {
+            classicSkin.openDropped(url: skin)
+        }
+        if !classification.audio.isEmpty {
+            openAndPlay(urls: classification.audio)
+        }
     }
 
     // MARK: View menu (Playlist / Equalizer toggles)

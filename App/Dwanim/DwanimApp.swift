@@ -61,6 +61,19 @@ struct DwanimApp: App {
         Window("Dwanim", id: "main") {
             DwanimPlayerScene(core: session.core, model: session.model)
                 .frame(minWidth: 480, minHeight: 220)
+                // File-URL DROP onto the default scene window: hand the dropped URLs
+                // to the session's one drop handler (the same one every hosted
+                // classic window routes to). The handler classifies them — a `.wsz`
+                // applies as a skin, audio files play (multiple become the playlist),
+                // a mix does both, unsupported types are ignored — minting +
+                // persisting a security-scoped bookmark per file exactly as the open
+                // panels do (a drop grants sandbox access just like a panel pick).
+                // Returning `true` accepts the drop; an empty/unsupported drop is a
+                // harmless no-op inside the handler.
+                .dropDestination(for: URL.self) { urls, _ in
+                    session.handleDroppedURLs(urls)
+                    return true
+                }
                 // Start the feed + launch-resolve (once per process) when the window
                 // appears, and hand the delegate the session so it can tear down at
                 // real termination. We do NOT stop the session on `.onDisappear`:

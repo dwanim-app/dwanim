@@ -56,6 +56,28 @@ open class ScaledImageView: NSView {
     /// frame is already baked into `image`.
     public var overlayDraw: ((_ context: CGContext, _ bounds: NSRect) -> Void)?
 
+    /// Optional file-URL DROP hook. When a host (the real app) sets this, the view
+    /// registers for `.fileURL` dragging and, on a drop, hands the extracted
+    /// `[URL]` to this closure (the app classifies + opens them — a `.wsz` skin, one
+    /// or more audio files, or a mix). It is left `nil` by the HARNESS, which never
+    /// drops files: registration is keyed off this hook being set (see `didSet`),
+    /// so a view with no `onFileDrop` registers for NO dragged types and behaves
+    /// EXACTLY as before (no `draggingEntered` / `performDragOperation` is ever
+    /// reached because the view advertises no accepted types). This keeps the
+    /// harness path byte-identical.
+    public var onFileDrop: (([URL]) -> Void)? {
+        didSet {
+            // Register only when a hook is actually present, and unregister when it
+            // is cleared, so the harness (which never sets this) advertises no
+            // dragged types and its drag behavior is unchanged.
+            if onFileDrop != nil {
+                registerForDraggedTypes([.fileURL])
+            } else {
+                unregisterDraggedTypes()
+            }
+        }
+    }
+
     public init(image: CGImage, frame: NSRect) {
         self.image = image
         super.init(frame: frame)
@@ -105,5 +127,44 @@ open class ScaledImageView: NSView {
         let dy = event.scrollingDeltaY
         guard dy != 0 else { return }
         onScroll?(Double(dy))
+    }
+
+    // MARK: Drag-and-drop (file URLs)
+    //
+    // Only reached when `onFileDrop` is set (the view registers for `.fileURL`
+    // dragging only then — see `onFileDrop.didSet`). With no hook the view
+    // advertises no accepted types, so AppKit never routes a drag here and the
+    // harness path is unchanged.
+
+    /// Accept a drag iff it carries file URLs AND a drop hook is wired. Returning
+    /// `.copy` shows the green "+" badge and lets `performDragOperation` fire.
+    public override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard onFileDrop != nil, draggedFileURLs(from: sender) != nil else {
+            return []
+        }
+        return .copy
+    }
+
+    /// Extract the dropped `[URL]` from the pasteboard and hand them to the host's
+    /// `onFileDrop`. Returns `true` when at least one file URL was forwarded.
+    public override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let onFileDrop, let urls = draggedFileURLs(from: sender) else {
+            return false
+        }
+        onFileDrop(urls)
+        return true
+    }
+
+    /// Read file URLs (and only file URLs) off a dragging pasteboard, or `nil` when
+    /// the drag carries none. Restricting to `URLReadingFileURLsOnly` filters out
+    /// non-file drags (e.g. a web URL) so only on-disk files are forwarded.
+    private func draggedFileURLs(from sender: NSDraggingInfo) -> [URL]? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = sender.draggingPasteboard.readObjects(
+            forClasses: [NSURL.self], options: options
+        ) as? [URL], !urls.isEmpty else {
+            return nil
+        }
+        return urls
     }
 }

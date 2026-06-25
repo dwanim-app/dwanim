@@ -41,6 +41,11 @@ public struct EQWindowHandle {
 /// fires `onClose` (e.g. to drop the host's retained handle) without quitting the
 /// app. In the hosted (`false`) mode the host must NOT install the returned
 /// controller as `NSApp.delegate`.
+/// `onFileDrop` is an optional file-URL DROP hook wired onto the content view; it
+/// defaults to `nil` (the harness path) so the view registers for no dragged types
+/// and its behavior is unchanged. The real app passes a closure routing the
+/// dropped `[URL]` to its drop handler, so dropping onto the EQ window opens a
+/// skin / audio just like the open panels.
 @discardableResult
 public func showEQWindow(
     skin: Skin,
@@ -48,7 +53,8 @@ public func showEQWindow(
     scale: Int,
     title: String,
     terminatesAppOnClose: Bool = true,
-    onClose: (() -> Void)? = nil
+    onClose: (() -> Void)? = nil,
+    onFileDrop: (([URL]) -> Void)? = nil
 ) throws -> EQWindowHandle {
     let eq = core.equalizer
     guard let base = EQWindowComposer.compose(
@@ -62,6 +68,8 @@ public func showEQWindow(
 
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
     let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
+    // Optional file-URL drop hook (nil for the harness — registers nothing).
+    contentView.onFileDrop = onFileDrop
 
     let controller = EQController(
         skin: skin, core: core, view: contentView, scale: scale,
