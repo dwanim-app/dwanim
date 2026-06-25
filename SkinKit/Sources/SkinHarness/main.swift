@@ -48,6 +48,7 @@ private let usage = "Usage: SkinHarness <path.wsz> [--png <out.png>] [--scale N]
     + "\n   or: SkinHarness --playlist <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
     + "\n   or: SkinHarness --eq <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
     + "\n   or: SkinHarness --default-skin <audiofile> [<audiofile>...] [--scale N]"
+    + "\n   or: SkinHarness --app-icon <outDir>"
 
 private func parseArguments(_ argv: [String]) -> Arguments {
     var skinPath: String?
@@ -290,6 +291,16 @@ if CommandLine.arguments.contains("--eq") {
 // actor explicitly since the entry point is main-actor-isolated (it touches AppKit).
 if CommandLine.arguments.contains("--default-skin") {
     MainActor.assumeIsolated { runDefaultSkinMode() }
+}
+
+// App-icon mode: `--app-icon <outDir>` renders the deterministic `AppIconView`
+// at each canonical .iconset pixel size via SwiftUI ImageRenderer and writes the
+// ten Apple-named PNGs to `<outDir>/AppIcon.iconset/` (no window, no run loop, no
+// audio). It is handled in `AppIconMode.swift`; dispatch here before skin-path
+// parsing so the output directory is not mistaken for a `.wsz` argument.
+// `runAppIconMode` never returns.
+if CommandLine.arguments.contains("--app-icon") {
+    runAppIconMode()
 }
 
 // Play mode is a separate path: `--play <audiofile>` exercises the audio engine

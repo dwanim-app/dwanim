@@ -51,4 +51,12 @@ public enum DwanimTheme {
 
     /// A slightly stronger stroke for the emblem tile so the mark's frame reads.
     public static let glassStrokeStrong = Color.white.opacity(0.28)
+
+    // MARK: - Icon plate
+
+    /// A warm gold edge for the app-icon plate. Distinct from the white glass
+    /// strokes: the icon's plate is a solid (non-material) face, so a faint gold
+    /// rim — rather than a cool white one — keeps the whole icon in the brand's
+    /// warm key without depending on a scene behind it.
+    public static let goldEdge = goldLight.opacity(0.45)
 }
