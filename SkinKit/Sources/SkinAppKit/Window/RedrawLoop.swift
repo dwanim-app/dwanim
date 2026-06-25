@@ -16,11 +16,12 @@ import SpectrumKit
 /// Drives a repeating main-run-loop timer and (optionally) an audio tap that
 /// feeds a `SpectrumFeed`. Construction does nothing; `start` installs the tap
 /// and schedules the timer, `stop` tears both down.
+@MainActor
 public final class RedrawLoop {
     private let interval: TimeInterval
     private let tap: AudioTapProviding?
     private let feed: SpectrumFeed
-    private let onTick: () -> Void
+    private let onTick: @Sendable @MainActor () -> Void
     private var timer: Timer?
 
     /// - Parameters:
@@ -30,12 +31,18 @@ public final class RedrawLoop {
     ///   - feed: the lock-guarded latest-samples box the tap writes and the tick
     ///     reads.
     ///   - onTick: the per-tick work (advance + recompose + swap image). Runs on
-    ///     the main run loop.
+    ///     the main run loop, hence `@MainActor` — the timer is scheduled on
+    ///     `RunLoop.main`, so the tick fires on the main thread.
+    ///
+    /// `@MainActor`: the loop is created, started, and stopped on the main actor
+    /// (by the window controllers), and its `Timer` is added to `RunLoop.main`. The
+    /// ONLY thing that legitimately runs off-actor is the audio tap closure, which
+    /// is built `@Sendable` in `start()` and writes only the `Sendable` feed.
     public init(
         interval: TimeInterval,
         tap: AudioTapProviding?,
         feed: SpectrumFeed,
-        onTick: @escaping () -> Void
+        onTick: @escaping @Sendable @MainActor () -> Void
     ) {
         self.interval = interval
         self.tap = tap
@@ -52,14 +59,21 @@ public final class RedrawLoop {
         // first so the normal single-start path is unchanged.
         stop()
 
+        // The tap closure runs on the AUDIO render thread, hence `@Sendable`; it
+        // captures only the `Sendable` `feed` and does the minimum (store + return).
         tap?.installTap { [feed] samples, sampleRate in
             // AUDIO THREAD: minimum work — stash and return.
             feed.store(samples, sampleRate: sampleRate)
         }
 
         onTick()
+        // The `Timer` body is `@Sendable` (it may run off the creating context), so
+        // it cannot capture `self` or the `@MainActor onTick` directly. It captures
+        // the `@MainActor`-isolated `onTick` (itself `Sendable`) and re-enters the
+        // main actor via `assumeIsolated` — sound because the timer is added to
+        // `RunLoop.main`, so it always fires on the main thread.
         let timer = Timer(timeInterval: interval, repeats: true) { [onTick] _ in
-            onTick()
+            MainActor.assumeIsolated { onTick() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer

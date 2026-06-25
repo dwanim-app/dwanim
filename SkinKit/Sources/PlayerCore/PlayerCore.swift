@@ -28,6 +28,7 @@ import Observation
 /// choose the next index. The default strategy picks a uniformly random index
 /// **other than** the current one (and is a no-op for 0- or 1-track playlists).
 /// `previous` does not shuffle; it steps linearly so "go back" is predictable.
+@MainActor
 @Observable
 public final class PlayerCore {
 

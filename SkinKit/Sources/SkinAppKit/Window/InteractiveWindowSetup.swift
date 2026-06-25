@@ -56,6 +56,13 @@ public struct InteractiveWindowHandle {
 /// dragged types so its drag behavior is unchanged. The real app passes a closure
 /// that routes the dropped `[URL]` to its drop handler (so dropping onto this
 /// classic main window opens a skin / audio just like the open panels).
+///
+/// `@MainActor`: it builds the `ScaledImageView` + region window + the now-
+/// `@MainActor` `InteractiveController`, and reads the `@MainActor` `PlayerCore`.
+/// Every caller (the harness modes, the app's `ClassicSkinPresenter`) is already
+/// main-actor-isolated, so this is a no-op at runtime — it just proves the AppKit
+/// construction runs on the main actor.
+@MainActor
 @discardableResult
 public func showInteractiveWindow(
     skin: Skin,

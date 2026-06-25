@@ -9,10 +9,27 @@ import PlayerCore
 /// output device and is therefore NOT exercised here (see the offline-render
 /// test for the decode+graph proof). These tests drive the load/seek/clamp
 /// logic and the duration reporting, all of which are deterministic.
+// `@MainActor`: the engine's `onPlaybackFinished` handler is now `@MainActor`
+// (it drives the `@MainActor` `PlayerCore` in production), so the tests that
+// install one and assert on its effect run on the main actor too — letting the
+// handler mutate the `@MainActor`-isolated `finishedCount` below.
+@MainActor
 final class AVAudioEnginePlayerTests: XCTestCase {
 
+    // Temp-file bookkeeping: appended in `synthWAV` and drained in
+    // `tearDownWithError`. Both run on the main actor (the class is `@MainActor`
+    // and the teardown override is too), so the property needs no isolation
+    // exemption.
     private var tempURLs: [URL] = []
 
+    /// Count of natural-finish callbacks for the stop/seek "must not finish" tests.
+    /// A main-actor-isolated property (not a captured local `var`) so the
+    /// `@Sendable @MainActor` `onPlaybackFinished` closure can mutate it without a
+    /// data-race diagnostic. Reset at the start of each test that uses it.
+    private var finishedCount = 0
+
+    // `tearDownWithError()` is overridden `@MainActor` (matching the class) so its
+    // access to the main-isolated `tempURLs` needs no actor hop or exemption.
     override func tearDownWithError() throws {
         for url in tempURLs {
             try? FileManager.default.removeItem(at: url)
@@ -218,8 +235,8 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         let player = AVAudioEnginePlayer()
         try player.load(url)
 
-        var finishedCount = 0
-        player.onPlaybackFinished = { finishedCount += 1 }
+        finishedCount = 0
+        player.onPlaybackFinished = { [weak self] in self?.finishedCount += 1 }
 
         player.play()
         player.stop()
@@ -242,8 +259,8 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         let player = AVAudioEnginePlayer()
         try player.load(url)
 
-        var finishedCount = 0
-        player.onPlaybackFinished = { finishedCount += 1 }
+        finishedCount = 0
+        player.onPlaybackFinished = { [weak self] in self?.finishedCount += 1 }
 
         player.play()
         player.seek(to: 0.5)

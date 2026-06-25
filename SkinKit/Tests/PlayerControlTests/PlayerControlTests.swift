@@ -8,6 +8,7 @@ import SkinRender
 /// lifted out of the interactive harness. A `FakePlaybackEngine` stands in for
 /// the real audio engine so every mapping is asserted in memory; `nextRepeatMode`
 /// is verified as a pure cycle. No graphics / audio framework is touched.
+@MainActor
 final class PlayerControlTests: XCTestCase {
 
     // MARK: - Fixtures

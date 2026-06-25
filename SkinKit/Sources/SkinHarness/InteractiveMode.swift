@@ -96,11 +96,18 @@ private func parseInteractiveArguments(_ argv: [String]) -> InteractiveArguments
 // MARK: - Entry point
 
 // Hold the controller for the process lifetime so it is not deallocated once the
-// run loop starts (the run loop owns no strong reference to it).
-private var liveController: InteractiveController?
+// run loop starts (the run loop owns no strong reference to it). `@MainActor`: it
+// is only ever assigned inside the `@MainActor` `runInteractiveMode` and holds a
+// `@MainActor` controller, so it is not nonisolated shared mutable state.
+@MainActor private var liveController: InteractiveController?
 
 /// Run the interactive mode and never return: it opens the window, starts the
 /// redraw loop, and drives the main run loop (exits the process itself).
+///
+/// `@MainActor` because the whole path touches AppKit (`NSApplication`, the window
+/// build) and the now-`@MainActor` `PlayerCore`. The harness runs entirely on the
+/// main thread; the dispatcher in `main.swift` calls it from the main-actor context.
+@MainActor
 func runInteractiveMode() -> Never {
     let arguments = parseInteractiveArguments(CommandLine.arguments)
 

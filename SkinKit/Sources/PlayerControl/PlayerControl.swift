@@ -23,6 +23,11 @@ public enum PlayerControl {
     ///   .previous      -> previous()
     ///   .toggleShuffle -> isShuffle.toggle()
     ///   .toggleRepeat  -> cycle repeatMode off -> all -> one -> off
+    ///
+    /// `@MainActor` because it touches the now-main-actor `PlayerCore`; every
+    /// caller (the window controllers) is already on the main actor, so this is a
+    /// no-op at runtime and just makes the isolation explicit.
+    @MainActor
     public static func apply(_ control: SkinControl, to core: PlayerCore) {
         switch control {
         case .play:

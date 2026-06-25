@@ -193,6 +193,11 @@ private func runPNGMode(bitmap: DecodedBitmap, region: SkinRegion?, output: Stri
 /// is shaped at the WINDOW/LAYER level via a `CAShapeLayer` mask derived from the
 /// region polygons (geometry kept separate from pixels). When the skin declares
 /// no region, the normal titled/opaque window is used.
+///
+/// `@MainActor` because it builds main-actor AppKit (`SkinImageView`, `NSWindow`
+/// via the now-`@MainActor` `RegionWindowBuilder.make`, `NSApplication`). The
+/// top-level dispatcher below runs in the main-actor executable context.
+@MainActor
 private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: Int) {
     guard let image = CGImageConversion.makeImage(from: bitmap) else {
         fail("Could not build an image from the composed main window.")
@@ -263,7 +268,7 @@ if CommandLine.arguments.contains("--playlist-snapshot") {
 // positional audio files are not mistaken for extra `.wsz` arguments.
 // `runPlaylistMode` never returns (it drives the run loop).
 if CommandLine.arguments.contains("--playlist") {
-    MainActor.assumeIsolated { runPlaylistMode() }
+    runPlaylistMode()
 }
 
 // EQ snapshot: `--eq-snapshot <skin.wsz> <out.png>` composes the equalizer face
@@ -287,10 +292,11 @@ if CommandLine.arguments.contains("--eq") {
 // Liquid Glass dock-bar player (no `.wsz`), wired to a live `PlayerCore`. It is
 // handled in `DefaultSkinMode.swift`; dispatch here before skin-path parsing so
 // its positional audio files are not mistaken for `.wsz` arguments.
-// `runDefaultSkinMode` never returns (it drives the run loop). Hop onto the main
-// actor explicitly since the entry point is main-actor-isolated (it touches AppKit).
+// `runDefaultSkinMode` never returns (it drives the run loop). It is `@MainActor`
+// (it touches AppKit) and is called directly: top-level executable code is already
+// main-actor-isolated, so no explicit hop is needed.
 if CommandLine.arguments.contains("--default-skin") {
-    MainActor.assumeIsolated { runDefaultSkinMode() }
+    runDefaultSkinMode()
 }
 
 // App-icon mode: `--app-icon <outDir>` renders the deterministic `AppIconView`

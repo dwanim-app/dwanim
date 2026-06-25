@@ -8,6 +8,7 @@ import XCTest
 ///
 /// Each `MARK` maps to one of the acceptance criteria (1...11). Shuffle is made
 /// deterministic by injecting a `nextIndexStrategy` closure.
+@MainActor
 final class PlayerCoreTests: XCTestCase {
 
     // MARK: - Fixtures

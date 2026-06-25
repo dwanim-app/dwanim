@@ -30,7 +30,12 @@ public protocol AudioTapProviding: AnyObject {
     ///
     /// Installing again replaces any prior tap. The callback receives the mono
     /// sample frame and the source sample rate, on an audio render thread.
-    func installTap(_ onBuffer: @escaping (_ monoSamples: [Float], _ sampleRate: Double) -> Void)
+    ///
+    /// The callback is `@Sendable` because it is invoked off any actor (the audio
+    /// render thread). The one production consumer — `RedrawLoop` — captures only a
+    /// `Sendable` `SpectrumFeed` and writes it under a lock, so it is legal to call
+    /// off-actor.
+    func installTap(_ onBuffer: @escaping @Sendable (_ monoSamples: [Float], _ sampleRate: Double) -> Void)
 
     /// Remove a previously installed tap. Safe to call when none is installed.
     func removeTap()

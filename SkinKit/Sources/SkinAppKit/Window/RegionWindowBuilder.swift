@@ -28,6 +28,11 @@ public enum RegionWindowBuilder {
     ///   - title: the titled-window title (ignored when a mask is applied — the
     ///     borderless region window shows no title bar).
     /// - Returns: a configured, not-yet-shown `NSWindow`.
+    ///
+    /// `@MainActor`: it builds and configures `NSWindow` / `NSView` (main-actor
+    /// AppKit). It always ran on the main thread; the annotation makes the AppKit
+    /// touches provable rather than relying on the convention.
+    @MainActor
     public static func make(
         contentRect: NSRect,
         contentView: NSView,

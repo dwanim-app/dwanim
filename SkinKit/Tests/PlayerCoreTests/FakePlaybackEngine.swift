@@ -38,7 +38,7 @@ final class FakePlaybackEngine: AudioPlaybackEngine {
     var duration: TimeInterval = 0
     var isPlaying = false
     var volume: Float = 1.0
-    var onPlaybackFinished: (() -> Void)?
+    var onPlaybackFinished: (@Sendable @MainActor () -> Void)?
 
     // MARK: - Errors
 
@@ -75,7 +75,10 @@ final class FakePlaybackEngine: AudioPlaybackEngine {
 
     // MARK: - Test helpers
 
-    /// Simulate the engine finishing the current track end-to-end.
+    /// Simulate the engine finishing the current track end-to-end. `@MainActor`
+    /// because the stored handler is now main-actor-isolated (it drives the
+    /// `@MainActor` `PlayerCore`); the tests call this from main-actor methods.
+    @MainActor
     func fireFinished() {
         onPlaybackFinished?()
     }

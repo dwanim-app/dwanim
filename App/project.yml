@@ -80,6 +80,13 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Dwanim/Resources/Dwanim.entitlements
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
+        # STRICT CONCURRENCY (M5 hardening): match the SkinKit package's
+        # `-strict-concurrency=complete`. The app target uses the SEPARATE Xcode
+        # build system, so the package's per-target Swift flag does NOT propagate
+        # here — this key is the app-side equivalent. SWIFT_VERSION stays 5.0, so
+        # (like the package) diagnostics surface as warnings, not hard errors;
+        # graduating to SWIFT_VERSION 6.0 is the same deliberate follow-up.
+        SWIFT_STRICT_CONCURRENCY: complete
 
 # A SHARED scheme so `xcodebuild -scheme Dwanim` works for any clone / CI
 # without relying on Xcode's per-user autocreated schemes (which are gitignored).
