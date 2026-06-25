@@ -253,6 +253,12 @@ final class AudioSession {
     /// reads this to gate (and, when absent, redirect to "Open Skin…") those items.
     var isSkinLoaded: Bool { classicSkin.isSkinLoaded }
 
+    /// Whether any hosted classic window (main / playlist / EQ) is currently open.
+    /// The `AppDelegate` queries this from
+    /// `applicationShouldTerminateAfterLastWindowClosed(_:)` so closing the single
+    /// default `Window` does NOT quit the app while a classic window is still up.
+    var isAnyClassicWindowOpen: Bool { classicSkin.isAnyClassicWindowOpen }
+
     /// Toggle the hosted classic PLAYLIST window. When no skin is loaded yet, fall
     /// back to presenting "Open Skin…" (the playlist is a face of a loaded skin, so
     /// there is nothing to show without one) — the menu item stays usable rather

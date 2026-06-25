@@ -99,7 +99,7 @@ public final class PlaylistWindowController: SkinWindowController {
     /// single geometry source the drawing also uses, so hit-test and draw never
     /// drift.
     private var interiorHeight: Int {
-        PlaylistWindowComposer.interiorRect(width: skinWidth, height: skinHeight).h
+        PlaylistWindowComposer.interiorRect(width: skinWidth, height: skinHeight, skin: skin).h
     }
 
     // MARK: - Scroll (cadence fix)
@@ -169,7 +169,7 @@ public final class PlaylistWindowController: SkinWindowController {
         let skin = ControlHitTest.skinPoint(
             viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
         )
-        let interior = PlaylistWindowComposer.interiorRect(width: skinWidth, height: skinHeight)
+        let interior = PlaylistWindowComposer.interiorRect(width: skinWidth, height: skinHeight, skin: self.skin)
         guard interior.w > 0, interior.h > 0 else { return nil }
 
         // Must land inside the interior horizontally (clicks on the side chrome are

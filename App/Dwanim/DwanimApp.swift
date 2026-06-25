@@ -144,9 +144,10 @@ struct DwanimApp: App {
 // so the app's lifecycle is driven by GENUINE termination, not window
 // disappearance:
 //
-//   • `applicationShouldTerminateAfterLastWindowClosed(_:)` returns `true`, so
-//     closing the single main `Window` quits the app (instead of leaving a
-//     window-less process running).
+//   • `applicationShouldTerminateAfterLastWindowClosed(_:)` returns `true` ONLY
+//     when no hosted classic window remains, so closing the single default `Window`
+//     quits the app — UNLESS a classic skin / playlist / EQ window is still open, in
+//     which case it returns `false` and the app keeps running on that cluster.
 //   • `applicationWillTerminate(_:)` tears the shared `AudioSession` down EXACTLY
 //     ONCE, when the process is actually quitting — releasing the security scope,
 //     stopping the feed, and closing the hosted classic-window cluster.
@@ -161,10 +162,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `.onAppear`. Weak: the App's `@State` is the real owner.
     weak var session: AudioSession?
 
-    /// Closing the single main window quits the app (so we tear down once, cleanly,
-    /// via `applicationWillTerminate`), rather than leaving a window-less process.
+    /// Closing the default SwiftUI `Window` should quit the app — but ONLY when no
+    /// hosted classic window remains. If a classic skin / playlist / EQ window is
+    /// still open, closing the default window must keep the app alive on that
+    /// cluster, so we return `false`; once the last classic window has also closed
+    /// (no classic window left), we return `true` and the app quits, tearing the
+    /// session down cleanly via `applicationWillTerminate`.
+    ///
+    /// AppKit calls this whenever the app's window count reaches zero AND when a
+    /// window close leaves a window-less SwiftUI scene; gating on
+    /// `isAnyClassicWindowOpen` means: closing the LAST remaining window (default
+    /// plus all classic) quits, while closing the default with a classic still up
+    /// does not. ⌘Q is unaffected — it routes through `terminate(_:)` directly and
+    /// never consults this method, so it always quits.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        // No session yet (pre-`.onAppear`) means no classic window is open, so it is
+        // safe to quit on the last window close.
+        guard let session else { return true }
+        return !session.isAnyClassicWindowOpen
     }
 
     /// Genuine termination: tear the shared session down exactly once (feed off,

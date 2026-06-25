@@ -118,4 +118,32 @@ public struct DwennimmenMark: Shape {
         return CGAffineTransform(translationX: offsetX, y: offsetY)
             .scaledBy(x: scale, y: scale)
     }
+
+    // MARK: - Inked bounds (optical centring)
+
+    /// The bounding box of the ACTUAL inked content — the two horns PLUS the top
+    /// dot — in design space. Unlike the nominal 100x100 design box this measures
+    /// where the strokes really land: the dot tops out near y = 5 and the horns
+    /// bottom out near y = 70, so the ink sits in the UPPER part of the box and its
+    /// vertical midpoint is above y = 50. Centring on this box (rather than the
+    /// nominal box) lets the icon seat the visible mark in the optical centre of the
+    /// plate instead of leaving more empty plate below the horns than above.
+    ///
+    /// Computed from the same `designPath(includesDot:)` the view strokes, so it
+    /// tracks the geometry automatically if the control points ever move.
+    public static var inkedDesignBounds: CGRect {
+        designPath(includesDot: true).boundingRect
+    }
+
+    /// The translation (in design units) that moves the inked-content centroid to
+    /// the centre of the nominal 100x100 design box, so a `fitTransform`-based
+    /// layout that nominally centres the box ends up optically centring the INK.
+    /// `dx` is ~0 (the mark is horizontally symmetric about x = 50); `dy` is
+    /// positive (the ink sits high, so it shifts DOWN). Applied by the icon view as
+    /// a fraction-of-side offset on the mark + dot.
+    public static var inkedCentringOffset: CGSize {
+        let bounds = inkedDesignBounds
+        let boxCentre = designSize / 2
+        return CGSize(width: boxCentre - bounds.midX, height: boxCentre - bounds.midY)
+    }
 }

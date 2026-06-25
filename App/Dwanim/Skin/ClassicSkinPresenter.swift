@@ -254,6 +254,17 @@ final class ClassicSkinPresenter {
     /// (or gate) those commands.
     var isSkinLoaded: Bool { loadedSkin != nil }
 
+    /// Whether ANY hosted classic window (main / playlist / EQ) is currently open.
+    /// The `AppDelegate` reads this to decide whether closing the default SwiftUI
+    /// `Window` should quit the app: if a classic window is still up, closing the
+    /// default window must NOT terminate the process (the app keeps running on the
+    /// classic cluster); when the last classic window has also closed, the app may
+    /// quit. A handle is held exactly while its window is open and dropped on close,
+    /// so a non-nil handle is a faithful "open" signal.
+    var isAnyClassicWindowOpen: Bool {
+        mainHandle != nil || playlistHandle != nil || eqHandle != nil
+    }
+
     // MARK: Window hosting
 
     /// Load the skin at `url` (inside its security scope), remember it, and host the
