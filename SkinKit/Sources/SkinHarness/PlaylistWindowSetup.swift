@@ -14,8 +14,10 @@ import SkinRender
 // (process-lifetime hold + `app.run()`).
 
 // Hold the controller for the process lifetime so it is not deallocated once the
-// run loop starts (the run loop owns no strong reference to it).
-private var livePlaylistController: PlaylistWindowController?
+// run loop starts (the run loop owns no strong reference to it). `@MainActor`: only
+// assigned inside the `@MainActor` `openPlaylistWindow`, holding a `@MainActor`
+// controller, so it is not nonisolated shared mutable state.
+@MainActor private var livePlaylistController: PlaylistWindowController?
 
 // MARK: - Window setup
 

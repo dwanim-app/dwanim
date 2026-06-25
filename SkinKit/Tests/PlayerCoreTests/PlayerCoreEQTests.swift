@@ -9,6 +9,7 @@ import XCTest
 /// of the `setVolume -> engine.volume` flow. A `FakePlaybackEngine` (no EQ
 /// conformance) proves the cast is a safe no-op for engines that do not support
 /// equalization.
+@MainActor
 final class PlayerCoreEQTests: XCTestCase {
 
     private func track(_ name: String) -> Track {

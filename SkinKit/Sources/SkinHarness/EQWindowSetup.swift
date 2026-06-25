@@ -13,13 +13,18 @@ import SkinRender
 // only the harness-specific lifecycle (process-lifetime hold + `app.run()`).
 
 // Hold the controller for the process lifetime so it is not deallocated once the
-// run loop starts (the run loop owns no strong reference to it).
-private var liveEQController: EQController?
+// run loop starts (the run loop owns no strong reference to it). `@MainActor`: only
+// assigned inside the `@MainActor` `openEQWindow`, holding a `@MainActor` controller.
+@MainActor private var liveEQController: EQController?
 
 // MARK: - Window setup
 
 /// Build and show the EQ window via `SkinAppKit.showEQWindow`, hold the
 /// controller, then run the app. Never returns.
+///
+/// `@MainActor` because it builds the window (main-actor AppKit) and drives the
+/// main-actor `NSApplication`. The whole harness runs on the main thread.
+@MainActor
 func openEQWindow(skin: Skin, core: PlayerCore, scale: Int) -> Never {
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)

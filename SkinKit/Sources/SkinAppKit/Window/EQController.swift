@@ -35,6 +35,13 @@ import SkinRender
 /// the thumb's vertical centre), is inverted to a gain
 /// (`EQWindowLayout.thumbGain(forThumbTopY:)`); and that gain is pushed to
 /// `PlayerCore`, which drives the real `AVAudioUnitEQ`.
+///
+/// `@MainActor` (the M5 unification): all four window controllers are now uniformly
+/// main-actor-isolated. Every method here already ran on the main thread (the mouse
+/// callbacks and the `@MainActor` `PlayerCore` it drives); the annotation makes that
+/// explicit. The EQ window owns no audio tap or timer, so it inherits the base's
+/// default no-op `tearDown()` and crosses no thread boundary.
+@MainActor
 public final class EQController: SkinWindowController {
     private let skin: Skin
     private let core: PlayerCore

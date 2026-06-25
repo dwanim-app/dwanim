@@ -102,6 +102,11 @@ func parseEQArguments(_ argv: [String]) -> EQArguments {
 
 /// Run the EQ mode and never return: load the skin + audio, open the EQ window,
 /// start playback, and drive the main run loop (exits the process itself).
+///
+/// `@MainActor` because it builds the `@MainActor` `PlayerCore`, drives it
+/// (`setEQEnabled` / `play`), and opens the window (main-actor AppKit). The harness
+/// runs on the main thread; `main.swift` dispatches it from the main-actor context.
+@MainActor
 func runEQMode() -> Never {
     let arguments = parseEQArguments(CommandLine.arguments)
 

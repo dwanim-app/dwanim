@@ -33,8 +33,12 @@ public protocol AudioPlaybackEngine: AnyObject {
 
     /// Invoked by the engine when the current track plays to its natural end.
     ///
-    /// - Note: A real engine may fire this on a background/audio thread; the
-    ///   concrete implementation is responsible for hopping to the main thread
-    ///   before invoking it, since `PlayerCore` is main-actor-oriented state.
-    var onPlaybackFinished: (() -> Void)? { get set }
+    /// - Note: The handler is `@MainActor`-isolated because `PlayerCore` (the sole
+    ///   installer) is `@MainActor` and the finish path mutates main-actor state.
+    ///   A real engine may detect the finish on a background/audio thread, so the
+    ///   concrete implementation MUST hop to the main actor before invoking this —
+    ///   the `@MainActor` type makes that hop a compiler-checked obligation rather
+    ///   than a convention (and a `@Sendable` closure, so it can be stored/forwarded
+    ///   across the audio→main boundary).
+    var onPlaybackFinished: (@Sendable @MainActor () -> Void)? { get set }
 }

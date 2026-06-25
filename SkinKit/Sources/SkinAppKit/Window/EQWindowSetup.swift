@@ -46,6 +46,12 @@ public struct EQWindowHandle {
 /// and its behavior is unchanged. The real app passes a closure routing the
 /// dropped `[URL]` to its drop handler, so dropping onto the EQ window opens a
 /// skin / audio just like the open panels.
+///
+/// `@MainActor`: it builds the `ScaledImageView` + window + the now-`@MainActor`
+/// `EQController`, and reads the `@MainActor` `PlayerCore`. Every caller is already
+/// main-actor-isolated, so this is a no-op at runtime and just makes the AppKit
+/// construction provable.
+@MainActor
 @discardableResult
 public func showEQWindow(
     skin: Skin,

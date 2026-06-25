@@ -16,6 +16,7 @@ import XCTest
 ///
 /// Each `gap_` failure is annotated with a `[MUST-FIX]` or `[FYI]` tag in the
 /// failure message so the tech-lead report maps 1:1 to a test.
+@MainActor
 final class PlayerCoreReviewTests: XCTestCase {
 
     // MARK: - Fixtures

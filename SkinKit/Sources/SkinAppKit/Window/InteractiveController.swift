@@ -30,6 +30,14 @@ import SpectrumKit
 /// minimum work), and the redraw timer (main thread) reads that snapshot, runs the
 /// `SpectrumAnalyzer`, and draws the bars via `SpectrumRenderer`. The analyzer and
 /// all SkinRender drawing stay on the main thread.
+///
+/// `@MainActor` (the M5 unification): all four window controllers are now uniformly
+/// main-actor-isolated. Every method here already ran on the main thread by
+/// convention (mouse callbacks, the RedrawLoop tick, the `@MainActor` `PlayerCore`
+/// it drives); the annotation makes that the compiler's contract. The only seam
+/// that genuinely crosses threads — the audio tap writing the `SpectrumFeed` — is
+/// owned by the `RedrawLoop` and never touches this controller, so it is unaffected.
+@MainActor
 public final class InteractiveController: SkinWindowController {
     private let skin: Skin
     private let core: PlayerCore
@@ -187,6 +195,11 @@ public final class InteractiveController: SkinWindowController {
     /// app so the run loop exits cleanly. (The borderless region window has no
     /// close button, but wiring the delegate there too keeps teardown correct if
     /// it is ever closed.)
+    ///
+    /// A plain `@MainActor override`: the base `SkinWindowController` is now
+    /// `@MainActor`, so `tearDown()` is main-isolated and can touch the main-actor
+    /// `redrawLoop` directly. AppKit calls it via `windowWillClose` on the main
+    /// thread, so this is sound with no `assumeIsolated` hop.
     public override func tearDown() {
         redrawLoop?.stop()
     }

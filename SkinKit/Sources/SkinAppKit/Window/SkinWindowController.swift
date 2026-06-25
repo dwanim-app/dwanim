@@ -42,13 +42,15 @@ import Foundation
 // and chrome differ per window), and the process-lifetime hold stays a
 // file-private `var` in each setup file as before.
 //
-// Not actor-isolated: the bitmap-window and EQ controllers are plain (no actor),
-// while the default-skin and playlist controllers are `@MainActor`. NSObject's
-// delegate-conformance methods are non-isolated, and the `@MainActor` subclasses
-// keep their own state main-actor-isolated; the teardown methods here only call
-// `tearDown()` (a hop-free open method), the host's `onClose` (a host-supplied
-// closure), and AppKit's `NSApp.terminate`, all of which the existing
-// controllers already invoked from these same callbacks.
+// `@MainActor` (the M5 unification): all four concrete controllers are now uniformly
+// `@MainActor`, so the shared base is too. The `NSWindowDelegate` /
+// `NSApplicationDelegate` callbacks AppKit invokes (`windowWillClose`,
+// `applicationShouldTerminateAfterLastWindowClosed`, plus the playlist's
+// `windowDidResize`) all fire on the main thread, so main-actor isolation matches
+// reality and lets the subclasses' `tearDown()` overrides touch their main-actor
+// state (the `RedrawLoop`) directly — no `nonisolated` + `assumeIsolated` dance and
+// no `self`-sending across an actor hop.
+@MainActor
 open class SkinWindowController: NSObject, NSWindowDelegate, NSApplicationDelegate {
 
     /// Whether closing this window should quit the whole process. `true` (the

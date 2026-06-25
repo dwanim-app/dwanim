@@ -103,15 +103,14 @@ private final class DefaultSkinController: SkinWindowController {
         super.init()
 
         // ~22 Hz: smooth enough for the spectrum and progress without burning the
-        // main thread. The per-tick work is `@MainActor`; the shared loop fires it
-        // on the main run loop, so `assumeIsolated` is sound (same pattern the
-        // controller used before the lift).
+        // main thread. `onTick` is `@MainActor` (the RedrawLoop hops to main before
+        // firing it), so the tick can call the main-actor `tick()` directly.
         redrawLoop = RedrawLoop(
             interval: 0.045,
             tap: tap,
             feed: latestSamples
         ) { [weak self] in
-            MainActor.assumeIsolated { self?.tick() }
+            self?.tick()
         }
     }
 
@@ -136,19 +135,21 @@ private final class DefaultSkinController: SkinWindowController {
 
     /// The window is closing — stop the redraw loop (invalidate the timer + remove
     /// the tap) before the base terminates the app.
-    nonisolated override func tearDown() {
-        // `redrawLoop?.stop()` only touches the loop's own (Sendable) state; hop
-        // is unnecessary, but the property is main-actor-isolated, so read it
-        // through an assumeIsolated to match the controller's isolation.
-        MainActor.assumeIsolated {
-            redrawLoop?.stop()
-        }
+    ///
+    /// A plain `@MainActor override`: the base `SkinWindowController` is now
+    /// `@MainActor`, so `tearDown()` is main-isolated and touches the main-actor
+    /// `redrawLoop` directly. AppKit invokes it via `windowWillClose` on the main
+    /// thread, so no `assumeIsolated` hop is needed.
+    override func tearDown() {
+        redrawLoop?.stop()
     }
 }
 
 // Hold the controller for the process lifetime so it is not deallocated once the
-// run loop starts (the run loop owns no strong reference to it).
-private var liveDefaultSkinController: DefaultSkinController?
+// run loop starts (the run loop owns no strong reference to it). `@MainActor`: only
+// assigned inside the `@MainActor` `openDefaultSkinWindow`, holding a `@MainActor`
+// controller, so it is not nonisolated shared mutable state.
+@MainActor private var liveDefaultSkinController: DefaultSkinController?
 
 // MARK: - Entry point
 

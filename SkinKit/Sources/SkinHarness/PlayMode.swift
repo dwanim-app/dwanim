@@ -32,6 +32,11 @@ func formatTimecode(_ seconds: TimeInterval) -> String {
 
 /// Run the play mode for `path` and never return: it drives the run loop and
 /// exits the process itself (0 on a clean finish, 1 on a load/engine failure).
+///
+/// `@MainActor` because it builds and drives the now-`@MainActor` `PlayerCore`
+/// (construct / `load` / `play` / read `isPlaying` / `duration`). The harness runs
+/// on the main thread; `main.swift` dispatches it from the main-actor context.
+@MainActor
 func runPlayMode(path: String) -> Never {
     let fileURL = URL(fileURLWithPath: path)
 
@@ -71,6 +76,12 @@ func runPlayMode(path: String) -> Never {
 /// second. Returns (via `exit(0)`) when the track finishes, and is bounded by a
 /// hard cap of `duration` plus a few seconds of slack so it can never hang even
 /// if the finish signal is missed.
+///
+/// `@MainActor` because it reads the now-`@MainActor` `core`. The poll `Timer` is
+/// added to `RunLoop.main`, so its `@Sendable` body fires on the main thread; it
+/// reaches the main-actor `core` through `MainActor.assumeIsolated` (sound for a
+/// `RunLoop.main` timer).
+@MainActor
 private func drivePlaybackRunLoop(core: PlayerCore, duration: TimeInterval) -> Never {
     let pollInterval: TimeInterval = 0.5
     // Hard ceiling: never run longer than the track plus slack, even if the
@@ -82,24 +93,38 @@ private func drivePlaybackRunLoop(core: PlayerCore, duration: TimeInterval) -> N
     // The track was confirmed playing before this loop starts, so the first
     // `!isPlaying` we observe is a genuine finish (or an engine stop) — not a
     // not-yet-started state.
+    //
+    // The `Timer` body is `@Sendable`; it runs on `RunLoop.main`, so it re-enters
+    // the main actor via `assumeIsolated` to read the `@MainActor` `core`. The
+    // closure captures only the `Sendable` `core` (a `@MainActor` class, hence
+    // `Sendable`) and `Sendable` value types.
     let timer = Timer(timeInterval: pollInterval, repeats: true) { timer in
-        let now = core.currentTime
-        let total = core.duration
-        print("\u{25B6} \(formatTimecode(now)) / \(formatTimecode(total))")
+        // Read the main-actor `core` inside `assumeIsolated` (sound: the timer fires
+        // on `RunLoop.main`). It returns whether the loop should stop, so the
+        // non-Sendable `timer` is touched OUTSIDE the `@Sendable assumeIsolated`
+        // closure — invalidate + exit happen on the audio-free main thread path.
+        let shouldStop = MainActor.assumeIsolated { () -> Bool in
+            let now = core.currentTime
+            let total = core.duration
+            print("\u{25B6} \(formatTimecode(now)) / \(formatTimecode(total))")
 
-        if !core.isPlaying {
-            // Natural end (or the engine stopped). Print a final full-position
-            // line so the output ends at the track length, then exit cleanly.
-            print("\u{25B6} \(formatTimecode(total)) / \(formatTimecode(total))")
-            print("Finished.")
-            timer.invalidate()
-            exit(0)
+            if !core.isPlaying {
+                // Natural end (or the engine stopped). Print a final full-position
+                // line so the output ends at the track length, then stop cleanly.
+                print("\u{25B6} \(formatTimecode(total)) / \(formatTimecode(total))")
+                print("Finished.")
+                return true
+            }
+
+            if Date() >= deadline {
+                // Safety cap tripped: stop and exit cleanly. This guards against a
+                // missed finish signal so the process can never hang.
+                print("Reached the safety time cap; stopping.")
+                return true
+            }
+            return false
         }
-
-        if Date() >= deadline {
-            // Safety cap tripped: stop the engine and exit cleanly. This guards
-            // against a missed finish signal so the process can never hang.
-            print("Reached the safety time cap; stopping.")
+        if shouldStop {
             timer.invalidate()
             exit(0)
         }

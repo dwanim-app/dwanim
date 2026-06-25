@@ -16,7 +16,29 @@ import PlayerCore
 /// the player node since that schedule. The natural end-of-track callback is
 /// guarded by a generation token so that the completion handlers which also
 /// fire on `stop()`/`seek()` cannot be mistaken for a real finish.
-public final class AVAudioEnginePlayer: AudioPlaybackEngine {
+///
+/// ## Concurrency: `@unchecked Sendable`, NOT `@MainActor` (do not regress)
+/// The engine is deliberately NOT actor-isolated. It owns an `AVAudioEngine`
+/// whose render graph runs on the audio thread, and its two off-main closures —
+/// the `scheduleSegment` completion callback and the PCM tap — fire on that audio
+/// render thread. Marking the class `@MainActor` would (wrongly) make those
+/// closures main-isolated, which is unsound for callbacks the audio thread
+/// invokes, and could push UI-actor work onto the render thread. So the class
+/// stays nonisolated.
+///
+/// Its Swift-level mutable state (`file`, `generation`, `seekBaseTime`,
+/// `wantsToPlay`, `reachedEnd`, `hasPendingSegment`, `onPlaybackFinished`, …) is
+/// nonetheless MAIN-CONFINED: every transport method (`load`/`play`/`pause`/
+/// `stop`/`seek`) is called by the `@MainActor` `PlayerCore`, and the finish
+/// handler mutates that state ONLY inside the `DispatchQueue.main.async` hop in
+/// `handleCompletion`. The audio-thread closures themselves touch NO Swift state:
+/// the completion callback only bounces to main (carrying a `Sendable` token), and
+/// the tap writes solely the lock-guarded, `Sendable` `SpectrumFeed`. Because that
+/// discipline is hand-audited rather than compiler-enforced, the conformance is
+/// `@unchecked Sendable` (the audit, not a lock, is what makes it safe) — this lets
+/// the engine cross the audio→main boundary as the closures' captured reference
+/// without a data race, while keeping the audio boundary exactly where it is.
+public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable {
 
     // MARK: - Graph
 
@@ -66,7 +88,10 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 
     // MARK: - Public callbacks
 
-    public var onPlaybackFinished: (() -> Void)?
+    /// The natural-finish handler, `@MainActor`-isolated and `@Sendable` to match
+    /// the protocol. `PlayerCore` (the installer) is `@MainActor`; the engine fires
+    /// this only after hopping to the main actor (see `handleCompletion`).
+    public var onPlaybackFinished: (@Sendable @MainActor () -> Void)?
 
     // MARK: - Init
 
@@ -248,25 +273,41 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
             at: nil,
             completionCallbackType: .dataPlayedBack
         ) { [weak self] _ in
+            // AUDIO THREAD: do the MINIMUM. Capture only the Sendable `token` and a
+            // weak engine reference, read/write NO engine state here, and hand off
+            // immediately to the main-thread hop in `handleCompletion`.
             self?.handleCompletion(token: token)
         }
     }
 
     // MARK: - Completion
 
-    /// Called from the audio thread when a scheduled segment drains. Only a
-    /// segment whose token still matches the live generation — i.e. one that
-    /// was neither stopped nor reseeked — counts as a natural finish.
+    /// Called from the audio thread when a scheduled segment drains. Only a segment
+    /// whose token still matches the live generation (one that was neither stopped
+    /// nor reseeked) counts as a natural finish.
+    ///
+    /// ## Audio-to-main hop (strict concurrency)
+    /// This runs on the AUDIO render thread, so it does nothing but bounce to the
+    /// main thread via `DispatchQueue.main.async`. EVERY engine-state read/write
+    /// (`generation`, `hasPendingSegment`, `wantsToPlay`, `reachedEnd`) and the
+    /// `onPlaybackFinished` call happen INSIDE the main-thread block, never on the
+    /// audio thread, so the engine's Swift state stays main-confined. The audio
+    /// thread only carries the `@unchecked Sendable` engine reference across to the
+    /// main actor untouched (see the class-level Sendable note). `assumeIsolated` is
+    /// sound because a `DispatchQueue.main.async` block always lands on the main
+    /// thread; it makes the main-actor reads of `onPlaybackFinished` provable.
     private func handleCompletion(token: UInt64) {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard token == self.generation else { return }
-            self.hasPendingSegment = false
-            self.wantsToPlay = false
-            // The track drained on its own; mark it so `currentTime` reports the
-            // end position while the render clock is gone (see `reachedEnd`).
-            self.reachedEnd = true
-            self.onPlaybackFinished?()
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                guard token == self.generation else { return }
+                self.hasPendingSegment = false
+                self.wantsToPlay = false
+                // The track drained on its own; mark it so `currentTime` reports the
+                // end position while the render clock is gone (see `reachedEnd`).
+                self.reachedEnd = true
+                self.onPlaybackFinished?()
+            }
         }
     }
 
@@ -385,7 +426,7 @@ extension AVAudioEnginePlayer: TrackFormatProviding {
 extension AVAudioEnginePlayer: AudioTapProviding {
 
     public func installTap(
-        _ onBuffer: @escaping (_ monoSamples: [Float], _ sampleRate: Double) -> Void
+        _ onBuffer: @escaping @Sendable (_ monoSamples: [Float], _ sampleRate: Double) -> Void
     ) {
         // AVAudioEngine permits only one tap per bus, so remove-then-install to
         // be safe if a tap was already present (calling `installTap` twice must
