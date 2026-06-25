@@ -96,11 +96,15 @@ let package = Package(
             name: "DwanimUI",
             dependencies: ["PlayerCore"],
             // The in-window emblem renders the SAME bitmap as the app icon
-            // (Sources/DwanimUI/Resources/dwennimmen-emblem.png, a copy of the
-            // committed icon_256x256.png) so the glass-panel mark matches the
-            // dock/Finder icon exactly. `.process` lets SwiftPM optimise the PNG
-            // and expose it via `Bundle.module`. The resource is a bundled asset,
-            // NOT an import: DwanimUI still imports only SwiftUI + PlayerCore.
+            // (a copy of the committed icon_256x256.png) so the glass-panel mark
+            // matches the dock/Finder icon exactly. It lives in an ASSET CATALOG
+            // — Resources/EmblemAssets.xcassets/dwennimmen-emblem.imageset — so
+            // SwiftUI's `Image("dwennimmen-emblem", bundle: .module)` resolves it
+            // (Image(name:bundle:) looks up compiled asset-catalog names, NOT
+            // loose files; a loose PNG never resolves and renders blank). `.process`
+            // runs the resource pipeline, which compiles the .xcassets into an
+            // Assets.car inside `Bundle.module`. The emblem is a bundled asset, NOT
+            // an import: DwanimUI still imports only SwiftUI + PlayerCore (no AppKit).
             resources: [.process("Resources")],
             swiftSettings: strictConcurrency
         ),
