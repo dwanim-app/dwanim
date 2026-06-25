@@ -141,14 +141,20 @@ final class PlaylistWindowComposerTests: XCTestCase {
         XCTAssertEqual(br.2, 0)
     }
 
-    // MARK: - 3. Title fill tiles horizontally across the gap
+    // MARK: - 3. Title texture fill tiles on BOTH sides of the centered title
 
-    func testTitleFillTilesAcrossTheGap() {
+    func testTitleFillTilesOnBothSidesOfTheTitle() {
         let width = 350
         let height = 250
         let fillColor: (UInt8, UInt8, UInt8, UInt8) = (3, 7, 9, 255)
+        // A distinct title color so we can locate the (single) title block and
+        // assert the FILL texture flanks it on both sides.
+        let titleColor: (UInt8, UInt8, UInt8, UInt8) = (200, 50, 150, 255)
         guard let composed = PlaylistWindowComposer.compose(
-            makeSkin(colors: ["titleBarFillActive": fillColor], playlist: normalBG),
+            makeSkin(
+                colors: ["titleBarFillActive": fillColor, "titleBarTitleActive": titleColor],
+                playlist: normalBG
+            ),
             width: width, height: height
         ) else {
             XCTFail("compose returned nil")
@@ -156,19 +162,87 @@ final class PlaylistWindowComposerTests: XCTestCase {
         }
         let leftCorner = nominalSize("titleBarLeftCorner")
         let rightCorner = nominalSize("titleBarRightCorner")
-        // Sample several x positions inside the title-fill gap (between the left
-        // corner and the right corner) at a y within the title-bar height. Every
-        // sample must be the fill color, proving the fill tiles the whole gap.
+        let title = nominalSize("titleBarTitleActive")
         let titleRowY = min(leftCorner.height, 2)
-        let gapStart = leftCorner.width
-        let gapEnd = width - rightCorner.width
-        XCTAssertLessThan(gapStart, gapEnd, "test needs a non-empty title gap")
-        for x in stride(from: gapStart, to: gapEnd, by: max(1, (gapEnd - gapStart) / 7)) {
-            let px = pixel(composed, x: x, y: titleRowY)
-            XCTAssertEqual(px.0, fillColor.0, "title fill not tiled at x=\(x)")
-            XCTAssertEqual(px.1, fillColor.1)
-            XCTAssertEqual(px.2, fillColor.2)
+
+        // The title is centered in the full window; compute its clamped left edge.
+        let innerLeft = leftCorner.width
+        let innerRight = width - rightCorner.width
+        var titleLeft = (width - title.width) / 2
+        titleLeft = max(innerLeft, min(titleLeft, innerRight - title.width))
+        let titleRight = titleLeft + title.width
+
+        // Just LEFT of the title and just RIGHT of the title must be the FILL
+        // texture (proving the texture tiles both sides), not the title color.
+        let leftSampleX = (innerLeft + titleLeft) / 2
+        let rightSampleX = (titleRight + innerRight) / 2
+        XCTAssertLessThan(innerLeft, titleLeft, "test needs a left-side fill gap")
+        XCTAssertLessThan(titleRight, innerRight, "test needs a right-side fill gap")
+
+        let leftPx = pixel(composed, x: leftSampleX, y: titleRowY)
+        XCTAssertEqual(leftPx.0, fillColor.0, "left of title should be fill texture")
+        XCTAssertEqual(leftPx.1, fillColor.1)
+        XCTAssertEqual(leftPx.2, fillColor.2)
+
+        let rightPx = pixel(composed, x: rightSampleX, y: titleRowY)
+        XCTAssertEqual(rightPx.0, fillColor.0, "right of title should be fill texture")
+        XCTAssertEqual(rightPx.1, fillColor.1)
+        XCTAssertEqual(rightPx.2, fillColor.2)
+    }
+
+    // MARK: - 3b. Title is drawn EXACTLY ONCE, centered (not tiled/repeated)
+
+    func testTitleDrawnOnceCenteredNotRepeated() {
+        let width = 350
+        let height = 250
+        let fillColor: (UInt8, UInt8, UInt8, UInt8) = (3, 7, 9, 255)
+        let titleColor: (UInt8, UInt8, UInt8, UInt8) = (200, 50, 150, 255)
+        guard let composed = PlaylistWindowComposer.compose(
+            makeSkin(
+                colors: ["titleBarFillActive": fillColor, "titleBarTitleActive": titleColor],
+                playlist: normalBG
+            ),
+            width: width, height: height
+        ) else {
+            XCTFail("compose returned nil")
+            return
         }
+        let leftCorner = nominalSize("titleBarLeftCorner")
+        let rightCorner = nominalSize("titleBarRightCorner")
+        let title = nominalSize("titleBarTitleActive")
+        let titleRowY = min(leftCorner.height, 2)
+
+        let innerLeft = leftCorner.width
+        let innerRight = width - rightCorner.width
+        var titleLeft = (width - title.width) / 2
+        titleLeft = max(innerLeft, min(titleLeft, innerRight - title.width))
+
+        // Count, across the whole title row, the maximal run-length of contiguous
+        // title-colored columns. With the title drawn ONCE its run is ~title.width;
+        // the OLD tiled-title bug would smear the title color across the whole gap
+        // (run >> title.width) or repeat it in disjoint runs.
+        func isTitle(_ x: Int) -> Bool {
+            let p = pixel(composed, x: x, y: titleRowY)
+            return p.0 == titleColor.0 && p.1 == titleColor.1 && p.2 == titleColor.2
+        }
+        var runs: [Int] = []
+        var run = 0
+        for x in 0..<width {
+            if isTitle(x) { run += 1 } else if run > 0 { runs.append(run); run = 0 }
+        }
+        if run > 0 { runs.append(run) }
+
+        // Exactly ONE contiguous title run, and its width equals the title sprite.
+        XCTAssertEqual(runs.count, 1, "title must appear exactly once, got runs=\(runs)")
+        XCTAssertEqual(runs.first, title.width, "the single title run must be the title's width")
+
+        // The centre of the window is inside the title; near the corners is NOT.
+        XCTAssertTrue(isTitle(width / 2), "title should cover the window centre")
+        XCTAssertFalse(isTitle(innerLeft + 1), "no title near the left corner (should be fill)")
+        XCTAssertFalse(isTitle(innerRight - 2), "no title near the right corner (should be fill)")
+        // And the title is centered: its left edge is the clamped center position.
+        XCTAssertTrue(isTitle(titleLeft), "title starts at its centered left edge")
+        XCTAssertFalse(isTitle(titleLeft - 1), "fill (not title) immediately left of the title")
     }
 
     // MARK: - 4. Interior centre pixel == normalBG
@@ -194,15 +268,20 @@ final class PlaylistWindowComposerTests: XCTestCase {
     func testInactiveUsesInactiveTitleSprite() {
         let width = 350
         let height = 250
-        // Distinct colors for active vs inactive title fill so we can confirm the
-        // `active:` flag selects the right strip.
+        // Distinct colors for active vs inactive title fill AND title so we can
+        // confirm the `active:` flag selects the right strip for both pieces.
         let colors: [String: (UInt8, UInt8, UInt8, UInt8)] = [
             "titleBarFillActive": (100, 0, 0, 255),
-            "titleBarFillInactive": (0, 100, 0, 255)
+            "titleBarFillInactive": (0, 100, 0, 255),
+            "titleBarTitleActive": (101, 0, 0, 255),
+            "titleBarTitleInactive": (0, 101, 0, 255)
         ]
         let leftCorner = nominalSize("titleBarLeftCorner")
         let titleRowY = min(leftCorner.height, 2)
-        let sampleX = leftCorner.width + 1
+        // A point in the left-side fill texture (just right of the left corner).
+        let fillSampleX = leftCorner.width + 1
+        // The window centre lands inside the (single, centered) title piece.
+        let titleSampleX = width / 2
 
         guard let inactive = PlaylistWindowComposer.compose(
             makeSkin(colors: colors, playlist: normalBG),
@@ -211,9 +290,24 @@ final class PlaylistWindowComposerTests: XCTestCase {
             XCTFail("compose(active:false) returned nil")
             return
         }
-        let px = pixel(inactive, x: sampleX, y: titleRowY)
-        XCTAssertEqual(px.1, 100, "inactive compose should use the inactive title fill")
-        XCTAssertEqual(px.0, 0)
+        let fillPx = pixel(inactive, x: fillSampleX, y: titleRowY)
+        XCTAssertEqual(fillPx.1, 100, "inactive compose should use the inactive title fill")
+        XCTAssertEqual(fillPx.0, 0)
+        let titlePx = pixel(inactive, x: titleSampleX, y: titleRowY)
+        XCTAssertEqual(titlePx.1, 101, "inactive compose should use the inactive title piece")
+        XCTAssertEqual(titlePx.0, 0)
+
+        // And active selects the active title piece.
+        guard let active = PlaylistWindowComposer.compose(
+            makeSkin(colors: colors, playlist: normalBG),
+            width: width, height: height, active: true
+        ) else {
+            XCTFail("compose(active:true) returned nil")
+            return
+        }
+        let activeTitle = pixel(active, x: titleSampleX, y: titleRowY)
+        XCTAssertEqual(activeTitle.0, 101, "active compose should use the active title piece")
+        XCTAssertEqual(activeTitle.1, 0)
     }
 
     // MARK: - 6. Missing pledit.bmp -> nil
@@ -271,5 +365,174 @@ final class PlaylistWindowComposerTests: XCTestCase {
             return
         }
         XCTAssertEqual(composed.pixels.count, 300 * 200 * 4)
+    }
+
+    // MARK: - 10. Title appears once at a WIDER width too (no extra copies)
+
+    func testTitleStillDrawnOnceAtWideWidth() {
+        let width = 520
+        let height = 250
+        let titleColor: (UInt8, UInt8, UInt8, UInt8) = (200, 50, 150, 255)
+        let fillColor: (UInt8, UInt8, UInt8, UInt8) = (3, 7, 9, 255)
+        guard let composed = PlaylistWindowComposer.compose(
+            makeSkin(
+                colors: ["titleBarTitleActive": titleColor, "titleBarFillActive": fillColor],
+                playlist: normalBG
+            ),
+            width: width, height: height
+        ) else {
+            XCTFail("compose returned nil at wide width")
+            return
+        }
+        let leftCorner = nominalSize("titleBarLeftCorner")
+        let title = nominalSize("titleBarTitleActive")
+        let titleRowY = min(leftCorner.height, 2)
+        func isTitle(_ x: Int) -> Bool {
+            let p = pixel(composed, x: x, y: titleRowY)
+            return p.0 == titleColor.0 && p.1 == titleColor.1 && p.2 == titleColor.2
+        }
+        var titleColumns = 0
+        var runs = 0
+        var inRun = false
+        for x in 0..<width {
+            if isTitle(x) {
+                titleColumns += 1
+                if !inRun { runs += 1; inRun = true }
+            } else {
+                inRun = false
+            }
+        }
+        // Even at a much wider window, the title is drawn exactly once: one run,
+        // total title columns == one title width (not 2x/3x like the tiled bug).
+        XCTAssertEqual(runs, 1, "title must be a single run at wide width")
+        XCTAssertEqual(titleColumns, title.width, "exactly one title's worth of columns")
+        XCTAssertTrue(isTitle(width / 2), "the single title is centered at wide width")
+    }
+
+    // MARK: - 11. Too-narrow window: title is skipped gracefully (no overrun)
+
+    func testNarrowWidthSkipsTitleGracefully() {
+        // A width where the corners + a sliver of gap fit, but the 100px title
+        // cannot be seated between the corners. The title must be SKIPPED (texture
+        // fills the gap) and the buffer must remain exactly consistent — no trap,
+        // no out-of-range write.
+        let leftCorner = nominalSize("titleBarLeftCorner")
+        let rightCorner = nominalSize("titleBarRightCorner")
+        let title = nominalSize("titleBarTitleActive")
+        // Just wide enough for both corners plus a few fill pixels, but far narrower
+        // than corners + title.
+        let width = leftCorner.width + rightCorner.width + 6
+        XCTAssertLessThan(
+            width, leftCorner.width + rightCorner.width + title.width,
+            "test width must be too narrow for the title")
+        let height = 200
+
+        let titleColor: (UInt8, UInt8, UInt8, UInt8) = (200, 50, 150, 255)
+        let fillColor: (UInt8, UInt8, UInt8, UInt8) = (3, 7, 9, 255)
+        guard let composed = PlaylistWindowComposer.compose(
+            makeSkin(
+                colors: ["titleBarTitleActive": titleColor, "titleBarFillActive": fillColor],
+                playlist: normalBG
+            ),
+            width: width, height: height
+        ) else {
+            XCTFail("compose returned nil at narrow width")
+            return
+        }
+        // Clamp may bump width up to minimumWidth; whatever it is, the buffer is
+        // exactly consistent (the core no-overrun guarantee).
+        XCTAssertEqual(composed.pixels.count, composed.width * composed.height * 4)
+
+        // The title color must NOT appear anywhere in the title row when it can't
+        // fit (graceful skip, not a clipped half-title smeared in).
+        let titleRowY = min(leftCorner.height, 2)
+        if composed.width < leftCorner.width + rightCorner.width + title.width {
+            var sawTitle = false
+            for x in 0..<composed.width {
+                let p = pixel(composed, x: x, y: titleRowY)
+                if p.0 == titleColor.0 && p.1 == titleColor.1 && p.2 == titleColor.2 {
+                    sawTitle = true; break
+                }
+            }
+            XCTAssertFalse(sawTitle, "title must be skipped when it cannot fit between corners")
+        }
+    }
+
+    // MARK: - 12. skinSize(fromViewSize:scale:) — the resize hinge
+
+    func testSkinSizeDividesByScaleAndFloors() {
+        // A clearly-above-minimum view size at scale 2: skin dims = floor(view/2).
+        let view = (width: 700.0, height: 480.0)
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: view.width, viewHeight: view.height, scale: 2
+        )
+        XCTAssertEqual(size.width, 350)
+        XCTAssertEqual(size.height, 240)
+        // And both stay >= the minimum (they are far above it here).
+        XCTAssertGreaterThanOrEqual(size.width, PlaylistWindowComposer.minimumWidth)
+        XCTAssertGreaterThanOrEqual(size.height, PlaylistWindowComposer.minimumHeight)
+    }
+
+    func testSkinSizeFloorsNonMultipleViewSize() {
+        // A non-integer-multiple view size floors (does not round up), so the
+        // composed frame never claims a row/column the view cannot show.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 701.0, viewHeight: 481.0, scale: 2
+        )
+        XCTAssertEqual(size.width, 350)   // floor(701/2) = 350
+        XCTAssertEqual(size.height, 240)  // floor(481/2) = 240
+    }
+
+    func testSkinSizeScaleOneIsIdentityAboveMinimum() {
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 300.0, viewHeight: 260.0, scale: 1
+        )
+        XCTAssertEqual(size.width, 300)
+        XCTAssertEqual(size.height, 260)
+    }
+
+    func testSkinSizeClampsTinyViewToMinimum() {
+        // A view dragged smaller than the minimum frame clamps UP, exactly like
+        // compose/interiorRect, so the corners always fit.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 4.0, viewHeight: 4.0, scale: 2
+        )
+        XCTAssertEqual(size.width, PlaylistWindowComposer.minimumWidth)
+        XCTAssertEqual(size.height, PlaylistWindowComposer.minimumHeight)
+    }
+
+    func testSkinSizeNegativeViewClampsToMinimum() {
+        // A degenerate (negative) view size never traps and never yields a negative
+        // skin dimension — it clamps to the minimum.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: -100.0, viewHeight: -100.0, scale: 3
+        )
+        XCTAssertEqual(size.width, PlaylistWindowComposer.minimumWidth)
+        XCTAssertEqual(size.height, PlaylistWindowComposer.minimumHeight)
+    }
+
+    func testSkinSizeNonPositiveScaleTreatedAsOne() {
+        // A non-positive scale must not divide-by-zero / trap; it is treated as 1.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 300.0, viewHeight: 260.0, scale: 0
+        )
+        XCTAssertEqual(size.width, 300)
+        XCTAssertEqual(size.height, 260)
+    }
+
+    func testSkinSizeRoundTripsThroughComposeAtTheSameDimensions() {
+        // The skin size from a view size composes to EXACTLY those dimensions, so
+        // the resize loop (view bounds -> skinSize -> compose) is self-consistent.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 700.0, viewHeight: 480.0, scale: 2
+        )
+        guard let composed = PlaylistWindowComposer.compose(
+            makeSkin(playlist: normalBG), width: size.width, height: size.height
+        ) else {
+            XCTFail("compose returned nil for a skinSize result")
+            return
+        }
+        XCTAssertEqual(composed.width, size.width)
+        XCTAssertEqual(composed.height, size.height)
     }
 }

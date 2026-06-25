@@ -232,8 +232,9 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         }
         let names = Set(frame.map(\.name))
         let required: Set<String> = [
-            "titleBarLeftCorner", "titleBarFillActive", "titleBarRightCorner",
-            "titleBarLeftCornerInactive", "titleBarFillInactive", "titleBarRightCornerInactive",
+            "titleBarLeftCorner", "titleBarTitleActive", "titleBarFillActive", "titleBarRightCorner",
+            "titleBarLeftCornerInactive", "titleBarTitleInactive", "titleBarFillInactive",
+            "titleBarRightCornerInactive",
             "leftEdge", "rightEdge",
             "bottomLeftCorner", "bottomFill", "bottomRightCorner",
             "scrollHandle"
@@ -259,5 +260,39 @@ final class SpriteCoordinatesFitTests: XCTestCase {
                 "\(rect.name): bottom edge \(rect.y + rect.height) overruns smallest "
                     + "real pledit height 186")
         }
+    }
+
+    /// Pins the title-bar split: a SEPARATE centered title piece (drawn once) and
+    /// a NARROW tiling texture fill that is NOT the title text. Regressing the fill
+    /// back to the 100px title region reintroduces the "repeated title" bug (the
+    /// composer tiled the title across the whole width). The title piece is the
+    /// ~100px label at x = 26; the fill is the ~25px tileable band at x = 127;
+    /// both active (y = 0) and inactive (y = 21) variants. All inside 276 x 186.
+    func testTitleAndFillAreSeparatePinnedRegions() {
+        guard let frame = SpriteCoordinates.playlistWindow["pledit.bmp"] else {
+            XCTFail("pledit.bmp missing from the playlist coordinate table")
+            return
+        }
+        let byName = Dictionary(uniqueKeysWithValues: frame.map { ($0.name, $0) })
+
+        func check(_ name: String, x: Int, y: Int, w: Int, h: Int) {
+            guard let r = byName[name] else { XCTFail("\(name) missing"); return }
+            XCTAssertEqual(r.x, x, "\(name) x"); XCTAssertEqual(r.y, y, "\(name) y")
+            XCTAssertEqual(r.width, w, "\(name) width"); XCTAssertEqual(r.height, h, "\(name) height")
+        }
+        check("titleBarTitleActive",   x: 26,  y: 0,  w: 100, h: 20)
+        check("titleBarTitleInactive", x: 26,  y: 21, w: 100, h: 20)
+        // The fill must be the NARROW texture strip, distinct from the title region.
+        check("titleBarFillActive",    x: 127, y: 0,  w: 25,  h: 20)
+        check("titleBarFillInactive",  x: 127, y: 21, w: 25,  h: 20)
+
+        // The fill rect must NOT coincide with the title rect (that overlap WAS the
+        // bug — the title region was used as the tiled fill).
+        let title = byName["titleBarTitleActive"]
+        let fill = byName["titleBarFillActive"]
+        XCTAssertNotEqual(title?.x, fill?.x, "fill must not start where the title does")
+        XCTAssertLessThan(
+            fill?.width ?? .max, title?.width ?? 0,
+            "fill (narrow texture) must be narrower than the title piece")
     }
 }
