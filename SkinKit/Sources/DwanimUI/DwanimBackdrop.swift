@@ -7,8 +7,12 @@ import SwiftUI
 /// `.regularMaterial` / `.ultraThinMaterial` panels read as flat grey.
 ///
 /// A deep indigo -> teal diagonal gradient with two soft gold glows (warm
-/// accents), filling whatever space it is given. The harness hosts this behind
-/// `DefaultPlayerView` (see `DwanimPlayerScene`).
+/// accents). It fills exactly the space its parent gives it — used as a BOUNDED
+/// `.background` of the panel-plus-margin in `DwanimPlayerScene`, NOT as a
+/// full-bleed `.ignoresSafeArea()` fill. That bounded use is what gives the
+/// scene a compact intrinsic size for `.windowResizability(.contentSize)` to
+/// hug: a flexible gradient that ignored the safe area would expand to fill any
+/// window, leaving the panel floating in a big empty expanse.
 public struct DwanimBackdrop: View {
 
     public init() {}
@@ -31,6 +35,5 @@ public struct DwanimBackdrop: View {
                 endRadius: 360
             )
         }
-        .ignoresSafeArea()
     }
 }

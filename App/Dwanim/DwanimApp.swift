@@ -69,11 +69,12 @@ struct DwanimApp: App {
                 onOpenSkin: { session.presentOpenSkinPanel() }
             )
                 // Compact resize floor only. Under `.windowResizability(.contentSize)`
-                // the bounded width on `DefaultPlayerView` (idealWidth ~580) drives the
-                // opening width and the content height drives the opening height — this
-                // frame just sets how small the user can drag it. No max height:
-                // expanding the in-scene queue (P2-1) grows the window taller; collapsed
-                // it shrinks back to the compact dock-bar.
+                // the definite width on `DefaultPlayerView` (`compactWidth` ~580, plus
+                // the scene's gradient margin) drives the opening width and the content
+                // height drives the opening height — this frame just sets how small the
+                // user can drag it. No max height: expanding the in-scene queue (P2-1)
+                // grows the window taller; collapsed it shrinks back to the compact
+                // dock-bar.
                 .frame(minWidth: 440, minHeight: 120)
                 // File-URL DROP onto the default scene window: hand the dropped URLs
                 // to the session's one drop handler (the same one every hosted
