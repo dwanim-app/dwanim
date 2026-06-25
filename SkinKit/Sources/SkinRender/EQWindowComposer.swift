@@ -19,9 +19,15 @@ import SkinKit
 // these arguments). The values follow the same contract `EQState` enforces: gains
 // are dB, sanitised/clamped to `±12 dB` by `EQWindowLayout.thumbTopY`.
 //
+// The colored band-graph response CURVE is now drawn over
+// `EQWindowLayout.graphFrame`: `EQResponseCurve` maps the ten band gains to a
+// per-column polyline, and each column's curve pixel is tinted by the
+// `graphLineColorRamp` sprite (indexed by the curve's height within the graph). On
+// a truncated sheet that omits the ramp, the curve falls back to a single sane line
+// color — it is never skipped and never crashes. All curve writes are clipped to
+// the graph rectangle and go through a bounds-checked pixel setter.
+//
 // DEFERRED (documented, not drawn here):
-//   * the colored band-graph response CURVE line over `EQWindowLayout.graphFrame`
-//     (its per-row color gradient is under-pinned in `SpriteCoordinates`);
 //   * the PRESET / status text in `EQWindowLayout.presetDisplayOrigin` (drawn
 //     from the bitmap font at a later increment);
 //   * the AUTO on-state (no auto-preset flag is modelled yet — AUTO is drawn OFF);
@@ -119,6 +125,116 @@ public enum EQWindowComposer {
             )
         }
 
+        // (4) Response CURVE: plot the band-response polyline across the graph area,
+        // tinted by the graph color ramp. Drawn LAST so it sits over the face. The
+        // ramp is optional — absent on truncated sheets — and the curve degrades to
+        // a single line color rather than vanishing.
+        drawResponseCurve(bands: bands, ramp: skin.sprite(sheet: "eqmain.bmp", name: "graphLineColorRamp"), onto: &canvas)
+
         return canvas
+    }
+
+    // MARK: - Response curve
+
+    /// Fallback line color (RGBA) when the graph color ramp sprite is absent (a
+    /// truncated sheet). A bright classic-EQ green so the curve is still visible.
+    private static let fallbackLineColor: (UInt8, UInt8, UInt8, UInt8) = (0, 255, 0, 255)
+
+    /// Plot the EQ response curve over `EQWindowLayout.graphFrame` onto `canvas`.
+    /// For each x column in the graph, `EQResponseCurve` gives the curve's window-y;
+    /// a 1px dot is written there (plus the pixel one row below, for a slightly
+    /// thicker, more legible line), clipped to the graph rectangle. Each dot is
+    /// colored by `ramp` indexed by the curve's row WITHIN the graph (top row → ramp
+    /// row 0), or by `fallbackLineColor` when `ramp` is nil/malformed. Every write
+    /// is bounds-checked, so nothing lands outside the graph or off the buffer.
+    private static func drawResponseCurve(
+        bands: [Double],
+        ramp: DecodedBitmap?,
+        onto canvas: inout DecodedBitmap
+    ) {
+        let frame = EQWindowLayout.graphFrame
+        guard frame.width > 0, frame.height > 0 else { return }
+        // The graph must lie within the buffer to draw anything (a 116-tall face
+        // holds the y=17 graph; this also guards a future mis-tuned frame).
+        guard frame.x >= 0, frame.y >= 0,
+              frame.x + frame.width <= canvas.width,
+              frame.y + frame.height <= canvas.height,
+              canvas.pixels.count == canvas.width * canvas.height * 4
+        else { return }
+
+        // A usable ramp is exactly 1px wide (or wider — we read column 0) and at
+        // least one row tall, with a size-consistent buffer. Otherwise fall back.
+        let usableRamp: DecodedBitmap?
+        if let ramp, ramp.width >= 1, ramp.height >= 1,
+           ramp.pixels.count == ramp.width * ramp.height * 4 {
+            usableRamp = ramp
+        } else {
+            usableRamp = nil
+        }
+
+        let topRow = frame.y
+        let bottomRow = frame.y + frame.height - 1
+        let ys = EQResponseCurve.yPositions(forBandGains: bands)
+
+        var pixels = canvas.pixels
+        // `ys` has exactly `frame.width` entries (one per column); iterate by the
+        // smaller of the two for total safety against any future shape change.
+        for column in 0..<Swift.min(ys.count, frame.width) {
+            let x = frame.x + column
+            let y = Swift.min(Swift.max(ys[column], topRow), bottomRow)
+
+            let color = curveColor(forRow: y, top: topRow, bottom: bottomRow, ramp: usableRamp)
+            setPixel(&pixels, width: canvas.width, x: x, y: y, color: color, frame: frame)
+            // A second pixel one row down thickens the line; clipped to the graph.
+            setPixel(&pixels, width: canvas.width, x: x, y: y + 1, color: color, frame: frame)
+        }
+        canvas = DecodedBitmap(width: canvas.width, height: canvas.height, pixels: pixels)
+    }
+
+    /// The curve color for a window `row`, from the color `ramp` indexed by the
+    /// row's fraction within the graph (`top` → ramp row 0, `bottom` → the ramp's
+    /// last row), reading the ramp's leftmost (x=0) column. Falls back to
+    /// `fallbackLineColor` when `ramp` is nil.
+    private static func curveColor(
+        forRow row: Int,
+        top: Int,
+        bottom: Int,
+        ramp: DecodedBitmap?
+    ) -> (UInt8, UInt8, UInt8, UInt8) {
+        guard let ramp else { return fallbackLineColor }
+        // Map the row's position in the graph onto a ramp row.
+        let span = bottom - top
+        let fraction = span > 0 ? Double(row - top) / Double(span) : 0
+        let rampRow = Swift.min(
+            Swift.max(Int((fraction * Double(ramp.height - 1)).rounded()), 0),
+            ramp.height - 1
+        )
+        let index = (rampRow * ramp.width + 0) * 4
+        // Defensive: the ramp buffer was size-checked by the caller, but re-guard.
+        guard index + 3 < ramp.pixels.count else { return fallbackLineColor }
+        return (ramp.pixels[index], ramp.pixels[index + 1], ramp.pixels[index + 2], ramp.pixels[index + 3])
+    }
+
+    /// Write one opaque pixel at `(x, y)` into `pixels`, but ONLY when it lies inside
+    /// the graph `frame` AND inside the buffer. Out-of-graph or out-of-buffer writes
+    /// are skipped, so the curve can never spill past the graph or trap.
+    private static func setPixel(
+        _ pixels: inout [UInt8],
+        width: Int,
+        x: Int,
+        y: Int,
+        color: (UInt8, UInt8, UInt8, UInt8),
+        frame: (x: Int, y: Int, width: Int, height: Int)
+    ) {
+        // Clip to the graph rectangle first.
+        guard x >= frame.x, x < frame.x + frame.width,
+              y >= frame.y, y < frame.y + frame.height
+        else { return }
+        let index = (y * width + x) * 4
+        guard index >= 0, index + 3 < pixels.count else { return }
+        pixels[index] = color.0
+        pixels[index + 1] = color.1
+        pixels[index + 2] = color.2
+        pixels[index + 3] = color.3
     }
 }
