@@ -64,11 +64,23 @@ public final class InteractiveController: SkinWindowController {
     /// cast like the PCM tap. Read each redraw for the kbps / kHz number boxes;
     /// `nil` when the engine does not expose format facts. Format metadata never
     /// flows through `PlayerCore`'s transport. (The PCM tap itself is owned by the
-    /// `RedrawLoop`, which installs and removes it.)
+    /// `RedrawLoop`, which installs and removes it — UNLESS an external feed is
+    /// injected, see `latestSamples`.)
     private let format: TrackFormatProviding?
-    /// Lock-guarded latest mono samples, written by the audio thread and read by
-    /// the main-thread redraw timer (the shared `SpectrumKit.SpectrumFeed`).
-    private let latestSamples = SpectrumFeed()
+    /// Lock-guarded latest mono samples, read by the main-thread redraw timer.
+    ///
+    /// Two ownership modes:
+    ///   • OWNED (harness): no external feed injected → this controller owns its
+    ///     own `SpectrumFeed`, and the `RedrawLoop` installs THIS controller's tap
+    ///     to write it. Behavior is exactly as before — one window, one process,
+    ///     one tap.
+    ///   • SHARED (app): an external feed is injected → this is that injected feed
+    ///     (already fed by the single host-owned tap, e.g. `AudioSession`). The
+    ///     `RedrawLoop` is then TIMER-ONLY (`tap: nil`): it installs / removes NO
+    ///     tap and just ticks, reading this externally-fed snapshot. This is what
+    ///     lets the host run ONE tap shared across every spectrum consumer rather
+    ///     than each hosted window stealing the single per-node tap.
+    private let latestSamples: SpectrumFeed
     /// FFT spectrum analyzer (main-thread only). `barCount` is chosen to fit the
     /// visualization frame width.
     private let analyzer: SpectrumAnalyzer
@@ -84,6 +96,15 @@ public final class InteractiveController: SkinWindowController {
         max(1, width / 4)
     }
 
+    /// - Parameters:
+    ///   - tap: the engine's opt-in PCM tap. Used ONLY when `externalFeed` is
+    ///     `nil` (the harness's owned-tap mode); ignored when an external feed is
+    ///     injected (the host owns the single tap).
+    ///   - externalFeed: a host-owned, already-fed `SpectrumFeed` to read from. When
+    ///     non-`nil` (the app) the redraw loop is timer-only and installs NO tap, so
+    ///     the single host tap is never stolen. When `nil` (the harness) the
+    ///     controller owns its own feed and the loop installs `tap` exactly as
+    ///     before.
     public init(
         skin: Skin,
         core: PlayerCore,
@@ -91,6 +112,7 @@ public final class InteractiveController: SkinWindowController {
         scale: Int,
         tap: AudioTapProviding?,
         format: TrackFormatProviding?,
+        externalFeed: SpectrumFeed? = nil,
         terminatesAppOnClose: Bool = true,
         onClose: (() -> Void)? = nil
     ) {
@@ -99,6 +121,8 @@ public final class InteractiveController: SkinWindowController {
         self.view = view
         self.scale = scale
         self.format = format
+        // SHARED mode reads the injected feed; OWNED mode makes its own.
+        self.latestSamples = externalFeed ?? SpectrumFeed()
 
         let visWidth = MainWindowLayout.visualizationFrame.width
         let bars = InteractiveController.barCount(forVisWidth: visWidth)
@@ -127,9 +151,17 @@ public final class InteractiveController: SkinWindowController {
         // the static/dynamic patch seam is a tracked M5 item). The per-tick work
         // advances the title marquee at the timer cadence (NOT on the mouse-driven
         // redraws, so a click does not jerk the scroll) and recomposes.
+        //
+        // Tap ownership: in OWNED mode (no external feed) the loop installs THIS
+        // controller's `tap` to write the owned feed. In SHARED mode (external feed
+        // injected) the loop is TIMER-ONLY — `loopTap` is forced `nil` so it
+        // installs / removes NO tap and just ticks, reading the host-fed shared
+        // feed. That keeps the host's single per-node tap from being stolen when a
+        // hosted main window opens (and from being torn down when it closes).
+        let loopTap: AudioTapProviding? = externalFeed == nil ? tap : nil
         redrawLoop = RedrawLoop(
             interval: 0.04,
-            tap: tap,
+            tap: loopTap,
             feed: latestSamples
         ) { [weak self] in
             self?.advanceTitleScroll()
