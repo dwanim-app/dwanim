@@ -79,6 +79,65 @@ public enum EQWindowLayout {
         (sliderTrackTop + sliderTrackBottom) / 2
     }
 
+    /// Height of the shared slider thumb knob, in pixels, read from the EQ sprite
+    /// table (`eqmain.bmp/sliderThumb`). The thumb travel and the gain→y mapping
+    /// account for this so the thumb body never spills past the track ends.
+    /// Falls back to the canonical 11px if the sprite is ever absent from the
+    /// table, keeping `thumbTopY` total and pure.
+    public static var thumbHeight: Int {
+        SpriteCoordinates.equalizerWindow["eqmain.bmp"]?
+            .first { $0.name == "sliderThumb" }?
+            .height ?? 11
+    }
+
+    // MARK: - Gain -> thumb position
+    //
+    // The pure mapping the EQ compositor uses to turn a band's dB gain into the
+    // thumb's top-left y. It is linear and CLAMPED: +12 dB pins the thumb at the
+    // TOP of the track (`sliderTrackTop`), -12 dB pins the thumb so its 11px body
+    // rests on the BOTTOM (`sliderTrackBottom`), i.e. its top is
+    // `sliderTrackBottom - thumbHeight`, and 0 dB centres the thumb on
+    // `sliderTrackCenter`. Higher gain ⇒ smaller y (higher on screen).
+
+    /// The thumb top-left **y** for a band/preamp `gain` in dB, clamped to the
+    /// classic `-12...+12` range and to the track travel so the whole thumb body
+    /// stays inside `[sliderTrackTop, sliderTrackBottom]`.
+    ///
+    /// - `+12` (or larger) ⇒ `sliderTrackTop` (thumb at the very top).
+    /// - `-12` (or smaller) ⇒ `sliderTrackBottom - thumbHeight` (thumb body's
+    ///   lower edge on the track bottom).
+    /// - `0` ⇒ `sliderTrackCenter - thumbHeight/2` (thumb centred on the centre),
+    ///   which is the midpoint of the travel.
+    /// - A non-finite gain (`NaN`/`±inf`) is sanitised: `NaN` falls back to the
+    ///   flat (centre) position; `±inf` clamps to the respective end — so the
+    ///   result is always a valid in-track coordinate, never a garbage value.
+    public static func thumbTopY(forGain gain: Double) -> Int {
+        // Travel ends for the thumb's TOP-LEFT y. topY corresponds to +12 dB,
+        // bottomY to -12 dB; the thumb body height keeps the knob inside the track.
+        let topY = sliderTrackTop
+        let bottomY = sliderTrackBottom - thumbHeight
+
+        // NaN cannot be clamped (min/max with NaN is NaN), so map it to flat (0 dB).
+        let clampedGain: Double = gain.isNaN
+            ? 0
+            : Swift.min(Swift.max(gain, gainMinDB), gainMaxDB)
+
+        // Linear interpolate: +12 -> topY, -12 -> bottomY. fraction in 0...1 where
+        // 0 == max boost (top), 1 == max cut (bottom).
+        let fraction = (gainMaxDB - clampedGain) / (gainMaxDB - gainMinDB)
+        let y = Double(topY) + fraction * Double(bottomY - topY)
+
+        // Round to the nearest pixel, then clamp to the travel for total safety.
+        let rounded = Int(y.rounded())
+        return Swift.min(Swift.max(rounded, topY), bottomY)
+    }
+
+    /// The classic graphic-equalizer per-gain dB range the slider travel maps,
+    /// mirrored from `EQState.gainRange` (kept as plain literals here so the pure
+    /// layout table needs no `PlayerCore` dependency).
+    public static let gainMaxDB = 12.0
+    public static let gainMinDB = -12.0
+
     // MARK: - Toggle buttons (ON / AUTO)
     //
     // Two small toggle buttons in the upper-left of the EQ face: ON enables the

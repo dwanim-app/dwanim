@@ -148,4 +148,79 @@ final class EQWindowLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(p.x, width, "preset display x exceeds window width")
         XCTAssertLessThanOrEqual(p.y, height, "preset display y exceeds window height")
     }
+
+    // MARK: - thumbTopY (gain -> thumb top-left y)
+    //
+    // The pure mapping the compositor uses to place a slider thumb from a band's
+    // dB gain. +12 dB pins the thumb at the TOP of the track (`sliderTrackTop`);
+    // -12 dB pins it at the BOTTOM such that the 11px thumb body's lower edge sits
+    // on `sliderTrackBottom` (so its top-left is `sliderTrackBottom - thumbHeight`);
+    // 0 dB centres the thumb on `sliderTrackCenter`. Linear and clamped between.
+
+    /// The expected thumb-top travel ends, derived from the layout + thumb height,
+    /// so the assertions below describe the contract rather than restate magic
+    /// numbers.
+    private var thumbHeight: Int {
+        eqSpriteSize("sliderThumb")?.height ?? 11
+    }
+    private var topTravelY: Int { EQWindowLayout.sliderTrackTop }
+    private var bottomTravelY: Int { EQWindowLayout.sliderTrackBottom - thumbHeight }
+
+    /// +12 dB (maximum boost) puts the thumb at the very top of the track.
+    func testThumbTopYAtMaxGainIsTrackTop() {
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: 12), topTravelY)
+    }
+
+    /// -12 dB (maximum cut) puts the thumb at the bottom of the track, accounting
+    /// for the thumb body height so the thumb stays within the track.
+    func testThumbTopYAtMinGainIsTrackBottomMinusThumb() {
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: -12), bottomTravelY)
+    }
+
+    /// 0 dB (flat) centres the thumb on the track centre: the thumb top is
+    /// `sliderTrackCenter - thumbHeight/2`, which is the midpoint of the travel.
+    func testThumbTopYAtZeroGainIsCenteredOnTrackCenter() {
+        let centered = EQWindowLayout.sliderTrackCenter - thumbHeight / 2
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: 0), centered)
+        // And the midpoint of the travel ends.
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: 0), (topTravelY + bottomTravelY) / 2)
+    }
+
+    /// Gains beyond the +-12 dB range clamp to the track ends — they never push
+    /// the thumb above the top or below the bottom of its travel.
+    func testThumbTopYClampsOutOfRangeGains() {
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: 100), topTravelY, "huge boost clamps to top")
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: -100), bottomTravelY, "huge cut clamps to bottom")
+        // Non-finite gain falls back to the flat (centre) position rather than
+        // producing a garbage/NaN coordinate.
+        let centered = EQWindowLayout.sliderTrackCenter - thumbHeight / 2
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: .nan), centered, "NaN gain -> centre")
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: .infinity), topTravelY, "+inf clamps to top")
+        XCTAssertEqual(EQWindowLayout.thumbTopY(forGain: -.infinity), bottomTravelY, "-inf clamps to bottom")
+    }
+
+    /// The mapping is monotonic non-increasing in gain: a higher gain is never a
+    /// LARGER y (lower on screen) than a lower gain — more boost means higher up
+    /// (smaller y). Sampled across the full range plus the out-of-range tails.
+    func testThumbTopYIsMonotonicNonIncreasingInGain() {
+        let gains = stride(from: -16.0, through: 16.0, by: 0.5)
+        var previous = EQWindowLayout.thumbTopY(forGain: -16)
+        for gain in gains {
+            let y = EQWindowLayout.thumbTopY(forGain: gain)
+            XCTAssertLessThanOrEqual(
+                y, previous,
+                "thumb y must not increase as gain rises (gain \(gain))")
+            previous = y
+        }
+    }
+
+    /// Every thumb position across the full clamped range keeps the whole 11px
+    /// thumb body inside the track `[sliderTrackTop, sliderTrackBottom]`.
+    func testThumbBodyStaysWithinTrackForAllGains() {
+        for gain in stride(from: -12.0, through: 12.0, by: 0.25) {
+            let top = EQWindowLayout.thumbTopY(forGain: gain)
+            XCTAssertGreaterThanOrEqual(top, EQWindowLayout.sliderTrackTop)
+            XCTAssertLessThanOrEqual(top + thumbHeight, EQWindowLayout.sliderTrackBottom)
+        }
+    }
 }
