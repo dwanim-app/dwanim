@@ -1,10 +1,11 @@
+import AppKit
 import DwanimUI
 import SwiftUI
 
 // MARK: - DwanimApp
 //
 // The real sandboxed AUDIO player (the default-skin face). It hosts the default
-// `DwanimPlayerScene` in a single window and owns an `AudioSession` — the
+// `DwanimPlayerScene` in a SINGLE window and owns an `AudioSession` — the
 // app-layer coordinator that wires the live PlayerCore + AVAudioEnginePlayer,
 // the spectrum/clock feed, the security-scoped bookmark persistence, the
 // "Open Audio…" panel, and launch-resolve of the last song.
@@ -17,14 +18,31 @@ import SwiftUI
 //     `session.core` (transport state + actions) and `session.model` (live clock
 //     + spectrum). The in-scene transport buttons drive the core directly.
 //
+// ## Lifecycle ownership (single owner for the shared session)
+// The default face is a single `Window` scene (NOT a `WindowGroup`), so the one
+// shared `@State AudioSession` has EXACTLY ONE window lifecycle owner. A
+// `WindowGroup` is a multi-window template: closing one window/tab of the group
+// would tear down the shared session out from under any still-open window. With a
+// single `Window` there is no second window of the group to do that.
+//
+// Session teardown is driven from genuine app TERMINATION, not window
+// disappearance: the `AppDelegate` (installed via `@NSApplicationDelegateAdaptor`)
+// calls `session.stop()` in `applicationWillTerminate(_:)`, and
+// `applicationShouldTerminateAfterLastWindowClosed(_:)` returns `true` so closing
+// the single main window quits the app — which then tears the session down exactly
+// once. `.onAppear` still starts the feed (and resolves the last song once per
+// process); `.onDisappear` no longer stops anything.
+//
 // The default scene stays the app's PRIMARY window. "Open Skin…" (⌘⇧O) is an
-// ADDITIVE path: it hosts the classic `.wsz` MAIN window as an extra window
+// ADDITIVE path: it hosts the classic `.wsz` MAIN window as an extra AppKit window
 // driven by the same shared core (see ClassicSkinPresenter); closing that window
-// does NOT quit the app. The View menu's "Playlist" (⌘P) / "Equalizer" (⌘G)
-// toggles show/hide the two other classic windows of the loaded-skin cluster
-// (when no skin is loaded yet they fall back to presenting "Open Skin…", since a
-// playlist / EQ face only exists for a loaded skin). NO brand words appear
-// anywhere in the UI text.
+// does NOT quit the app. Those classic cluster windows are independent NSWindows
+// that manage their own close and are torn down on real app termination (via the
+// session teardown / process exit) — no window-disappear path force-closes them.
+// The View menu's "Playlist" (⌘P) / "Equalizer" (⌘G) toggles show/hide the two
+// other classic windows of the loaded-skin cluster (when no skin is loaded yet
+// they fall back to presenting "Open Skin…", since a playlist / EQ face only exists
+// for a loaded skin). NO brand words appear anywhere in the UI text.
 @main
 struct DwanimApp: App {
 
@@ -32,14 +50,27 @@ struct DwanimApp: App {
     /// instance (core + engine + feed + scopes) lives as long as the app does.
     @State private var session = AudioSession()
 
+    /// The AppKit delegate that drives session teardown from genuine app
+    /// termination (NOT window disappearance) and quits the app when the single
+    /// main window closes. SwiftUI owns this instance for the app's lifetime.
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
-        WindowGroup {
+        // SINGLE Window (not WindowGroup): one lifecycle owner for the shared
+        // session. `Window` is macOS 13+ — fine for the 14.0 floor.
+        Window("Dwanim", id: "main") {
             DwanimPlayerScene(core: session.core, model: session.model)
                 .frame(minWidth: 480, minHeight: 220)
-                // Start the feed + launch-resolve once the window appears; tear the
-                // session (feed + held security scope) down when it goes away.
-                .onAppear { session.start() }
-                .onDisappear { session.stop() }
+                // Start the feed + launch-resolve (once per process) when the window
+                // appears, and hand the delegate the session so it can tear down at
+                // real termination. We do NOT stop the session on `.onDisappear`:
+                // teardown is driven from `applicationWillTerminate(_:)` so closing
+                // (or SwiftUI re-creating) the window never kills the shared audio /
+                // spectrum feed or resets the live playlist.
+                .onAppear {
+                    appDelegate.session = session
+                    session.start()
+                }
         }
         .windowResizability(.contentMinSize)
         .commands {
@@ -91,5 +122,42 @@ struct DwanimApp: App {
                 .keyboardShortcut("g", modifiers: [.command])
             }
         }
+    }
+}
+
+// MARK: - AppDelegate
+//
+// A minimal `NSApplicationDelegate` installed via `@NSApplicationDelegateAdaptor`
+// so the app's lifecycle is driven by GENUINE termination, not window
+// disappearance:
+//
+//   • `applicationShouldTerminateAfterLastWindowClosed(_:)` returns `true`, so
+//     closing the single main `Window` quits the app (instead of leaving a
+//     window-less process running).
+//   • `applicationWillTerminate(_:)` tears the shared `AudioSession` down EXACTLY
+//     ONCE, when the process is actually quitting — releasing the security scope,
+//     stopping the feed, and closing the hosted classic-window cluster.
+//
+// The `session` is handed in from the scene's `.onAppear` (the App owns the one
+// `@State` instance; this delegate only holds a weak back-reference to drive
+// teardown). Holding it weak avoids a retain cycle and is harmless: if the App's
+// `@State` is gone the process is already tearing down.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    /// The shared session to tear down at termination. Set by the scene's
+    /// `.onAppear`. Weak: the App's `@State` is the real owner.
+    weak var session: AudioSession?
+
+    /// Closing the single main window quits the app (so we tear down once, cleanly,
+    /// via `applicationWillTerminate`), rather than leaving a window-less process.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+
+    /// Genuine termination: tear the shared session down exactly once (feed off,
+    /// security scope released, hosted classic cluster closed). This is the ONLY
+    /// teardown trigger — no window-disappear path stops the session.
+    func applicationWillTerminate(_ notification: Notification) {
+        session?.stop()
     }
 }
