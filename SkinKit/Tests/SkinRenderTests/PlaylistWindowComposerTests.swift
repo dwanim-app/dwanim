@@ -520,6 +520,35 @@ final class PlaylistWindowComposerTests: XCTestCase {
         XCTAssertEqual(size.height, 260)
     }
 
+    func testSkinSizeWithNonFiniteViewClampsToMinimumWithoutTrapping() {
+        // A non-finite view dimension (NaN, +inf, -inf) — e.g. a degenerate bounds
+        // report — must not trap (`Int(NaN.rounded(.down))` is a fatal error). It
+        // clamps to the minimum frame size, like a tiny/negative size.
+        let nonFinite: [Double] = [.nan, .infinity, -.infinity]
+        for bad in nonFinite {
+            // Bad width only: width clamps to minimum, the finite height is computed.
+            let w = PlaylistWindowComposer.skinSize(
+                fromViewWidth: bad, viewHeight: 480.0, scale: 2
+            )
+            XCTAssertEqual(w.width, PlaylistWindowComposer.minimumWidth, "non-finite width (\(bad)) clamps")
+            XCTAssertEqual(w.height, 240, "finite height still computed (floor(480/2))")
+
+            // Bad height only: height clamps to minimum, the finite width is computed.
+            let h = PlaylistWindowComposer.skinSize(
+                fromViewWidth: 700.0, viewHeight: bad, scale: 2
+            )
+            XCTAssertEqual(h.width, 350, "finite width still computed (floor(700/2))")
+            XCTAssertEqual(h.height, PlaylistWindowComposer.minimumHeight, "non-finite height (\(bad)) clamps")
+        }
+
+        // Both non-finite at once: both clamp to the minimum, no trap.
+        let both = PlaylistWindowComposer.skinSize(
+            fromViewWidth: .nan, viewHeight: .infinity, scale: 2
+        )
+        XCTAssertEqual(both.width, PlaylistWindowComposer.minimumWidth)
+        XCTAssertEqual(both.height, PlaylistWindowComposer.minimumHeight)
+    }
+
     func testSkinSizeRoundTripsThroughComposeAtTheSameDimensions() {
         // The skin size from a view size composes to EXACTLY those dimensions, so
         // the resize loop (view bounds -> skinSize -> compose) is self-consistent.

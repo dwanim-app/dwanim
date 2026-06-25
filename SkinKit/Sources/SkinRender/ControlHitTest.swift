@@ -70,6 +70,13 @@ public enum ControlHitTest {
     ///   `x = floor(viewX / scale)`
     ///   `y = floor((viewHeight - viewY) / scale)`
     /// The result may land outside the skin bounds; the caller decides.
+    ///
+    /// A non-finite input (`NaN`/`±inf`, e.g. a degenerate AppKit event point or a
+    /// zero scale yielding `inf`) is sanitised to `0` for that coordinate BEFORE
+    /// the `Int` conversion — `Int(NaN.rounded(.down))` traps. This mirrors the
+    /// project's finite-guard convention (`RegionCoverage`, `PlaybackMath`, the EQ
+    /// `thumbGain`): a non-finite value yields a sane in-range default, never a
+    /// crash.
     public static func skinPoint(
         viewX: Double,
         viewY: Double,
@@ -77,8 +84,10 @@ public enum ControlHitTest {
         scale: Int
     ) -> (x: Int, y: Int) {
         let s = Double(scale)
-        let x = Int((viewX / s).rounded(.down))
-        let y = Int(((viewHeight - viewY) / s).rounded(.down))
+        let rawX = viewX / s
+        let rawY = (viewHeight - viewY) / s
+        let x = rawX.isFinite ? Int(rawX.rounded(.down)) : 0
+        let y = rawY.isFinite ? Int(rawY.rounded(.down)) : 0
         return (x, y)
     }
 

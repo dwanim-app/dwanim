@@ -427,4 +427,127 @@ final class EQWindowLayoutTests: XCTestCase {
         XCTAssertNotEqual(EQWindowLayout.slider(atSkinX: nearA), .band(1))
         XCTAssertNotEqual(EQWindowLayout.slider(atSkinX: nearB), .band(0))
     }
+
+    // MARK: - slider(atSkinX:skinY:) — the y-gated resolver (graph-click guard)
+    //
+    // The interactive drag uses the y-gated resolver on a mouse-DOWN: a press only
+    // grabs a slider when its y is inside the SLIDER CONTROL band (the thumb-travel
+    // region `[sliderTrackTop, sliderTrackBottom)`). A press in the response-curve
+    // GRAPH area ABOVE the track, or the label area BELOW it, must NOT grab a
+    // slider — even though its x overlaps the band columns — so clicking the graph
+    // no longer slams the nearest band to its clamped extreme.
+
+    /// A representative y inside the control band (the track centre is always
+    /// inside `[sliderTrackTop, sliderTrackBottom)`).
+    private var inBandY: Int { EQWindowLayout.sliderTrackCenter }
+
+    /// A click on each band column AT a y inside the track resolves to that band —
+    /// the gate is transparent to a legitimate on-track press, matching the bare
+    /// `slider(atSkinX:)`.
+    func testSliderAtXYResolvesBandsWhenYInsideTrack() {
+        for (index, x) in EQWindowLayout.bandSliderXs.enumerated() {
+            XCTAssertEqual(
+                EQWindowLayout.slider(atSkinX: x, skinY: inBandY), .band(index),
+                "x \(x) at an in-track y should resolve to band \(index)")
+        }
+    }
+
+    /// A click on the preamp column AT a y inside the track resolves to the preamp.
+    func testSliderAtXYResolvesPreampWhenYInsideTrack() {
+        XCTAssertEqual(
+            EQWindowLayout.slider(atSkinX: EQWindowLayout.preampSliderX, skinY: inBandY),
+            .preamp)
+    }
+
+    /// The SAME band x, but at a y ABOVE the track (in the response-curve graph
+    /// area, `y < sliderTrackTop`), returns nil — the graph-click no longer grabs a
+    /// band. The graph frame sits above the track, so a y in it is the real-world
+    /// case. This FAILS without the y-gate (the bare resolver ignores y).
+    func testSliderAtXYReturnsNilForBandXInGraphArea() {
+        // A y inside the response-curve graph area, which lies above the track.
+        let graphY = EQWindowLayout.graphFrame.y
+        XCTAssertLessThan(
+            graphY, EQWindowLayout.sliderTrackTop,
+            "premise: the graph area is above the slider track")
+        for (index, x) in EQWindowLayout.bandSliderXs.enumerated() {
+            XCTAssertNil(
+                EQWindowLayout.slider(atSkinX: x, skinY: graphY),
+                "band \(index) x \(x) at a graph-area y must NOT grab a slider")
+        }
+        // And one pixel above the track top is still excluded.
+        for x in EQWindowLayout.bandSliderXs {
+            XCTAssertNil(
+                EQWindowLayout.slider(atSkinX: x, skinY: EQWindowLayout.sliderTrackTop - 1),
+                "one px above the track top must NOT grab a slider")
+        }
+    }
+
+    /// The same x, at a y BELOW the track (the label area, `y >= sliderTrackBottom`)
+    /// returns nil — the bottom is the half-open upper bound of the control band.
+    /// FAILS without the y-gate.
+    func testSliderAtXYReturnsNilForBandXInLabelArea() {
+        let belowY = EQWindowLayout.sliderTrackBottom + 1
+        for (index, x) in EQWindowLayout.bandSliderXs.enumerated() {
+            XCTAssertNil(
+                EQWindowLayout.slider(atSkinX: x, skinY: belowY),
+                "band \(index) x \(x) at a label-area y must NOT grab a slider")
+        }
+        // The bottom row itself is the half-open exclusive bound -> nil.
+        for x in EQWindowLayout.bandSliderXs {
+            XCTAssertNil(
+                EQWindowLayout.slider(atSkinX: x, skinY: EQWindowLayout.sliderTrackBottom),
+                "sliderTrackBottom is the exclusive bound -> nil")
+        }
+    }
+
+    /// The preamp x is gated the same way: nil in the graph area above and the
+    /// label area below the track.
+    func testSliderAtXYReturnsNilForPreampOffTrack() {
+        let x = EQWindowLayout.preampSliderX
+        XCTAssertNil(
+            EQWindowLayout.slider(atSkinX: x, skinY: EQWindowLayout.sliderTrackTop - 1),
+            "preamp above the track -> nil")
+        XCTAssertNil(
+            EQWindowLayout.slider(atSkinX: x, skinY: EQWindowLayout.sliderTrackBottom),
+            "preamp at/below the track bottom -> nil")
+    }
+
+    /// The control-band edges are half-open `[sliderTrackTop, sliderTrackBottom)`:
+    /// the top row is INCLUDED (a thumb can sit there) and the bottom row is
+    /// EXCLUDED. A band x at the top row grabs; at the bottom row it does not.
+    func testSliderAtXYBandEdgesAreHalfOpen() {
+        let x = EQWindowLayout.bandSliderXs[0]
+        XCTAssertEqual(
+            EQWindowLayout.slider(atSkinX: x, skinY: EQWindowLayout.sliderTrackTop), .band(0),
+            "track top row is inside the control band")
+        XCTAssertEqual(
+            EQWindowLayout.slider(atSkinX: x, skinY: EQWindowLayout.sliderTrackBottom - 1),
+            .band(0),
+            "last row before the bottom is inside the control band")
+        XCTAssertNil(
+            EQWindowLayout.slider(atSkinX: x, skinY: EQWindowLayout.sliderTrackBottom),
+            "the bottom row is the exclusive upper bound")
+    }
+
+    /// Within the control band, the x tie-break / nearest-thumb behaviour is
+    /// IDENTICAL to the bare `slider(atSkinX:)` — the gate only filters y, it does
+    /// not change column resolution. Sampled at the visible left/centre/right of
+    /// each band thumb and a far-off x.
+    func testSliderAtXYInBandMatchesBareResolver() {
+        let thumbW = hitThumbWidth
+        let y = inBandY
+        for columnX in [EQWindowLayout.preampSliderX] + EQWindowLayout.bandSliderXs {
+            for x in [columnX, columnX + thumbW / 2, columnX + thumbW - 1] {
+                XCTAssertEqual(
+                    EQWindowLayout.slider(atSkinX: x, skinY: y),
+                    EQWindowLayout.slider(atSkinX: x),
+                    "in-band x \(x) must match the bare resolver")
+            }
+        }
+        // A far-off x is nil under both (within the band).
+        XCTAssertNil(EQWindowLayout.slider(atSkinX: -100, skinY: y))
+        XCTAssertEqual(
+            EQWindowLayout.slider(atSkinX: -100, skinY: y),
+            EQWindowLayout.slider(atSkinX: -100))
+    }
 }
