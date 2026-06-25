@@ -57,7 +57,7 @@ let package = Package(
             name: "SkinAppKit",
             dependencies: [
                 "SkinKit", "SkinRender", "PlayerCore",
-                "SpectrumKit"
+                "PlayerControl", "SpectrumKit"
             ]
         ),
         .executableTarget(

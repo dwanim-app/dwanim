@@ -2,14 +2,15 @@ import AppKit
 import CoreGraphics
 import Foundation
 import PlayerCore
-import SkinAppKit
 import SkinKit
 import SkinRender
 
 // The playlist window's live content view (one primary type per file, §12). It
 // draws the scaled frame bitmap + the visible track list, and forwards mouse
-// clicks / double-clicks / wheel scrolls to its controller. Split out of
-// `PlaylistView.swift`.
+// clicks / double-clicks / wheel scrolls to its controller.
+//
+// Lifted from the SkinHarness executable into the reusable SkinAppKit tier (no
+// logic change) so BOTH the dev harness AND the real app target can host it.
 
 // MARK: - Live content view
 
@@ -24,7 +25,7 @@ import SkinRender
 ///   * the CoreText track-list overlay -> `overlayDraw`
 ///   * single-vs-double-click routing  -> `onMouseDown` (on `clickCount`)
 ///   * raw wheel delta                  -> `onScroll`
-final class PlaylistContentView: ScaledImageView {
+public final class PlaylistContentView: ScaledImageView {
     private let skin: Skin
     private let scale: Int
     /// The composed-frame UNSCALED dimensions. Mutable so a drag-resize can swap in
@@ -33,12 +34,12 @@ final class PlaylistContentView: ScaledImageView {
     private var skinHeight: Int
 
     /// Pulled fresh each redraw so the list reflects the live core.
-    var tracksProvider: () -> [Track] = { [] }
-    var currentIndexProvider: () -> Int? = { nil }
-    var selectedIndexProvider: () -> Int? = { nil }
-    var scrollRowProvider: () -> Int = { 0 }
+    public var tracksProvider: () -> [Track] = { [] }
+    public var currentIndexProvider: () -> Int? = { nil }
+    public var selectedIndexProvider: () -> Int? = { nil }
+    public var scrollRowProvider: () -> Int = { 0 }
 
-    init(frameImage: CGImage, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int, frame: NSRect) {
+    public init(frameImage: CGImage, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int, frame: NSRect) {
         self.skin = skin
         self.scale = scale
         self.skinWidth = skinWidth
@@ -65,7 +66,7 @@ final class PlaylistContentView: ScaledImageView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    public required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
@@ -73,7 +74,7 @@ final class PlaylistContentView: ScaledImageView {
     /// A double click selects on the first down and PLAYS on the second; both
     /// points are forwarded so the controller can map each to a row via the pure
     /// helper. The view carries no coordinate math.
-    func routeClicks(
+    public func routeClicks(
         onSingleClick: @escaping (Double, Double, Double) -> Void,
         onDoubleClick: @escaping (Double, Double, Double) -> Void
     ) {
@@ -90,7 +91,7 @@ final class PlaylistContentView: ScaledImageView {
     /// a drag-resize, then redraw. The controller composes the new frame (clamped
     /// to the composer minimum) and calls this so the chrome bitmap and the text
     /// layout share the same size — they cannot drift.
-    func updateFrame(image: CGImage, skinWidth: Int, skinHeight: Int) {
+    public func updateFrame(image: CGImage, skinWidth: Int, skinHeight: Int) {
         self.skinWidth = skinWidth
         self.skinHeight = skinHeight
         update(image: image)

@@ -1,0 +1,74 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import PlayerCore
+import SkinKit
+import SkinRender
+
+// The EQ window construction (one primary concern per file, §12): `showEQWindow`
+// builds the view + controller + window, makes it key, and starts the controller,
+// returning the controller so the caller can hold it for the window's lifetime.
+//
+// Lifted from the SkinHarness executable into the reusable SkinAppKit tier so the
+// real app target can host the EQ window too. The window-build logic that used to
+// live in the harness's `openEQWindow` now lives here; the harness keeps only the
+// thin `Never`-returning wrapper that holds the returned controller and drives
+// `app.run()`. No logic change beyond returning the controller rather than
+// running the app inline.
+
+// MARK: - Window construction
+
+/// Result of building the EQ window: the controller (which the caller must hold
+/// for the window's lifetime — the run loop owns no strong reference to it) and
+/// the window itself.
+public struct EQWindowHandle {
+    public let controller: EQController
+    public let window: NSWindow
+}
+
+/// Build and show the EQ window (a plain titled window — the EQ face is a fixed
+/// 275x116 rectangle, so no region mask is needed), start the redraw, and return
+/// the controller + window. Throws a `RenderError` when the EQ face cannot be
+/// composed/scaled into an initial frame. The caller drives the run loop and
+/// holds the returned controller.
+///
+/// `title` is the window's title-bar text (a host-supplied label; NO brand name
+/// is invented here).
+@discardableResult
+public func showEQWindow(
+    skin: Skin,
+    core: PlayerCore,
+    scale: Int,
+    title: String
+) throws -> EQWindowHandle {
+    let eq = core.equalizer
+    guard let base = EQWindowComposer.compose(
+            skin, enabled: eq.enabled, preamp: eq.preamp, bands: eq.bands
+          ),
+          let image = CGImageConversion.makeImage(from: base) else {
+        throw RenderError.imageCreationFailed
+    }
+
+    let scaled = try scaledImage(image, scale: scale)
+
+    let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
+    let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
+
+    let controller = EQController(skin: skin, core: core, view: contentView, scale: scale)
+
+    let window = NSWindow(
+        contentRect: contentRect,
+        styleMask: [.titled, .closable, .miniaturizable],
+        backing: .buffered,
+        defer: false
+    )
+    window.title = title
+    window.delegate = controller
+    window.contentView = contentView
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+
+    controller.start()
+
+    return EQWindowHandle(controller: controller, window: window)
+}

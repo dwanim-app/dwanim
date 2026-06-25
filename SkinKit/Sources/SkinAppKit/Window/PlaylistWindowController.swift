@@ -1,14 +1,18 @@
 import AppKit
 import Foundation
 import PlayerCore
-import SkinAppKit
 import SkinKit
 import SkinRender
 
 // The playlist window controller (one primary type per file, §12): it owns the
 // view, the core, the scroll position, the selected row, and teardown, and turns
-// view-space mouse events into pure-helper row hits + PlayerCore actions. Split
-// out of `PlaylistView.swift`.
+// view-space mouse events into pure-helper row hits + PlayerCore actions.
+//
+// Lifted from the SkinHarness executable into the reusable SkinAppKit tier (no
+// logic change) so BOTH the dev harness AND the real app target can host it. The
+// CLI mode entry (arg parsing + skin/audio load + the process-lifetime hold)
+// stays in the harness, which now CONSTRUCTS this controller via
+// `showPlaylistWindow`.
 
 // MARK: - Controller
 
@@ -37,7 +41,7 @@ import SkinRender
 /// matching its former `windowWillClose` that called only `NSApp.terminate`. It
 /// adds `windowDidResize` (its own unique drag-resize/recompose path).
 @MainActor
-final class PlaylistWindowController: SkinWindowController {
+public final class PlaylistWindowController: SkinWindowController {
     private let core: PlayerCore
     private weak var view: PlaylistContentView?
     /// The skin, kept so a drag-resize can RE-COMPOSE the frame at the new size.
@@ -59,7 +63,7 @@ final class PlaylistWindowController: SkinWindowController {
     /// `core.currentIndex`. `nil` until the user clicks a row.
     private var selectedRow: Int?
 
-    init(core: PlayerCore, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int) {
+    public init(core: PlayerCore, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int) {
         self.core = core
         self.skin = skin
         self.scale = scale
@@ -68,7 +72,7 @@ final class PlaylistWindowController: SkinWindowController {
         super.init()
     }
 
-    func attach(view: PlaylistContentView) {
+    public func attach(view: PlaylistContentView) {
         self.view = view
         view.tracksProvider = { [weak self] in self?.core.playlist ?? [] }
         view.currentIndexProvider = { [weak self] in self?.core.currentIndex }
@@ -209,7 +213,7 @@ final class PlaylistWindowController: SkinWindowController {
     /// `core.currentIndex` are untouched, and `scrollRow` is re-clamped via the same
     /// `PlaylistLayout` the draw path uses, so a row pinned at the bottom stays
     /// valid when the interior grows or shrinks.
-    func windowDidResize(_ notification: Notification) {
+    public func windowDidResize(_ notification: Notification) {
         guard let view else { return }
         recomposeForViewSize(view.bounds.size)
     }

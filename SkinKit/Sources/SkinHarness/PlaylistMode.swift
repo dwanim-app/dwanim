@@ -4,6 +4,7 @@ import CoreText
 import Foundation
 import PlaybackKit
 import PlayerCore
+import SkinAppKit
 import SkinKit
 import SkinKitImageIO
 import SkinRender

@@ -2,15 +2,17 @@ import AppKit
 import CoreGraphics
 import Foundation
 import PlayerCore
-import SkinAppKit
 import SkinKit
 import SkinRender
 
 // The EQ window controller (one primary type per file, §12): it owns the skin,
 // the core, and the view; recomposes the EQ face from the live equalizer state;
 // and routes mouse-down / drag / up to the right slider (or the ON button).
-// Split out of `EQMode.swift` — no logic change beyond the explicit mouse-UP
-// gesture end (clear the latched dragging slider).
+//
+// Lifted from the SkinHarness executable into the reusable SkinAppKit tier (no
+// logic change) so BOTH the dev harness AND the real app target can host it. The
+// CLI mode entry (arg parsing + the window-build + process-lifetime hold) stays
+// in the harness, which now CONSTRUCTS this controller via `showEQWindow`.
 //
 // It sits on `SkinAppKit.SkinWindowController` (the shared NSWindowDelegate +
 // NSApplicationDelegate teardown pair) and draws into the shared
@@ -33,7 +35,7 @@ import SkinRender
 /// the thumb's vertical centre), is inverted to a gain
 /// (`EQWindowLayout.thumbGain(forThumbTopY:)`); and that gain is pushed to
 /// `PlayerCore`, which drives the real `AVAudioUnitEQ`.
-final class EQController: SkinWindowController {
+public final class EQController: SkinWindowController {
     private let skin: Skin
     private let core: PlayerCore
     private let view: ScaledImageView
@@ -45,7 +47,7 @@ final class EQController: SkinWindowController {
     /// on the ON button or empty face, and cleared on mouse-up.
     private var draggingSlider: EQWindowLayout.EQSlider?
 
-    init(skin: Skin, core: PlayerCore, view: ScaledImageView, scale: Int) {
+    public init(skin: Skin, core: PlayerCore, view: ScaledImageView, scale: Int) {
         self.skin = skin
         self.core = core
         self.view = view
@@ -69,7 +71,7 @@ final class EQController: SkinWindowController {
     /// Draw the first frame from the current state. (The EQ face only changes in
     /// response to a gesture, so there is no animation timer — unlike the main
     /// window's spectrum.)
-    func start() {
+    public func start() {
         redraw()
     }
 
