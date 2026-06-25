@@ -15,16 +15,35 @@ public struct DwanimPlayerScene: View {
 
     private let core: PlayerCore
     private let model: PlayerViewModel
+    /// App-layer "Open Audio…" action, forwarded to the gear menu in
+    /// `DefaultPlayerView`. Optional so the headless harness can host the scene
+    /// without an AppKit panel; the app wires it to `session.presentOpenPanel()`.
+    private let onOpenAudio: (() -> Void)?
+    /// App-layer "Open Skin…" action; the app wires it to
+    /// `session.presentOpenSkinPanel()`.
+    private let onOpenSkin: (() -> Void)?
 
-    public init(core: PlayerCore, model: PlayerViewModel) {
+    public init(
+        core: PlayerCore,
+        model: PlayerViewModel,
+        onOpenAudio: (() -> Void)? = nil,
+        onOpenSkin: (() -> Void)? = nil
+    ) {
         self.core = core
         self.model = model
+        self.onOpenAudio = onOpenAudio
+        self.onOpenSkin = onOpenSkin
     }
 
     public var body: some View {
         ZStack {
             DwanimBackdrop()
-            DefaultPlayerView(core: core, model: model)
+            DefaultPlayerView(
+                core: core,
+                model: model,
+                onOpenAudio: onOpenAudio,
+                onOpenSkin: onOpenSkin
+            )
         }
     }
 }
