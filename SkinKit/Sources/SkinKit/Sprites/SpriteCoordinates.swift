@@ -19,9 +19,7 @@ public enum SpriteCoordinates {
     /// Sheet filename (lowercased, e.g. `"cbuttons.bmp"`) -> sprites it contains.
     ///
     /// SCOPE: the **main player window** only. The playlist window lives in its
-    /// own table (`playlistWindow`); the equalizer window is deferred.
-    // TODO: future increment — add eqmain.bmp / eq_ex.bmp (equalizer window)
-    //       sprite tables.
+    /// own table (`playlistWindow`); the equalizer window in `equalizerWindow`.
     public static let mainWindow: [String: [SpriteRect]] = [
         "main.bmp": mainBackground,
         "cbuttons.bmp": controlButtons,
@@ -45,6 +43,21 @@ public enum SpriteCoordinates {
     /// (parsed separately into `PlaylistColors`), not from this sheet.
     public static let playlistWindow: [String: [SpriteRect]] = [
         "pledit.bmp": playlistFrame
+    ]
+
+    /// Sheet filename (lowercased) -> sprites it contains, for the classic
+    /// **equalizer (EQ) window**.
+    ///
+    /// SCOPE: the fixed-size 275x116 equalizer window composited from
+    /// `eqmain.bmp` — the window background (EQ face), the active/inactive title
+    /// bars, the shared slider THUMB (normal + pressed) used by the preamp and the
+    /// ten band sliders, and the ON / AUTO toggle buttons (each off + on).
+    ///
+    /// The windowshade variant lives in `eq_ex.bmp` and is DEFERRED (it is not
+    /// keyed here). The colored band-graph line gradient and the preset/text
+    /// micro-region are also DEFERRED — see the comment block on `equalizerFace`.
+    public static let equalizerWindow: [String: [SpriteRect]] = [
+        "eqmain.bmp": equalizerFace
     ]
 
     // MARK: - pledit.bmp (playlist window frame)
@@ -121,6 +134,91 @@ public enum SpriteCoordinates {
 
         // --- Scrollbar handle (small knob in the right-edge track) ---
         SpriteRect(name: "scrollHandle", x: 52, y: 53, width: 8, height: 18)
+    ]
+
+    // MARK: - eqmain.bmp (equalizer window)
+    //
+    // Clean-room from the public EQ-window layout. The classic equalizer is a
+    // fixed-size 275x116 window whose face plus all its control sprites are
+    // packed into ONE vertically-stacked sheet, `eqmain.bmp`.
+    //
+    // FIT BUDGET (balance/volume/posbar lesson): the real `eqmain.bmp` was
+    // measured across the ~200-skin corpus (194 carried it). Width is 275 in
+    // 189/194 skins (smallest non-degenerate 275, the dominant value). Height is
+    // the interesting axis: it is 315 in 169 skins (modal/canonical) and >=292 in
+    // 178 skins, but a minority ship the sheet TRUNCATED — 164 (4), 163 (6), 134
+    // (1), and a hard floor of 116 (4). Those truncated sheets contain ONLY the
+    // top band of the layout (the 275x116 EQ face, sometimes plus the colored
+    // band-graph strip just below it); the author simply omitted the lower sprite
+    // rows. The absolute smallest real `eqmain.bmp` is therefore 275 x 116.
+    //
+    // This is the posbar situation, not the balance situation: the canonical
+    // sheet genuinely packs the title bars / thumb / buttons in the rows BELOW
+    // y=116, so we CANNOT shrink the whole sheet to 116 without throwing those
+    // sprites away on the 87% of skins that ship them. The discipline applied:
+    //   * The window BACKGROUND (the EQ face the window always needs) is pinned to
+    //     275x116 at y=0 — in-bounds on EVERY real eqmain.bmp, including the 116px
+    //     floor. The face never vanishes on any real skin.
+    //   * Every OTHER sprite (title bars, thumb, ON/AUTO) lives in the canonical
+    //     275x315 sheet's lower rows and is kept inside that modal sheet, so it
+    //     renders correctly on the ~87% canonical majority. On a truncated sheet
+    //     those rows are out of bounds, so `SpriteCutter` drops exactly those
+    //     sprites (the face still renders) — the same graceful degradation the
+    //     posbar thumb gets on a 248-wide minority sheet. We deliberately do NOT
+    //     chase the 116px floor by deleting the lower sprites, which would corrupt
+    //     the canonical majority.
+    // The fit floor used by the fit test is therefore the canonical 275x315 (the
+    // sheet where every declared sprite genuinely lives), with a SEPARATE pinned
+    // assertion that the background fits the absolute-smallest 275x116 so the EQ
+    // face can never overrun even the shortest real sheet.
+    //
+    // Layout convention (top-left origin), clean-room from the public EQ layout:
+    //   * y = 0,   275x116 : the EQ window background / face (drawn whole).
+    //   * y = 134, 275x14  : title bar, active (focused).
+    //   * y = 149, 275x14  : title bar, inactive.
+    //   * the slider THUMB is a small ~14x11 knob: normal at (0,164), pressed just
+    //     below at (0,176). ONE thumb graphic is shared by the preamp slider and
+    //     all ten band sliders (they are identical knobs in the format).
+    //   * the ON button (EQ enable) and AUTO button (auto-preset) are small
+    //     toggle graphics in the same control band: each has an OFF and an ON
+    //     state. Public layout packs them near the upper-left of the EQ face's
+    //     control row; their off/on pairs sit in the (10,119) / (128,119) bands.
+    //
+    // DEFERRED (documented, not modelled here):
+    //   * eq_ex.bmp — the EQ windowshade (rolled-up title-bar-only) variant. Its
+    //     own sheet; not keyed in `equalizerWindow`. A later increment.
+    //   * the colored band-graph LINE gradient (the 1px-wide vertical color ramp
+    //     the curve is drawn with) and the PRESET/TEXT micro-region: the public
+    //     spec under-pins their exact packing, and neither is needed to composite
+    //     the static EQ window (face + chrome + thumbs + ON/AUTO) in the next
+    //     increment. Left to a later pass, exactly as the playlist micro-buttons
+    //     were.
+
+    private static let equalizerFace: [SpriteRect] = [
+        // --- Window background / EQ face (drawn whole), y = 0 ---
+        // Pinned to 275x116 so it fits even the 116px-floor truncated sheets.
+        SpriteRect(name: "background", x: 0, y: 0, width: 275, height: 116),
+
+        // --- Title bar, active (y = 134) and inactive (y = 149), 275x14 ---
+        SpriteRect(name: "titleBarActive",   x: 0, y: 134, width: 275, height: 14),
+        SpriteRect(name: "titleBarInactive", x: 0, y: 149, width: 275, height: 14),
+
+        // --- Shared slider thumb (preamp + 10 bands), ~14x11 ---
+        // Normal then pressed, stacked. provisional — tune at render.
+        SpriteRect(name: "sliderThumb",        x: 0, y: 164, width: 14, height: 11),
+        SpriteRect(name: "sliderThumbPressed", x: 0, y: 176, width: 14, height: 11),
+
+        // --- ON button (EQ enable): off + on ---
+        // The off-states group at the left of the control band (y = 119); the
+        // on-states group to their right. Packed so no two button rects overlap
+        // in the sheet. provisional — tune at render.
+        SpriteRect(name: "onButtonOff", x: 10,  y: 119, width: 25, height: 12),
+        SpriteRect(name: "onButtonOn",  x: 128, y: 119, width: 25, height: 12),
+
+        // --- AUTO button (auto-preset): off + on ---
+        // provisional — tune at render
+        SpriteRect(name: "autoButtonOff", x: 36,  y: 119, width: 32, height: 12),
+        SpriteRect(name: "autoButtonOn",  x: 154, y: 119, width: 32, height: 12)
     ]
 
     // MARK: - main.bmp (window background)
