@@ -44,13 +44,22 @@ public struct PlaylistWindowHandle {
 ///
 /// `title` is the window's title-bar text (a host-supplied label; NO brand name
 /// is invented here).
+///
+/// `terminatesAppOnClose` defaults to `true` — the original single-window CLI
+/// harness behavior (closing the window quits the process). A larger host (the
+/// real app) passes `false` so closing this hosted window only tears it down and
+/// fires `onClose` (e.g. to drop the host's retained handle) without quitting the
+/// app. In the hosted (`false`) mode the host must NOT install the returned
+/// controller as `NSApp.delegate`.
 @MainActor
 @discardableResult
 public func showPlaylistWindow(
     skin: Skin,
     core: PlayerCore,
     scale: Int,
-    title: String
+    title: String,
+    terminatesAppOnClose: Bool = true,
+    onClose: (() -> Void)? = nil
 ) throws -> PlaylistWindowHandle {
     let width = PlaylistWindowGeometry.defaultWidth
     let height = PlaylistWindowGeometry.defaultHeight
@@ -78,7 +87,8 @@ public func showPlaylistWindow(
     // click hit-testing and the draw path share one geometry source. It also keeps
     // the skin so a drag-resize can recompose the frame at the new size.
     let controller = PlaylistWindowController(
-        core: core, skin: skin, scale: scale, skinWidth: frame.width, skinHeight: frame.height
+        core: core, skin: skin, scale: scale, skinWidth: frame.width, skinHeight: frame.height,
+        terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
     )
     controller.attach(view: view)
 

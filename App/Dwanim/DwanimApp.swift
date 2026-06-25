@@ -20,7 +20,11 @@ import SwiftUI
 // The default scene stays the app's PRIMARY window. "Open Skin…" (⌘⇧O) is an
 // ADDITIVE path: it hosts the classic `.wsz` MAIN window as an extra window
 // driven by the same shared core (see ClassicSkinPresenter); closing that window
-// does NOT quit the app. NO brand words appear anywhere in the UI text.
+// does NOT quit the app. The View menu's "Playlist" (⌘P) / "Equalizer" (⌘G)
+// toggles show/hide the two other classic windows of the loaded-skin cluster
+// (when no skin is loaded yet they fall back to presenting "Open Skin…", since a
+// playlist / EQ face only exists for a loaded skin). NO brand words appear
+// anywhere in the UI text.
 @main
 struct DwanimApp: App {
 
@@ -54,6 +58,28 @@ struct DwanimApp: App {
                     session.presentOpenSkinPanel()
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+            }
+
+            // Add the two auxiliary-window toggles into the STANDARD View menu (the
+            // one SwiftUI auto-creates for sidebar / toolbar / full-screen items),
+            // rather than spawning a SECOND "View" menu. `.toolbar` is the standard
+            // View-menu group, so `after: .toolbar` appends our items at the bottom
+            // of that one menu — a single coherent View menu.
+            //
+            // The items are always enabled: with a skin loaded they toggle the
+            // hosted Playlist / Equalizer windows show/hide; with no skin loaded yet
+            // they fall back to presenting "Open Skin…" (the auxiliary faces only
+            // exist for a loaded skin), so the items are never dead.
+            CommandGroup(after: .toolbar) {
+                Button("Playlist") {
+                    session.togglePlaylistWindow()
+                }
+                .keyboardShortcut("p", modifiers: [.command])
+
+                Button("Equalizer") {
+                    session.toggleEQWindow()
+                }
+                .keyboardShortcut("g", modifiers: [.command])
             }
         }
     }
