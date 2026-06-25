@@ -76,6 +76,10 @@ public func showEQWindow(
     )
     window.title = title
     window.delegate = controller
+    // Host handle (harness `liveController` / app `WindowHandle`) is the sole owner;
+    // do not let AppKit release the window on close out from under it (ARC
+    // double-release footgun on close / re-skin).
+    window.isReleasedWhenClosed = false
     window.contentView = contentView
     window.center()
     window.makeKeyAndOrderFront(nil)

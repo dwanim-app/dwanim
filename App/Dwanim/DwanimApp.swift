@@ -71,6 +71,15 @@ struct DwanimApp: App {
             // they fall back to presenting "Open Skin…" (the auxiliary faces only
             // exist for a loaded skin), so the items are never dead.
             CommandGroup(after: .toolbar) {
+                // The classic MAIN window may be built BORDERLESS for a region skin
+                // (no titlebar, no close button), so this toggle is the only host
+                // affordance to close (and reopen) it without a re-skin or quit. Like
+                // the others, it falls back to "Open Skin…" when no skin is loaded.
+                Button("Skin Window") {
+                    session.toggleMainWindow()
+                }
+                .keyboardShortcut("k", modifiers: [.command])
+
                 Button("Playlist") {
                     session.togglePlaylistWindow()
                 }

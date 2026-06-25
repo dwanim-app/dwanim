@@ -5,6 +5,7 @@ import SkinAppKit
 import SkinKit
 import SkinKitImageIO
 import SkinRender
+import SpectrumKit
 import UniformTypeIdentifiers
 
 // MARK: - ClassicSkinPresenter
@@ -79,8 +80,22 @@ final class ClassicSkinPresenter {
     /// The engine's opt-in PCM-tap + track-format sources for the classic window's
     /// spectrum bars and kbps / kHz number boxes. `nil` is tolerated (the window
     /// simply renders no spectrum / format facts).
+    ///
+    /// NOTE on `tap`: the hosted MAIN window does NOT install this tap (it reads
+    /// `sharedFeed` instead — see below). `tap` is retained for symmetry with the
+    /// harness signature and as future-proofing; the single live tap is owned by
+    /// `AudioSession`'s RedrawLoop.
     private let tap: AudioTapProviding?
     private let format: TrackFormatProviding?
+
+    /// The SINGLE host-owned `SpectrumFeed` (fed by `AudioSession`'s one engine
+    /// tap). Injected into the hosted MAIN window so it reads this already-fed
+    /// snapshot instead of installing its own tap. Passing it makes the hosted
+    /// main window's redraw loop timer-only — the one tap is never stolen when the
+    /// classic window opens, nor removed when it closes, so the default scene's
+    /// spectrum keeps animating throughout. The playlist / EQ windows show no
+    /// spectrum and need no feed.
+    private let sharedFeed: SpectrumFeed?
 
     /// The same security-scope + persistence seams `AudioSession` uses, so the
     /// `.lastSkin` slot is minted / persisted / resolved through one set of
@@ -134,6 +149,7 @@ final class ClassicSkinPresenter {
         core: PlayerCore,
         tap: AudioTapProviding?,
         format: TrackFormatProviding?,
+        sharedFeed: SpectrumFeed?,
         access: SecurityScopedFileAccess,
         store: BookmarkStore,
         resolver: BookmarkResolver
@@ -141,6 +157,7 @@ final class ClassicSkinPresenter {
         self.core = core
         self.tap = tap
         self.format = format
+        self.sharedFeed = sharedFeed
         self.access = access
         self.store = store
         self.resolver = resolver
@@ -277,6 +294,12 @@ final class ClassicSkinPresenter {
                 region: region,
                 scale: ClassicSkinPresenter.scale,
                 title: ClassicSkinPresenter.mainWindowTitle,
+                // SHARED-FEED mode: read the single host-owned feed (fed by
+                // AudioSession's one engine tap) instead of installing a second tap.
+                // The hosted window's redraw loop is timer-only, so opening / closing
+                // this window never touches the one tap and the default scene's
+                // spectrum keeps animating.
+                externalFeed: sharedFeed,
                 // HOSTED mode: closing this window tears it down + drops just this
                 // handle WITHOUT quitting the app (the default scene + the other
                 // classic windows survive). The controller is NOT installed as the
@@ -345,6 +368,19 @@ final class ClassicSkinPresenter {
             closeEQWindow()
         } else if let skin = loadedSkin {
             openEQWindow(skin: skin)
+        }
+    }
+
+    /// Toggle the MAIN window: close it if open, else (re)open it (when a skin is
+    /// loaded). This is the host's close affordance for the classic main window:
+    /// when a skin declares a custom region the main window is built BORDERLESS (no
+    /// titlebar, no close button), so there is otherwise no way to dismiss it short
+    /// of a re-skin or quitting. A no-op when no skin is loaded.
+    func toggleMainWindow() {
+        if mainHandle != nil {
+            closeMainWindow()
+        } else if let skin = loadedSkin {
+            openMainWindow(skin: skin)
         }
     }
 

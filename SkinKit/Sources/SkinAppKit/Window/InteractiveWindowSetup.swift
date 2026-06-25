@@ -4,6 +4,7 @@ import Foundation
 import PlayerCore
 import SkinKit
 import SkinRender
+import SpectrumKit
 
 // The classic main-window construction (one primary concern per file, §12):
 // `showInteractiveWindow` builds the view + controller + region window, makes it
@@ -44,6 +45,12 @@ public struct InteractiveWindowHandle {
 /// fires `onClose` (e.g. to drop the host's retained handle) without quitting the
 /// app. In the hosted (`false`) mode the host must NOT install the returned
 /// controller as `NSApp.delegate`.
+///
+/// `externalFeed` is an optional host-owned, already-fed `SpectrumFeed`. When
+/// non-`nil` (the app, which runs ONE engine tap shared across every spectrum
+/// consumer) the controller's redraw loop is timer-only and installs NO tap — it
+/// reads this shared feed. When `nil` (the harness) the controller installs its
+/// own tap on `tap` exactly as before (unchanged single-window behavior).
 @discardableResult
 public func showInteractiveWindow(
     skin: Skin,
@@ -53,6 +60,7 @@ public func showInteractiveWindow(
     region: SkinRegion?,
     scale: Int,
     title: String,
+    externalFeed: SpectrumFeed? = nil,
     terminatesAppOnClose: Bool = true,
     onClose: (() -> Void)? = nil
 ) throws -> InteractiveWindowHandle {
@@ -85,6 +93,7 @@ public func showInteractiveWindow(
     // teardown) → clean app termination.
     let controller = InteractiveController(
         skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format,
+        externalFeed: externalFeed,
         terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
     )
 
@@ -100,6 +109,12 @@ public func showInteractiveWindow(
     // tears down cleanly, and the borderless region window (no close button) so a
     // programmatic close/terminate is still correct teardown.
     window.delegate = controller
+    // The caller owns the window for its lifetime (the harness via `liveController`,
+    // the app via its `WindowHandle`). Defaulting `isReleasedWhenClosed` to `true`
+    // would have AppKit release the window on close while the host handle still
+    // holds it — an ARC double-release footgun on close / re-skin. Make the host
+    // handle the sole owner.
+    window.isReleasedWhenClosed = false
     window.center()
     window.makeKeyAndOrderFront(nil)
 

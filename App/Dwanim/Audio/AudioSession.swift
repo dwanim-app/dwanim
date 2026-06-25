@@ -111,8 +111,17 @@ final class AudioSession {
         // harness passes it) and the one set of bookmark seams, so "Open Skin…"
         // hosts a classic main window driven by the SAME core the default scene
         // plays through.
+        //
+        // SINGLE-TAP RULE: this session owns THE one engine tap (installed by the
+        // RedrawLoop below, writing `latestSamples`). The shared feed is injected so
+        // the hosted classic MAIN window reads THIS already-fed snapshot rather than
+        // installing its own tap. AVAudioEngine allows only one tap per node bus, so
+        // a second tap would steal it (freezing the default scene) and removing it on
+        // window close would kill it permanently. With the feed injected the hosted
+        // window's redraw loop is timer-only and touches no tap.
         self.classicSkin = ClassicSkinPresenter(
             core: core, tap: engine, format: engine,
+            sharedFeed: latestSamples,
             access: access, store: store, resolver: resolver
         )
 
@@ -196,6 +205,20 @@ final class AudioSession {
             return
         }
         classicSkin.toggleEQWindow()
+    }
+
+    /// Toggle the hosted classic MAIN window: close it if open, else reopen it (when
+    /// a skin is loaded). This is the host's close affordance for the borderless
+    /// region main window, which has NO titlebar / close button — without it there
+    /// is no way to dismiss a region-skin main window short of a re-skin or quit.
+    /// Same no-skin fallback as the other toggles (present "Open Skin…" when nothing
+    /// is loaded yet).
+    func toggleMainWindow() {
+        guard classicSkin.isSkinLoaded else {
+            classicSkin.presentOpenPanel()
+            return
+        }
+        classicSkin.toggleMainWindow()
     }
 
     // MARK: One tick (the feed)

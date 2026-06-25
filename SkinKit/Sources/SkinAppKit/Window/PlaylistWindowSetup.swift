@@ -103,6 +103,10 @@ public func showPlaylistWindow(
     )
     window.title = title
     window.delegate = controller
+    // Host handle (harness `liveController` / app `WindowHandle`) is the sole owner;
+    // do not let AppKit release the window on close out from under it (ARC
+    // double-release footgun on close / re-skin).
+    window.isReleasedWhenClosed = false
     window.contentView = view
     // Floor the draggable size at the composer minimum (scaled), so the user can
     // never drag below where the frame corners stop fitting. The composer also
