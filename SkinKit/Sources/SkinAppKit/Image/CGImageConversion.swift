@@ -9,7 +9,10 @@ import SkinKit
 /// `DecodedBitmap` is RGBA8, row-major, top-left origin, straight alpha. We
 /// describe the buffer to CoreGraphics with the matching byte order and an
 /// sRGB color space so the colors render faithfully.
-enum CGImageConversion {
+///
+/// Lifted unchanged from the SkinHarness shell into the reusable AppKit tier so
+/// both the harness and the upcoming app target can bridge composed bitmaps.
+public enum CGImageConversion {
 
     /// Pixel layout for the decoded buffer.
     ///
@@ -26,14 +29,14 @@ enum CGImageConversion {
     /// PNG needs. (The DecodedBitmap carries straight alpha; for the only two
     /// alpha values we ever produce here — 0xFF and 0x00 — straight and
     /// premultiplied representations coincide, so no precision is lost.)
-    static let bitmapInfo = CGBitmapInfo(
+    public static let bitmapInfo = CGBitmapInfo(
         rawValue: CGImageAlphaInfo.premultipliedLast.rawValue
             | CGBitmapInfo.byteOrder32Big.rawValue
     )
 
     /// Builds a `CGImage` from a decoded RGBA8 bitmap, or `nil` if the buffer
     /// size does not match the declared dimensions.
-    static func makeImage(from bitmap: DecodedBitmap) -> CGImage? {
+    public static func makeImage(from bitmap: DecodedBitmap) -> CGImage? {
         let width = bitmap.width
         let height = bitmap.height
         let bytesPerRow = width * 4

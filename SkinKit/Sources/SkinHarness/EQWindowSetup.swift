@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import PlayerCore
+import SkinAppKit
 import SkinKit
 import SkinRender
 
@@ -39,7 +40,7 @@ func openEQWindow(skin: Skin, core: PlayerCore, scale: Int) -> Never {
     app.setActivationPolicy(.regular)
 
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
-    let contentView = EQSkinView(image: scaled.image, frame: contentRect)
+    let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
 
     let controller = EQController(skin: skin, core: core, view: contentView, scale: scale)
     liveEQController = controller

@@ -13,6 +13,8 @@ import SkinRender
 // `CAShapeLayer` set as the content view layer's `mask`. Geometry is kept
 // separate from pixels — needed for future hit-testing.
 //
+// Lifted unchanged from the SkinHarness shell into the reusable AppKit tier.
+//
 // Coordinate mapping (the careful part — this is the project's highest-risk
 // bug class, so the flip lives in ONE tested place):
 //   - Region vertices are in the skin's NATURAL pixel space (e.g. 275x116),
@@ -40,7 +42,7 @@ import SkinRender
 // NON-ZERO winding rule so overlapping polygons OR together (true union),
 // matching `RegionCoverage`'s union semantics for the visible region.
 
-enum RegionMaskLayer {
+public enum RegionMaskLayer {
 
     /// Builds the mask path for `region` in the content view's coordinate space,
     /// where the view shows the image at integer `scale`.
@@ -51,7 +53,7 @@ enum RegionMaskLayer {
     ///
     /// Returns `nil` if the region has no fillable polygon (fewer than 3 points
     /// in every polygon), so the caller can fall back to an unshaped window.
-    static func maskPath(
+    public static func maskPath(
         for region: SkinRegion,
         skinHeight: Int,
         scale: Int
@@ -95,7 +97,7 @@ enum RegionMaskLayer {
     /// content view layer's `mask` clips the OPAQUE content to the region outline.
     /// The NON-ZERO winding fill OR-s overlapping polygons, matching the union
     /// semantics of the pure coverage math.
-    static func make(
+    public static func make(
         for region: SkinRegion,
         skinHeight: Int,
         scale: Int,

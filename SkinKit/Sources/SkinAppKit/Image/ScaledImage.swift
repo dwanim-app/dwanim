@@ -6,14 +6,19 @@ import UniformTypeIdentifiers
 
 // MARK: - Nearest-neighbor scaling
 
+// Lifted unchanged from the SkinHarness shell (`SkinRendering.swift`) into the
+// reusable AppKit tier: the nearest-neighbor scaler, the headless PNG writer,
+// and the simple static-image view. Both the harness and the upcoming app target
+// share these.
+
 /// Errors that can arise while rendering or exporting a skin image.
-enum RenderError: Error, CustomStringConvertible {
+public enum RenderError: Error, CustomStringConvertible {
     case contextCreationFailed
     case imageCreationFailed
     case pngDestinationFailed
     case pngWriteFailed
 
-    var description: String {
+    public var description: String {
         switch self {
         case .contextCreationFailed:
             return "Could not create a graphics context for the scaled image."
@@ -31,7 +36,7 @@ enum RenderError: Error, CustomStringConvertible {
 /// nearest-neighbor interpolation so the pixels stay crisp at integer zoom.
 ///
 /// Returns the scaled `CGImage` and its pixel dimensions.
-func scaledImage(
+public func scaledImage(
     _ image: CGImage,
     scale: Int
 ) throws -> (image: CGImage, width: Int, height: Int) {
@@ -46,7 +51,7 @@ func scaledImage(
               bitsPerComponent: 8,
               bytesPerRow: 0,
               space: colorSpace,
-              bitmapInfo: CGImageConversionPNGAlpha
+              bitmapInfo: scaledImagePNGAlpha
           ) else {
         throw RenderError.contextCreationFailed
     }
@@ -64,13 +69,13 @@ func scaledImage(
 
 /// Bitmap info used for the offscreen PNG context: premultiplied-last RGBA over
 /// sRGB, which is what CoreGraphics bitmap contexts support for 8-bit RGBA.
-private let CGImageConversionPNGAlpha = CGImageAlphaInfo.premultipliedLast.rawValue
+private let scaledImagePNGAlpha = CGImageAlphaInfo.premultipliedLast.rawValue
     | CGBitmapInfo.byteOrder32Big.rawValue
 
 // MARK: - PNG export (headless)
 
 /// Writes `image` to `url` as a PNG. Runs fully offscreen with no run loop.
-func writePNG(_ image: CGImage, to url: URL) throws {
+public func writePNG(_ image: CGImage, to url: URL) throws {
     guard let destination = CGImageDestinationCreateWithURL(
         url as CFURL,
         UTType.png.identifier as CFString,
@@ -89,21 +94,22 @@ func writePNG(_ image: CGImage, to url: URL) throws {
 // MARK: - Window view
 
 /// A view that draws a `CGImage` with nearest-neighbor scaling so the skin's
-/// pixel art stays crisp when the window is sized to an integer multiple.
-final class SkinImageView: NSView {
+/// pixel art stays crisp when the window is sized to an integer multiple. Used
+/// for the static (non-interactive) window path.
+public final class SkinImageView: NSView {
     private let image: CGImage
 
-    init(image: CGImage, frame: NSRect) {
+    public init(image: CGImage, frame: NSRect) {
         self.image = image
         super.init(frame: frame)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    public required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none
         context.draw(image, in: bounds)

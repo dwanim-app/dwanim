@@ -4,6 +4,7 @@ import Foundation
 import PlaybackKit
 import PlayerControl
 import PlayerCore
+import SkinAppKit
 import SkinKit
 import SkinKitImageIO
 import SkinRender
@@ -88,95 +89,6 @@ private func parseInteractiveArguments(_ argv: [String]) -> InteractiveArguments
     return InteractiveArguments(skinPath: skinPath, audioPaths: audioPaths, scale: scale)
 }
 
-// MARK: - Live mutable content view
-
-/// A content view that draws a `CGImage` with nearest-neighbor scaling (like
-/// `SkinImageView`) but whose image can be SWAPPED each timer tick, and which
-/// forwards mouse-down / mouse-up to a controller.
-///
-/// Coordinate note: this is a default (NON-flipped) `NSView`, so an
-/// `NSEvent.locationInWindow` converted into this view has origin at the
-/// BOTTOM-left with y increasing UPWARD. The composed skin image is top-left
-/// origin (y down). The view forwards the raw view-space point (plus its own
-/// height) on mouse-down; mapping that back to skin space (undo scale + y-flip)
-/// is the pure `ControlHitTest.skinPoint(...)`, which the controller drives —
-/// the view itself carries no coordinate math.
-final class InteractiveSkinView: NSView {
-    private var image: CGImage
-
-    /// Called on mouse-down with the click point in this view's coordinate space
-    /// (non-flipped, bottom-left origin, scaled points) plus the view's height,
-    /// so the controller can map it to skin space via `ControlHitTest`.
-    var onMouseDown: ((_ viewX: Double, _ viewY: Double, _ viewHeight: Double) -> Void)?
-    var onMouseUp: (() -> Void)?
-
-    init(image: CGImage, frame: NSRect) {
-        self.image = image
-        super.init(frame: frame)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    /// Swap the displayed image and request a redraw. Same pixel size each tick,
-    /// so the frame is unchanged.
-    func update(image: CGImage) {
-        self.image = image
-        needsDisplay = true
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.interpolationQuality = .none
-        context.draw(image, in: bounds)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        let viewPoint = convert(event.locationInWindow, from: nil)
-        onMouseDown?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        onMouseUp?()
-    }
-}
-
-// MARK: - Latest-samples holder
-//
-// The single point of contact between the audio render thread (which produces
-// PCM in the tap) and the main thread (which consumes it in the redraw timer).
-// The tap does the MINIMUM on the audio thread: it just stashes the most recent
-// mono frame + sample rate under a lock. No analysis, no allocation beyond the
-// frame copy, no UI. The main thread reads the latest snapshot and runs the FFT.
-//
-// An `NSLock` (not a serial queue) keeps the audio-thread critical section tiny
-// and non-blocking-ish — store/read a small struct and return. Only the latest
-// frame is kept (older frames are simply overwritten); the analyzer always wants
-// the most recent window, so dropping stale frames is correct, not lossy.
-private final class LatestSamples {
-    private let lock = NSLock()
-    private var samples: [Float] = []
-    private var sampleRate: Double = 44_100
-
-    /// Audio-thread entry point: overwrite the stashed frame. Tiny critical
-    /// section — copy the array reference and the rate, then return.
-    func store(_ samples: [Float], sampleRate: Double) {
-        lock.lock()
-        self.samples = samples
-        self.sampleRate = sampleRate
-        lock.unlock()
-    }
-
-    /// Main-thread entry point: read the latest stashed frame + rate.
-    func latest() -> (samples: [Float], sampleRate: Double) {
-        lock.lock()
-        defer { lock.unlock() }
-        return (samples, sampleRate)
-    }
-}
-
 // MARK: - Controller
 
 /// Owns the live window: the skin, the core, the view, and the redraw timer. It
@@ -184,20 +96,23 @@ private final class LatestSamples {
 /// the view's image, and routes mouse-down hits to `apply(_:to:)`.
 ///
 /// It also owns the spectrum visualizer wiring: an audio tap stashes the latest
-/// mono samples into a lock-guarded `LatestSamples` (audio thread, minimum work),
-/// and the redraw timer (main thread) reads that snapshot, runs the
+/// mono samples into a lock-guarded `SpectrumKit.SpectrumFeed` (audio thread,
+/// minimum work), and the redraw timer (main thread) reads that snapshot, runs the
 /// `SpectrumAnalyzer`, and draws the bars via `SpectrumRenderer`. The analyzer and
 /// all SkinRender drawing stay on the main thread.
-private final class InteractiveController: NSObject, NSWindowDelegate, NSApplicationDelegate {
+private final class InteractiveController: SkinWindowController {
     private let skin: Skin
     private let core: PlayerCore
-    private let view: InteractiveSkinView
+    private let view: ScaledImageView
     private let scale: Int
 
     /// The control currently held down (for pressed-sprite feedback), or `nil`.
     private var pressedControl: SkinControl?
 
-    private var timer: Timer?
+    /// The shared ~25 Hz redraw cadence + audio-tap wiring (timer + tap install /
+    /// remove + the `SpectrumFeed` write). Built in `init` and started/stopped by
+    /// `start()` / `tearDown()`.
+    private var redrawLoop: RedrawLoop?
 
     // MARK: Title marquee
 
@@ -215,17 +130,15 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
 
     // MARK: Spectrum wiring
 
-    /// The engine's PCM tap source (the same object backing `core`). Kept so the
-    /// tap can be installed in `start()` and removed in `stop()`.
-    private let tap: AudioTapProviding?
     /// The engine's track-format source (the same object backing `core`), opt-in
-    /// cast like `tap`. Read each redraw for the kbps / kHz number boxes; `nil`
-    /// when the engine does not expose format facts. Format metadata never flows
-    /// through `PlayerCore`'s transport.
+    /// cast like the PCM tap. Read each redraw for the kbps / kHz number boxes;
+    /// `nil` when the engine does not expose format facts. Format metadata never
+    /// flows through `PlayerCore`'s transport. (The PCM tap itself is owned by the
+    /// `RedrawLoop`, which installs and removes it.)
     private let format: TrackFormatProviding?
     /// Lock-guarded latest mono samples, written by the audio thread and read by
-    /// the main-thread redraw timer.
-    private let latestSamples = LatestSamples()
+    /// the main-thread redraw timer (the shared `SpectrumKit.SpectrumFeed`).
+    private let latestSamples = SpectrumFeed()
     /// FFT spectrum analyzer (main-thread only). `barCount` is chosen to fit the
     /// visualization frame width.
     private let analyzer: SpectrumAnalyzer
@@ -244,7 +157,7 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
     init(
         skin: Skin,
         core: PlayerCore,
-        view: InteractiveSkinView,
+        view: ScaledImageView,
         scale: Int,
         tap: AudioTapProviding?,
         format: TrackFormatProviding?
@@ -253,7 +166,6 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
         self.core = core
         self.view = view
         self.scale = scale
-        self.tap = tap
         self.format = format
 
         let visWidth = MainWindowLayout.visualizationFrame.width
@@ -271,63 +183,48 @@ private final class InteractiveController: NSObject, NSWindowDelegate, NSApplica
 
         super.init()
 
-        view.onMouseDown = { [weak self] viewX, viewY, viewHeight in
+        // The shared view carries the event's clickCount for windows that
+        // distinguish single vs double click; the main window does not, so it is
+        // ignored here.
+        view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _ in
             self?.handleMouseDown(viewX: viewX, viewY: viewY, viewHeight: viewHeight)
         }
         view.onMouseUp = { [weak self] in self?.handleMouseUp() }
-    }
 
-    /// Start the redraw loop on the main run loop and install the audio tap.
-    ///
-    /// The tap block runs on the AUDIO render thread and does the minimum: stash
-    /// the latest mono samples + sample rate under a lock. The redraw timer (main
-    /// thread) does the analysis + drawing. The timer runs at ~25 Hz so the
-    /// spectrum animates smoothly (full-window recompose per tick is acceptable
-    /// for the dev harness; the static/dynamic patch seam is a tracked M5 item).
-    func start() {
-        tap?.installTap { [weak self] samples, sampleRate in
-            // AUDIO THREAD: minimum work — stash and return.
-            self?.latestSamples.store(samples, sampleRate: sampleRate)
-        }
-
-        redraw()
-        let timer = Timer(timeInterval: 0.04, repeats: true) { [weak self] _ in
-            // Advance the title marquee at the timer cadence (NOT on the
-            // mouse-driven redraws, so a click does not jerk the scroll).
+        // ~25 Hz: full-window recompose per tick (acceptable for the dev harness;
+        // the static/dynamic patch seam is a tracked M5 item). The per-tick work
+        // advances the title marquee at the timer cadence (NOT on the mouse-driven
+        // redraws, so a click does not jerk the scroll) and recomposes.
+        redrawLoop = RedrawLoop(
+            interval: 0.04,
+            tap: tap,
+            feed: latestSamples
+        ) { [weak self] in
             self?.advanceTitleScroll()
             self?.redraw()
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
-    /// Stop the redraw loop and remove the audio tap. Optional teardown; safe if
-    /// nothing was installed.
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-        tap?.removeTap()
+    /// Start the redraw loop on the main run loop and install the audio tap. The
+    /// shared `RedrawLoop` installs the tap (audio thread: stash the latest mono
+    /// samples into the `SpectrumFeed` and return), fires one immediate tick, then
+    /// schedules the ~25 Hz timer; the per-tick work (marquee + recompose) was
+    /// supplied at construction.
+    func start() {
+        redrawLoop?.start()
     }
 
-    // MARK: NSWindowDelegate
+    // MARK: Teardown
 
-    /// The window is closing — tear down before the process exits. Without this,
-    /// closing the titled fallback window would leave the ~25 Hz `redraw()` timer
-    /// firing against a dead view and the audio tap still installed. We stop the
-    /// timer + remove the tap, then terminate the app so the run loop exits
-    /// cleanly. (The borderless region window has no close button, but wiring the
-    /// delegate there too keeps teardown correct if it is ever closed.)
-    func windowWillClose(_ notification: Notification) {
-        stop()
-        NSApp.terminate(nil)
-    }
-
-    // MARK: NSApplicationDelegate
-
-    /// Belt-and-suspenders: quit once the last window closes, so any close path
-    /// that bypasses `windowWillClose` still exits the process cleanly.
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+    /// The window is closing — stop the redraw loop (invalidate the timer + remove
+    /// the tap) before the process exits. Without this, closing the titled
+    /// fallback window would leave the ~25 Hz `redraw()` timer firing against a
+    /// dead view and the audio tap still installed. The base then terminates the
+    /// app so the run loop exits cleanly. (The borderless region window has no
+    /// close button, but wiring the delegate there too keeps teardown correct if
+    /// it is ever closed.)
+    override func tearDown() {
+        redrawLoop?.stop()
     }
 
     // MARK: Mouse
@@ -583,7 +480,7 @@ private func openInteractiveWindow(
     app.setActivationPolicy(.regular)
 
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
-    let contentView = InteractiveSkinView(image: scaled.image, frame: contentRect)
+    let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
 
     // Window-level region mask (same as the plain window path): the content stays
     // opaque and the shape is carried by a CAShapeLayer mask.
@@ -598,40 +495,25 @@ private func openInteractiveWindow(
     }
 
     // Build the controller first so it can serve as the window delegate: closing
-    // the window then routes through `windowWillClose` → `stop()` (timer +tap
+    // the window then routes through `windowWillClose` → `tearDown()` (timer + tap
     // teardown) → clean app termination.
     let controller = InteractiveController(
         skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format
     )
     liveController = controller
 
-    let window: NSWindow
-    if let maskLayer {
-        window = NSWindow(
-            contentRect: contentRect,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.isMovableByWindowBackground = true
-        contentView.wantsLayer = true
-        contentView.layer?.mask = maskLayer
-    } else {
-        window = NSWindow(
-            contentRect: contentRect,
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "SkinHarness"
-    }
+    // The shared region-window builder applies the same borderless/masked vs
+    // titled chrome the plain window path uses.
+    let window = RegionWindowBuilder.make(
+        contentRect: contentRect,
+        contentView: contentView,
+        maskLayer: maskLayer,
+        title: "SkinHarness"
+    )
     // Both window paths get the delegate: the titled fallback so its close button
     // tears down cleanly, and the borderless region window (no close button) so a
     // programmatic close/terminate is still correct teardown.
     window.delegate = controller
-    window.contentView = contentView
     window.center()
     window.makeKeyAndOrderFront(nil)
 

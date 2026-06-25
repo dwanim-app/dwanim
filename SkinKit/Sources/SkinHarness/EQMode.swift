@@ -39,9 +39,10 @@ import SkinRender
 // NO text is drawn (the preset display is deferred), so there are no brand names.
 //
 // This file holds the EQ mode's ARGUMENT PARSING + the `runEQMode` ENTRY point
-// (one primary concern per file, §12). The interactive view, the controller +
-// window setup, and the headless snapshot live in `EQSkinView.swift`,
-// `EQController.swift` / `EQWindowSetup.swift`, and `EQSnapshot.swift`.
+// (one primary concern per file, §12). The interactive view is the shared
+// `SkinAppKit.ScaledImageView`; the controller + window setup, and the headless
+// snapshot live in `EQController.swift` / `EQWindowSetup.swift`, and
+// `EQSnapshot.swift`.
 
 // MARK: - Argument parsing
 

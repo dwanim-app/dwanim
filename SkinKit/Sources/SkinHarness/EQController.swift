@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import PlayerCore
+import SkinAppKit
 import SkinKit
 import SkinRender
 
@@ -10,6 +11,11 @@ import SkinRender
 // and routes mouse-down / drag / up to the right slider (or the ON button).
 // Split out of `EQMode.swift` — no logic change beyond the explicit mouse-UP
 // gesture end (clear the latched dragging slider).
+//
+// It sits on `SkinAppKit.SkinWindowController` (the shared NSWindowDelegate +
+// NSApplicationDelegate teardown pair) and draws into the shared
+// `SkinAppKit.ScaledImageView`. The EQ window is static (no animation timer), so
+// it inherits the base's default no-op `tearDown()`.
 
 // MARK: - Controller
 
@@ -27,10 +33,10 @@ import SkinRender
 /// the thumb's vertical centre), is inverted to a gain
 /// (`EQWindowLayout.thumbGain(forThumbTopY:)`); and that gain is pushed to
 /// `PlayerCore`, which drives the real `AVAudioUnitEQ`.
-final class EQController: NSObject, NSWindowDelegate, NSApplicationDelegate {
+final class EQController: SkinWindowController {
     private let skin: Skin
     private let core: PlayerCore
-    private let view: EQSkinView
+    private let view: ScaledImageView
     private let scale: Int
 
     /// The slider currently being dragged (set on a mouse-down that grabbed a
@@ -39,15 +45,21 @@ final class EQController: NSObject, NSWindowDelegate, NSApplicationDelegate {
     /// on the ON button or empty face, and cleared on mouse-up.
     private var draggingSlider: EQWindowLayout.EQSlider?
 
-    init(skin: Skin, core: PlayerCore, view: EQSkinView, scale: Int) {
+    init(skin: Skin, core: PlayerCore, view: ScaledImageView, scale: Int) {
         self.skin = skin
         self.core = core
         self.view = view
         self.scale = scale
         super.init()
 
-        view.onMousePoint = { [weak self] viewX, viewY, viewHeight, isDown in
-            self?.handleMouse(viewX: viewX, viewY: viewY, viewHeight: viewHeight, isDown: isDown)
+        // Mouse-down is a fresh gesture (isDown: true); a drag continues it
+        // (isDown: false). The shared view's clickCount is ignored here (the EQ
+        // window does not distinguish single vs double click).
+        view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _ in
+            self?.handleMouse(viewX: viewX, viewY: viewY, viewHeight: viewHeight, isDown: true)
+        }
+        view.onMouseDragged = { [weak self] viewX, viewY, viewHeight in
+            self?.handleMouse(viewX: viewX, viewY: viewY, viewHeight: viewHeight, isDown: false)
         }
         view.onMouseUp = { [weak self] in
             self?.endDrag()
@@ -59,17 +71,6 @@ final class EQController: NSObject, NSWindowDelegate, NSApplicationDelegate {
     /// window's spectrum.)
     func start() {
         redraw()
-    }
-
-    // MARK: NSWindowDelegate / NSApplicationDelegate
-
-    /// The window is closing — terminate so the run loop exits cleanly.
-    func windowWillClose(_ notification: Notification) {
-        NSApp.terminate(nil)
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
     }
 
     // MARK: Mouse -> DSP

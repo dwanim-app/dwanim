@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import PlayerCore
+import SkinAppKit
 import SkinKit
 import SkinRender
 
@@ -29,8 +30,14 @@ import SkinRender
 ///
 /// All state changes happen on the main thread (this is `@MainActor`) and trigger
 /// a redraw.
+///
+/// It sits on `SkinAppKit.SkinWindowController` for the shared NSWindowDelegate +
+/// NSApplicationDelegate teardown pair. The playlist window owns no animation
+/// timer or audio tap, so it inherits the base's default no-op `tearDown()` —
+/// matching its former `windowWillClose` that called only `NSApp.terminate`. It
+/// adds `windowDidResize` (its own unique drag-resize/recompose path).
 @MainActor
-final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationDelegate {
+final class PlaylistWindowController: SkinWindowController {
     private let core: PlayerCore
     private weak var view: PlaylistContentView?
     /// The skin, kept so a drag-resize can RE-COMPOSE the frame at the new size.
@@ -68,8 +75,10 @@ final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationD
         view.selectedIndexProvider = { [weak self] in self?.selectedRow }
         view.scrollRowProvider = { [weak self] in self?.scrollRow ?? 0 }
         view.onScroll = { [weak self] rawDeltaY in self?.scrollBy(rawDeltaY: rawDeltaY) }
-        view.onSingleClick = { [weak self] x, y, h in self?.handleSingleClick(viewX: x, viewY: y, viewHeight: h) }
-        view.onDoubleClick = { [weak self] x, y, h in self?.handleDoubleClick(viewX: x, viewY: y, viewHeight: h) }
+        view.routeClicks(
+            onSingleClick: { [weak self] x, y, h in self?.handleSingleClick(viewX: x, viewY: y, viewHeight: h) },
+            onDoubleClick: { [weak self] x, y, h in self?.handleDoubleClick(viewX: x, viewY: y, viewHeight: h) }
+        )
     }
 
     // MARK: - Interior height (for the layout helpers)
@@ -243,15 +252,5 @@ final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationD
         scrollRow = layout.scrollRow
 
         view?.updateFrame(image: scaled.image, skinWidth: frame.width, skinHeight: frame.height)
-    }
-
-    // MARK: NSWindowDelegate / NSApplicationDelegate
-
-    func windowWillClose(_ notification: Notification) {
-        NSApp.terminate(nil)
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
     }
 }
