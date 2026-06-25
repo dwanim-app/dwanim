@@ -43,6 +43,35 @@ enum SineWAVFactory {
         return url
     }
 
+    /// Writes a **multi-tone** (broadband) WAV: the sum of equal-amplitude sine
+    /// tones at each of `frequencies`, normalized so the summed peak stays in
+    /// range. Returns its temp URL.
+    ///
+    /// Used by the EQ DSP-proof: placing one tone at each equalizer band centre
+    /// gives a signal with energy spread across the spectrum, so boosting one
+    /// band must measurably raise that band's tone relative to a flat render.
+    static func writeMultiTone(
+        frequencies: [Double],
+        duration: Double = 1.0,
+        sampleRate: Double = 44_100,
+        channels: Int = 1,
+        amplitude: Double = 0.8
+    ) throws -> URL {
+        let data = makeMultiToneWAVData(
+            frequencies: frequencies,
+            duration: duration,
+            sampleRate: sampleRate,
+            channels: channels,
+            amplitude: amplitude
+        )
+        let url = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("wav")
+        try data.write(to: url)
+        return url
+    }
+
     /// The exact number of sample frames a file of these parameters contains.
     static func frameCount(duration: Double, sampleRate: Double) -> Int {
         Int((duration * sampleRate).rounded())
@@ -83,6 +112,52 @@ enum SineWAVFactory {
             frequency: frequency,
             amplitude: amplitude
         )
+        return data
+    }
+
+    private static func makeMultiToneWAVData(
+        frequencies: [Double],
+        duration: Double,
+        sampleRate: Double,
+        channels: Int,
+        amplitude: Double
+    ) -> Data {
+        let frames = frameCount(duration: duration, sampleRate: sampleRate)
+        let bitsPerSample = 16
+        let bytesPerSample = bitsPerSample / 8
+        let blockAlign = channels * bytesPerSample
+        let byteRate = Int(sampleRate) * blockAlign
+        let dataSize = frames * blockAlign
+
+        var data = Data()
+        appendRIFFHeader(to: &data, dataSize: dataSize)
+        appendFormatChunk(
+            to: &data,
+            channels: channels,
+            sampleRate: Int(sampleRate),
+            byteRate: byteRate,
+            blockAlign: blockAlign,
+            bitsPerSample: bitsPerSample
+        )
+
+        data.append(ascii: "data")
+        data.appendUInt32LE(UInt32(dataSize))
+
+        // Normalize so the SUM of all tones cannot clip: divide by the tone
+        // count, then scale by the requested peak amplitude.
+        let toneScale = frequencies.isEmpty ? 1.0 : 1.0 / Double(frequencies.count)
+        let peak = amplitude * toneScale * Double(Int16.max)
+        for frame in 0..<frames {
+            var value = 0.0
+            for frequency in frequencies {
+                let theta = 2.0 * Double.pi * frequency * Double(frame) / sampleRate
+                value += sin(theta)
+            }
+            let sample = Int16((value * peak).rounded())
+            for _ in 0..<channels {
+                data.appendInt16LE(sample)
+            }
+        }
         return data
     }
 

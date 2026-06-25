@@ -22,6 +22,11 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 
     private let engine = AVAudioEngine()
     private let playerNode = AVAudioPlayerNode()
+    /// The 10-band graphic equalizer, inserted between `playerNode` and the
+    /// main mixer (`playerNode -> eq -> mainMixerNode`). Its bands are pinned to
+    /// the classic centre frequencies in `init` and never re-created, so the
+    /// node identity is stable across track-change reconnects. See `EQConfig`.
+    private let eq = AVAudioUnitEQ(numberOfBands: EQConfig.centreFrequencies.count)
 
     // MARK: - Loaded file state
 
@@ -67,11 +72,16 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 
     public init() {
         engine.attach(playerNode)
-        engine.connect(
-            playerNode,
-            to: engine.mainMixerNode,
-            format: nil
-        )
+        engine.attach(eq)
+        // Pin the 10 bands to the classic centre frequencies once. They are
+        // configured (filter type, bandwidth, bypass) here and only their gains
+        // change later via `applyEqualizer`, so the band layout is stable.
+        EQConfig.configure(eq)
+        // playerNode -> eq -> mainMixerNode. `format: nil` lets each connection
+        // adopt the upstream format; `reconnect(using:)` re-wires the whole
+        // chain with the loaded file's format on every `load`.
+        engine.connect(playerNode, to: eq, format: nil)
+        engine.connect(eq, to: engine.mainMixerNode, format: nil)
     }
 
     // MARK: - Loading
@@ -281,12 +291,14 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
     }
 
     private func reconnect(using format: AVAudioFormat) {
+        // Re-wire the WHOLE chain (playerNode -> eq -> mainMixer) with the
+        // loaded file's format. Disconnecting only the player output and
+        // reconnecting straight to the mixer would silently drop the EQ node
+        // from the graph, so both hops are re-made through `eq`.
         engine.disconnectNodeOutput(playerNode)
-        engine.connect(
-            playerNode,
-            to: engine.mainMixerNode,
-            format: format
-        )
+        engine.disconnectNodeOutput(eq)
+        engine.connect(playerNode, to: eq, format: format)
+        engine.connect(eq, to: engine.mainMixerNode, format: format)
     }
 
     private func resetPositionState() {
@@ -296,6 +308,26 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
         hasPendingSegment = false
         reachedEnd = false
         playerNode.stop()
+    }
+}
+
+// MARK: - AudioEqualizing
+
+/// Real 10-band graphic-equalizer DSP, kept separate from the transport surface
+/// (opt-in, exactly like the PCM tap and the format facts).
+///
+/// The `AVAudioUnitEQ` sits in the graph between `playerNode` and the main mixer
+/// (`playerNode -> eq -> mainMixerNode`), with its 10 bands pinned to the classic
+/// centre frequencies as parametric (peaking) filters in `init`. `PlayerCore`
+/// owns the authoritative `EQState` and pushes it here — on every EQ change and
+/// re-pushed on each track load — by opt-in casting the engine to
+/// `AudioEqualizing`. The mapping (gains, preamp -> `globalGain`, enabled ->
+/// bypass) lives in `EQConfig.apply`, the same routine the offline DSP-proof test
+/// exercises, so the test runs the real production band setup.
+extension AVAudioEnginePlayer: AudioEqualizing {
+
+    public func applyEqualizer(_ state: EQState) {
+        EQConfig.apply(state, to: eq)
     }
 }
 
