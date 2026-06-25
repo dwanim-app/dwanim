@@ -59,8 +59,19 @@ struct DwanimApp: App {
         // SINGLE Window (not WindowGroup): one lifecycle owner for the shared
         // session. `Window` is macOS 13+ — fine for the 14.0 floor.
         Window("Dwanim", id: "main") {
-            DwanimPlayerScene(core: session.core, model: session.model)
-                .frame(minWidth: 480, minHeight: 220)
+            DwanimPlayerScene(
+                core: session.core,
+                model: session.model,
+                // The gear/overflow menu's open actions route to the SAME session
+                // calls the File menu uses — one source of truth. Plumbed as
+                // closures so DwanimUI never imports AppKit.
+                onOpenAudio: { session.presentOpenPanel() },
+                onOpenSkin: { session.presentOpenSkinPanel() }
+            )
+                // The true compact minimum so the dock-bar opens small (P2-5).
+                // No max height: expanding the in-scene queue (P2-1) grows the
+                // window taller; collapsed it stays a compact dock-bar.
+                .frame(minWidth: 440, minHeight: 120)
                 // File-URL DROP onto the default scene window: hand the dropped URLs
                 // to the session's one drop handler (the same one every hosted
                 // classic window routes to). The handler classifies them — a `.wsz`
@@ -90,6 +101,15 @@ struct DwanimApp: App {
                     session.start()
                 }
         }
+        // P2-5: open compact (a dock-bar, not a huge empty window). The window
+        // stays resizable; this is just the size it OPENS at. No max height —
+        // expanding the in-scene queue grows the window taller.
+        .defaultSize(width: 560, height: 150)
+        // P2-3: drop the title-bar strip + title text so the glass bar is
+        // full-bleed to the top. The traffic lights stay (faint, working) for
+        // close/minimise/zoom — `.hiddenTitleBar` hides the chrome, not the
+        // window buttons.
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .commands {
             // Replace the standard "New" item with the app's open commands, so

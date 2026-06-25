@@ -16,7 +16,15 @@ import SwiftUI
 ///
 /// Text rule: the title slot shows the LIVE track title; with nothing loaded it
 /// shows a quiet "Dwanim". The word "Dwennimmen" never appears — the heritage
-/// element is the gold mark in `EmblemTile`, as imagery only.
+/// element is the icon bitmap in `EmblemTile` (the same PNG as the app icon), as
+/// imagery only.
+///
+/// The transport row also carries a right-edge controls column: a chevron that
+/// toggles the expandable queue (`PlaylistPanel`, P2-1) and a gear/overflow
+/// `Menu` (P2-2) for "Open Audio…" / "Open Skin…" and a queue toggle. The open
+/// actions are plumbed in as closures (`onOpenAudio` / `onOpenSkin`) so the app
+/// can route them to the same `AudioSession` calls the File menu uses without
+/// `DwanimUI` ever importing AppKit.
 ///
 /// Transport calls `PlayerCore` directly (`previous()` / `togglePlayPause()` /
 /// `next()`). It intentionally does NOT route through `PlayerControl.apply`:
@@ -33,35 +41,70 @@ public struct DefaultPlayerView: View {
     /// Live clock + spectrum levels, driven by the host's main-thread timer/tap.
     @Bindable private var model: PlayerViewModel
 
-    public init(core: PlayerCore, model: PlayerViewModel) {
+    /// App-layer action: present the "Open Audio…" panel. Plumbed as a closure so
+    /// `DwanimUI` never imports AppKit — the app wires this to the SAME call the
+    /// File ▸ Open Audio… menu uses (`session.presentOpenPanel()`).
+    private let onOpenAudio: (() -> Void)?
+    /// App-layer action: present the "Open Skin…" panel. Same one-source-of-truth
+    /// rule as `onOpenAudio` (`session.presentOpenSkinPanel()`).
+    private let onOpenSkin: (() -> Void)?
+
+    /// Whether the queue list is shown below the now-playing row. Collapsed by
+    /// default so the bar opens as the compact dock-bar; expanding it grows the
+    /// window taller (the scene does not hard-cap height).
+    @State private var isQueueExpanded = false
+
+    public init(
+        core: PlayerCore,
+        model: PlayerViewModel,
+        onOpenAudio: (() -> Void)? = nil,
+        onOpenSkin: (() -> Void)? = nil
+    ) {
         self._core = Bindable(core)
         self._model = Bindable(model)
+        self.onOpenAudio = onOpenAudio
+        self.onOpenSkin = onOpenSkin
     }
 
     // MARK: - Body
 
     public var body: some View {
-        HStack(spacing: 16) {
-            EmblemTile(side: 60)
+        VStack(spacing: 0) {
+            // The collapsed now-playing layout — unchanged from before.
+            HStack(spacing: 16) {
+                EmblemTile(side: 60)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(titleText)
-                    .font(.system(size: 15, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.92))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(titleText)
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
-                ProgressTrack(progress: model.progress)
+                    ProgressTrack(progress: model.progress)
 
-                SpectrumBars(levels: model.levels)
-                    .frame(height: 18)
+                    SpectrumBars(levels: model.levels)
+                        .frame(height: 18)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                transport
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            transport
+            // The expandable queue (P2-1): only when toggled open AND non-empty.
+            // It fills the formerly-empty space and lets the window grow taller.
+            if isQueueExpanded && !core.playlist.isEmpty {
+                Divider()
+                    .overlay(DwanimTheme.glassStroke)
+                    .padding(.top, 12)
+
+                PlaylistPanel(core: core)
+                    .padding(.top, 6)
+                    .transition(.opacity)
+            }
         }
         .padding(16)
-        .frame(minWidth: 420, maxWidth: .infinity)
+        .frame(minWidth: 416, maxWidth: .infinity)
         .background {
             // The glass panel: a translucent material in a rounded rect with a
             // subtle white-ish stroke. The colourful backdrop lives behind the
@@ -74,6 +117,9 @@ public struct DefaultPlayerView: View {
                         .stroke(DwanimTheme.glassStroke, lineWidth: 1)
                 }
         }
+        // Clip the expanded queue to the panel's rounded-rect so a long list
+        // never spills past the glass edge.
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .padding(12)
     }
 
@@ -107,7 +153,81 @@ public struct DefaultPlayerView: View {
             ) {
                 core.next()
             }
+
+            controlsColumn
         }
+    }
+
+    // MARK: - Queue + overflow controls
+
+    /// The unobtrusive right-edge column: the queue disclosure chevron above the
+    /// gear/overflow menu. Sits at the right of the transport row so the
+    /// transport buttons stay centred-left as before.
+    private var controlsColumn: some View {
+        VStack(spacing: 8) {
+            queueDisclosure
+            gearMenu
+        }
+    }
+
+    /// The chevron that toggles the queue list. Disabled (dimmed) when the
+    /// playlist is empty — there is nothing to expand. Rotates to point up when
+    /// open.
+    private var queueDisclosure: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isQueueExpanded.toggle()
+            }
+        } label: {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 12, weight: .semibold))
+                .rotationEffect(.degrees(isQueueExpanded ? 0 : 180))
+                .foregroundStyle(.white.opacity(core.playlist.isEmpty ? 0.25 : 0.7))
+                .frame(width: 22, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(core.playlist.isEmpty)
+        .help(isQueueExpanded ? "Hide queue" : "Show queue")
+        .accessibilityLabel(Text(isQueueExpanded ? "Hide queue" : "Show queue"))
+    }
+
+    /// The gear/overflow menu (P2-2): the discoverable home for "Open Audio…" /
+    /// "Open Skin…" and a queue toggle that mirrors the disclosure. Each open
+    /// item runs the app-supplied closure (the SAME call as the File menu); when
+    /// no closure is wired (e.g. the headless harness) the item is hidden so it
+    /// is never a dead control.
+    private var gearMenu: some View {
+        Menu {
+            if let onOpenAudio {
+                Button("Open Audio…", systemImage: "music.note") { onOpenAudio() }
+            }
+            if let onOpenSkin {
+                Button("Open Skin…", systemImage: "paintbrush") { onOpenSkin() }
+            }
+            if onOpenAudio != nil || onOpenSkin != nil {
+                Divider()
+            }
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isQueueExpanded.toggle()
+                }
+            } label: {
+                Label(isQueueExpanded ? "Hide Queue" : "Show Queue", systemImage: "list.bullet")
+            }
+            .disabled(core.playlist.isEmpty)
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 22, height: 18)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More options")
+        .accessibilityLabel(Text("More options"))
     }
 
     // MARK: - Title

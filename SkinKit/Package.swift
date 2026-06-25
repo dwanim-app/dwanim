@@ -95,6 +95,13 @@ let package = Package(
         .target(
             name: "DwanimUI",
             dependencies: ["PlayerCore"],
+            // The in-window emblem renders the SAME bitmap as the app icon
+            // (Sources/DwanimUI/Resources/dwennimmen-emblem.png, a copy of the
+            // committed icon_256x256.png) so the glass-panel mark matches the
+            // dock/Finder icon exactly. `.process` lets SwiftPM optimise the PNG
+            // and expose it via `Bundle.module`. The resource is a bundled asset,
+            // NOT an import: DwanimUI still imports only SwiftUI + PlayerCore.
+            resources: [.process("Resources")],
             swiftSettings: strictConcurrency
         ),
         .testTarget(
