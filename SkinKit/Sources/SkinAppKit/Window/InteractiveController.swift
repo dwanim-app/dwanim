@@ -90,7 +90,9 @@ public final class InteractiveController: SkinWindowController {
         view: ScaledImageView,
         scale: Int,
         tap: AudioTapProviding?,
-        format: TrackFormatProviding?
+        format: TrackFormatProviding?,
+        terminatesAppOnClose: Bool = true,
+        onClose: (() -> Void)? = nil
     ) {
         self.skin = skin
         self.core = core
@@ -111,7 +113,7 @@ public final class InteractiveController: SkinWindowController {
         }
         self.analyzer = SpectrumAnalyzer(barCount: bars)
 
-        super.init()
+        super.init(terminatesAppOnClose: terminatesAppOnClose, onClose: onClose)
 
         // The shared view carries the event's clickCount for windows that
         // distinguish single vs double click; the main window does not, so it is
