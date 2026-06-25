@@ -49,6 +49,13 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Released under the MIT License.</string>
 
+	<!-- Export compliance. The app uses no encryption beyond what Apple's OS
+	     provides (no custom crypto, no HTTPS — there is no network at all).
+	     Declaring this here answers the export-compliance question up front, so
+	     App Store Connect does NOT prompt for it on every build upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<!-- Intentionally NO network usage keys and NO CFBundleDocumentTypes / UTI:
 	     the app makes no network connections, and .wsz is opened only via the
 	     user-selected file panel (it is not a registered document type). -->

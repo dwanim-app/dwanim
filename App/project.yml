@@ -87,6 +87,18 @@ targets:
         # (like the package) diagnostics surface as warnings, not hard errors;
         # graduating to SWIFT_VERSION 6.0 is the same deliberate follow-up.
         SWIFT_STRICT_CONCURRENCY: complete
+        # HARDENED RUNTIME (M5 ship-prep): required for Developer-ID / notarized
+        # direct distribution, and harmless for the Mac App Store path. Set in
+        # `base` so both Debug and Release archives carry it consistently — the
+        # App Sandbox already constrains the process, and hardened runtime adds
+        # no get-task-allow of its own (Xcode injects get-task-allow only for
+        # Debug ad-hoc signing, and strips it from Release archives).
+        #
+        # Signing identity is intentionally LEFT UNSET here: DEVELOPMENT_TEAM,
+        # CODE_SIGN_IDENTITY and CODE_SIGN_STYLE are filled in by the account
+        # owner at archive/export time (see md_files/SHIPPING.md). The committed
+        # spec stays account-agnostic so any clone builds ad-hoc without secrets.
+        ENABLE_HARDENED_RUNTIME: YES
 
 # A SHARED scheme so `xcodebuild -scheme Dwanim` works for any clone / CI
 # without relying on Xcode's per-user autocreated schemes (which are gitignored).
