@@ -63,10 +63,17 @@ public enum SpriteCoordinates {
     // do NOT declare any rect that would overrun 276 x 186.
     //
     // Layout convention (top-left origin):
-    //   * Title-bar row, y = 0, height 20: a left corner, a tiled centre fill, and
-    //     a right corner. The active (focused) title strip is the top row; the
-    //     inactive strip is the next row down (y = 21). The centre fill tiles
-    //     horizontally to span whatever width the window is stretched to.
+    //   * Title-bar row, y = 0, height 20: a left corner, a NARROW tiling texture
+    //     strip, a CENTERED title piece (the baked "playlist title" art, drawn
+    //     ONCE), more narrow texture, and a right corner. The active (focused)
+    //     title strip is the top row; the inactive strip is the next row down
+    //     (y = 21). The title piece is the bitmap label that must NOT be tiled
+    //     (tiling it is the "repeated title" bug); the narrow fill strip is the
+    //     tileable texture, drawn on BOTH sides of the title to span whatever
+    //     width the window is stretched to. In the public PLEDIT top row the
+    //     title piece is ~100px wide at x = 26, with the tileable fill texture in
+    //     the ~25px band at x = 127 (between the title and the right corner); the
+    //     corners are ~25px.
     //   * Side edges, height 29, tiled vertically down the window body: the left
     //     edge at x = 0 and the right edge just to its right, taken from the rows
     //     below the title bar.
@@ -86,12 +93,17 @@ public enum SpriteCoordinates {
     private static let playlistFrame: [SpriteRect] = [
         // --- Title bar (top row, active), y = 0, height 20 ---
         SpriteRect(name: "titleBarLeftCorner",      x: 0,   y: 0,  width: 25,  height: 20),
-        // Centre fill, tiled horizontally to the stretched width.
-        SpriteRect(name: "titleBarFillActive",      x: 26,  y: 0,  width: 100, height: 20),
+        // Centered title art (the baked "playlist title" label), drawn ONCE — it
+        // must NOT be tiled. ~100px wide at x = 26 per the public PLEDIT layout.
+        SpriteRect(name: "titleBarTitleActive",     x: 26,  y: 0,  width: 100, height: 20),
+        // NARROW tileable texture strip (NOT the title text) — the tile drawn on
+        // both sides of the title to span the stretched width.
+        SpriteRect(name: "titleBarFillActive",      x: 127, y: 0,  width: 25,  height: 20),
         SpriteRect(name: "titleBarRightCorner",     x: 153, y: 0,  width: 25,  height: 20),
         // --- Title bar (inactive row), y = 21, height 20 ---
         SpriteRect(name: "titleBarLeftCornerInactive",  x: 0,   y: 21, width: 25,  height: 20),
-        SpriteRect(name: "titleBarFillInactive",         x: 26,  y: 21, width: 100, height: 20),
+        SpriteRect(name: "titleBarTitleInactive",        x: 26,  y: 21, width: 100, height: 20),
+        SpriteRect(name: "titleBarFillInactive",         x: 127, y: 21, width: 25,  height: 20),
         SpriteRect(name: "titleBarRightCornerInactive",  x: 153, y: 21, width: 25,  height: 20),
 
         // --- Side edges (tiled vertically down the body), height 29 ---

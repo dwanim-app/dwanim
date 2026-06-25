@@ -11,7 +11,8 @@ import SkinKit
 //
 // Unlike the main window — a fixed-size single background — the playlist window
 // is STRETCHABLE, so its chrome is assembled from corner pieces and TILED fills:
-//   * Title bar:   left corner | centre fill tiled across the gap | right corner.
+//   * Title bar:   left corner | texture tiled | centered title (once) | texture
+//                  tiled | right corner. The texture tiles; the title never does.
 //   * Side edges:  left edge and right edge, each tiled vertically down the body.
 //   * Bottom frame: bottom-left corner | bottom fill tiled | bottom-right corner.
 //   * Interior:    the content area inside the frame, filled with the playlist's
@@ -101,15 +102,14 @@ public enum PlaylistWindowComposer {
             tileVertically(rightEdge, onto: &canvas, x: x, top: bodyTop, bottom: bodyBottom)
         }
 
-        // --- Title bar across the top: left corner, tiled centre fill, right
-        // corner flush to the right edge. Active/inactive per `active`.
-        composeBar(
+        // --- Title bar across the top: left corner, tiled narrow texture, a
+        // CENTERED title piece drawn ONCE, more tiled texture, right corner flush.
+        // Active/inactive per `active`. The title must appear exactly once — the
+        // texture (not the title) is what tiles, fixing the repeated-title bug.
+        composeTitleBar(
             onto: &canvas,
             skin: skin,
-            leftName: "titleBarLeftCorner",
-            fillName: active ? "titleBarFillActive" : "titleBarFillInactive",
-            rightName: "titleBarRightCorner",
-            y: 0,
+            active: active,
             canvasWidth: canvasWidth
         )
 
@@ -155,6 +155,73 @@ public enum PlaylistWindowComposer {
         let w = max(0, canvasWidth - leftInset - rightInset)
         let h = max(0, canvasHeight - topInset - bottomInset)
         return (x: x, y: y, w: w, h: h)
+    }
+
+    // MARK: - Title bar (corner | texture | centered title | texture | corner)
+
+    /// Compose the title bar at row 0: the left corner at x=0, a CENTERED title
+    /// piece drawn EXACTLY ONCE, and the narrow texture fill tiled on BOTH sides of
+    /// the title to span the gaps between the corners and the title. The right
+    /// corner is flush to the right edge. This is the fix for the repeated-title
+    /// bug: it is the *texture* that tiles, never the title art.
+    ///
+    /// The title is centered in the full window width, then clamped so it never
+    /// overlaps either corner. If the window is too narrow to seat the title
+    /// between the corners at all, the title is SKIPPED and the texture simply
+    /// tiles the whole inner gap (graceful, no overrun). Every piece is
+    /// missing-tolerant (skipped if absent) and clipped to bounds by `overlay`.
+    private static func composeTitleBar(
+        onto canvas: inout DecodedBitmap,
+        skin: Skin,
+        active: Bool,
+        canvasWidth: Int
+    ) {
+        let left = skin.sprite(sheet: sheet, name: "titleBarLeftCorner")
+        let right = skin.sprite(sheet: sheet, name: "titleBarRightCorner")
+        let fill = skin.sprite(sheet: sheet, name: active ? "titleBarFillActive" : "titleBarFillInactive")
+        let title = skin.sprite(sheet: sheet, name: active ? "titleBarTitleActive" : "titleBarTitleInactive")
+
+        let leftWidth = left?.width ?? 0
+        let rightWidth = right?.width ?? 0
+        // The inner gap between the two corners, where the title + texture live.
+        let innerLeft = leftWidth
+        let innerRight = canvasWidth - rightWidth
+
+        // Center the title in the FULL window width, then clamp into the inner gap
+        // so it never overlaps a corner. If it cannot fit between the corners, drop
+        // it and let the texture fill the whole gap.
+        var titleLeft: Int?
+        if let title, title.width <= innerRight - innerLeft {
+            var x = (canvasWidth - title.width) / 2
+            x = max(innerLeft, min(x, innerRight - title.width))
+            titleLeft = x
+        }
+
+        // Texture tiles the gaps on each side of the title (or the whole inner gap
+        // when the title is absent). Drawn FIRST so the corners and the title piece
+        // overdraw any tile that clipped into their columns.
+        if let fill {
+            if let titleLeft, let title {
+                tileHorizontally(fill, onto: &canvas, left: innerLeft, right: titleLeft, y: 0)
+                tileHorizontally(fill, onto: &canvas, left: titleLeft + title.width, right: innerRight, y: 0)
+            } else {
+                tileHorizontally(fill, onto: &canvas, left: innerLeft, right: innerRight, y: 0)
+            }
+        }
+
+        // The title piece, drawn ONCE, centered (clamped). Over the texture, under
+        // the corners.
+        if let title, let titleLeft {
+            SkinCanvas.overlay(title, onto: &canvas, x: titleLeft, y: 0)
+        }
+
+        // Corners last so they win over any tile/title that clipped into them.
+        if let left {
+            SkinCanvas.overlay(left, onto: &canvas, x: 0, y: 0)
+        }
+        if let right {
+            SkinCanvas.overlay(right, onto: &canvas, x: canvasWidth - right.width, y: 0)
+        }
     }
 
     // MARK: - Bar (corner | tiled fill | corner)
