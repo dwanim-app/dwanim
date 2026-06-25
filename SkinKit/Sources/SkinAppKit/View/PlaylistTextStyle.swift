@@ -5,9 +5,11 @@ import Foundation
 import SkinKit
 
 // The skin-driven text style (font + colors + row metrics) for the classic
-// playlist (PLEDIT) track list (one primary type per file, §12). Split out of
-// `PlaylistTrackListDrawing.swift` so the drawing routine and the style each have
-// ONE home. No behavior change — pure reorganization.
+// playlist (PLEDIT) track list (one primary type per file, §12).
+//
+// Lifted from the SkinHarness executable into the reusable SkinAppKit tier (no
+// behavior change) alongside the playlist view + controller that consume it, so
+// BOTH the dev harness AND the real app target draw the list the same way.
 
 // MARK: - Text style (font + colors from the skin)
 

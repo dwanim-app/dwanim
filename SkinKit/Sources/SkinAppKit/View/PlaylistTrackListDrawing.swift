@@ -7,11 +7,14 @@ import SkinKit
 import SkinRender
 
 // The shared track-list text drawing for the classic playlist (PLEDIT) window:
-// the `drawPlaylistTrackList` routine plus its private CoreText line helper.
-// Factored out of `PlaylistView.swift` so it has ONE home (per §12: one primary
-// type per file) and so the live view AND the offscreen snapshot draw the list
-// the same way and cannot drift. The skin-driven `PlaylistTextStyle` it consumes
+// the `drawPlaylistTrackList` routine plus its private CoreText line helper (per
+// §12: one primary type per file). The skin-driven `PlaylistTextStyle` it consumes
 // lives in `PlaylistTextStyle.swift` (its own home, §12).
+//
+// Lifted from the SkinHarness executable into the reusable SkinAppKit tier (no
+// behavior change) so the live playlist view (also in SkinAppKit) AND the harness
+// offscreen snapshot draw the list the same way and cannot drift. It is `public`
+// so the harness snapshot mode can still call it.
 
 // MARK: - Track-list text drawing (shared by live view + snapshot)
 
@@ -33,7 +36,7 @@ import SkinRender
 /// selected and current it gets the selection fill and the current text color.
 /// Rows are clipped to the interior, and a too-long title is truncated by the
 /// clip (no wrapping).
-func drawPlaylistTrackList(
+public func drawPlaylistTrackList(
     in context: CGContext,
     skin: Skin,
     tracks: [Track],
