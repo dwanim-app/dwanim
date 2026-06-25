@@ -68,9 +68,12 @@ struct DwanimApp: App {
                 onOpenAudio: { session.presentOpenPanel() },
                 onOpenSkin: { session.presentOpenSkinPanel() }
             )
-                // The true compact minimum so the dock-bar opens small (P2-5).
-                // No max height: expanding the in-scene queue (P2-1) grows the
-                // window taller; collapsed it stays a compact dock-bar.
+                // Compact resize floor only. Under `.windowResizability(.contentSize)`
+                // the bounded width on `DefaultPlayerView` (idealWidth ~580) drives the
+                // opening width and the content height drives the opening height — this
+                // frame just sets how small the user can drag it. No max height:
+                // expanding the in-scene queue (P2-1) grows the window taller; collapsed
+                // it shrinks back to the compact dock-bar.
                 .frame(minWidth: 440, minHeight: 120)
                 // File-URL DROP onto the default scene window: hand the dropped URLs
                 // to the session's one drop handler (the same one every hosted
@@ -101,16 +104,20 @@ struct DwanimApp: App {
                     session.start()
                 }
         }
-        // P2-5: open compact (a dock-bar, not a huge empty window). The window
-        // stays resizable; this is just the size it OPENS at. No max height —
-        // expanding the in-scene queue grows the window taller.
-        .defaultSize(width: 560, height: 150)
-        // P2-3: drop the title-bar strip + title text so the glass bar is
+        // P2-5: drop the title-bar strip + title text so the glass bar is
         // full-bleed to the top. The traffic lights stay (faint, working) for
         // close/minimise/zoom — `.hiddenTitleBar` hides the chrome, not the
         // window buttons.
         .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
+        // P2-5 (real fix): size the window to FIT the content exactly. With
+        // `.contentMinSize`, macOS would restore an old saved frame (or apply
+        // `.defaultSize`) and leave a big empty gradient around the compact bar.
+        // `.contentSize` makes the window == the content's ideal size: no empty
+        // background, it grows taller when the in-scene queue (P2-1) expands and
+        // shrinks back when it collapses, and the bounded width on
+        // `DefaultPlayerView` (idealWidth ~580) drives the opening width. No
+        // `.defaultSize` is needed — the content drives the size.
+        .windowResizability(.contentSize)
         .commands {
             // Replace the standard "New" item with the app's open commands, so
             // File ▸ Open Audio… (⌘O) presents the audio NSOpenPanel and

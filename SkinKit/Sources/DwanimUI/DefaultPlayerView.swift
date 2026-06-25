@@ -104,7 +104,12 @@ public struct DefaultPlayerView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 416, maxWidth: .infinity)
+        // P2-3 (width cap): bound the bar's width so it opens as a compact,
+        // balanced dock-bar instead of stretching to ~870px. Under the app's
+        // `.windowResizability(.contentSize)` the `idealWidth` (580) drives the
+        // opening width; the user can still drag between `minWidth` (440) and
+        // `maxWidth` (720). At ~580 the progress bar + spectrum read proportioned.
+        .frame(minWidth: 440, idealWidth: 580, maxWidth: 720)
         .background {
             // The glass panel: a translucent material in a rounded rect with a
             // subtle white-ish stroke. The colourful backdrop lives behind the
