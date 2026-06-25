@@ -7,10 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0F5299D82396056287980A67 /* AudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42196D23635D065291ADA673 /* AudioSession.swift */; };
 		1A872E1C7758508AC25295F6 /* SkinKitImageIO in Frameworks */ = {isa = PBXBuildFile; productRef = B35DD9637D19648C6E7A871E /* SkinKitImageIO */; };
+		1BB07527180C7AAA7DE03766 /* SecurityScopedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F22CCE9EAFA140B45BA9B2A /* SecurityScopedFileAccess.swift */; };
 		4D80099A55F1BB5A98B428E9 /* SkinRender in Frameworks */ = {isa = PBXBuildFile; productRef = 402F1482654F073DA91C010B /* SkinRender */; };
 		6264CE17A1146108001B747F /* DwanimUI in Frameworks */ = {isa = PBXBuildFile; productRef = FAE4FD42A3ECB95C2FDC47B8 /* DwanimUI */; };
 		7CCCFB75B2987CBF785E2F07 /* PlaybackKit in Frameworks */ = {isa = PBXBuildFile; productRef = 91A7130925802FC0808F876C /* PlaybackKit */; };
+		7D59B480B8E16C4EBAB9BD90 /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D885E3D515E5E6E02F18D42 /* BookmarkStore.swift */; };
 		807E14E77A1013C2225D7CF3 /* PlayerCore in Frameworks */ = {isa = PBXBuildFile; productRef = F9B5E65CCC7DBB6000372F4C /* PlayerCore */; };
 		845D2F38E313005ACF3D1026 /* SpectrumKit in Frameworks */ = {isa = PBXBuildFile; productRef = 775A1E0C76E9D1A8224F827B /* SpectrumKit */; };
 		84C90BAF8A747F2092CEB33D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9502892E5F0AD14B5230F15D /* Assets.xcassets */; };
@@ -21,9 +24,12 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		42196D23635D065291ADA673 /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
 		530416ADFB480F7677F537D2 /* SkinKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SkinKit; path = ../SkinKit; sourceTree = SOURCE_ROOT; };
+		7D885E3D515E5E6E02F18D42 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
 		9502892E5F0AD14B5230F15D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9ADBE284454A849116DA747C /* DwanimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwanimApp.swift; sourceTree = "<group>"; };
+		9F22CCE9EAFA140B45BA9B2A /* SecurityScopedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityScopedFileAccess.swift; sourceTree = "<group>"; };
 		B372398582F21D8A9194195D /* Dwanim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dwanim.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -47,6 +53,23 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		02899A6937EFCD7E5A08EF1D /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				42196D23635D065291ADA673 /* AudioSession.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		16745F0B380FDE20C93C1D2E /* Platform */ = {
+			isa = PBXGroup;
+			children = (
+				7D885E3D515E5E6E02F18D42 /* BookmarkStore.swift */,
+				9F22CCE9EAFA140B45BA9B2A /* SecurityScopedFileAccess.swift */,
+			);
+			path = Platform;
+			sourceTree = "<group>";
+		};
 		1C0DD81BA28C50D5B24072BE /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -68,6 +91,8 @@
 			isa = PBXGroup;
 			children = (
 				9ADBE284454A849116DA747C /* DwanimApp.swift */,
+				02899A6937EFCD7E5A08EF1D /* Audio */,
+				16745F0B380FDE20C93C1D2E /* Platform */,
 				D217A1573C506892A433F497 /* Resources */,
 			);
 			path = Dwanim;
@@ -169,7 +194,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0F5299D82396056287980A67 /* AudioSession.swift in Sources */,
+				7D59B480B8E16C4EBAB9BD90 /* BookmarkStore.swift in Sources */,
 				93E6E4C510810A5BE07A292D /* DwanimApp.swift in Sources */,
+				1BB07527180C7AAA7DE03766 /* SecurityScopedFileAccess.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

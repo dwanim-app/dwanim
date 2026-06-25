@@ -47,6 +47,11 @@ public final class RedrawLoop {
     /// feed and return), fire one immediate tick, then schedule the repeating
     /// timer on `.common` so it keeps firing during window interaction.
     public func start() {
+        // Idempotent: a second start() must not orphan the first timer (leak +
+        // double-rate ticks) or stack a second tap. Tear down any prior loop
+        // first so the normal single-start path is unchanged.
+        stop()
+
         tap?.installTap { [feed] samples, sampleRate in
             // AUDIO THREAD: minimum work — stash and return.
             feed.store(samples, sampleRate: sampleRate)
