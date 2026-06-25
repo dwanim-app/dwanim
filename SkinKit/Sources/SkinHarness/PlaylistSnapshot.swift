@@ -11,14 +11,17 @@ import SkinRender
 // track-list view can be verified without opening the blocking window.
 //
 // Usage:
-//   SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N] [--selected I]
+//   SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N] [--selected I] [--size WxH]
 //
 // The synthetic titles are injected here ONLY for the snapshot; they exercise
 // the row layout, the now-playing-row color, the SELECTED-row highlight
 // (selectedBackground, distinct from the now-playing row), and clip-to-interior
 // behavior. They are generic placeholders — no brand names. `--selected I` injects
 // a selected index (default `snapshotSelectedIndex`); pass it to verify a
-// specific row's highlight.
+// specific row's highlight. `--size WxH` composes the frame at a NON-default
+// (unscaled, skin-pixel) size — the same size→skin-dims clamp the live drag-resize
+// uses — so a larger size renders MORE visible rows (verifying the resize path
+// offscreen, without opening the blocking window).
 
 /// Synthetic track titles for the snapshot — enough to overflow the interior so
 /// the visible-row clamp is exercised. Generic placeholders (the user's own files
@@ -54,6 +57,11 @@ func runPlaylistSnapshotMode() -> Never {
     var positionals: [String] = []
     var scale = 2
     var selectedIndex = snapshotSelectedIndex
+    // Unscaled (skin-pixel) frame size. Defaults to the live window's default
+    // geometry; `--size WxH` overrides it to render at a larger size showing more
+    // rows.
+    var width = PlaylistWindowGeometry.defaultWidth
+    var height = PlaylistWindowGeometry.defaultHeight
     var index = flagIndex + 1
     while index < CommandLine.arguments.count {
         let arg = CommandLine.arguments[index]
@@ -71,6 +79,14 @@ func runPlaylistSnapshotMode() -> Never {
             }
             selectedIndex = value
             index += 2
+        } else if arg == "--size" {
+            guard index + 1 < CommandLine.arguments.count,
+                  let (w, h) = parseSize(CommandLine.arguments[index + 1]) else {
+                snapshotFail("--size requires WxH (e.g. 360x420) with positive integers.")
+            }
+            width = w
+            height = h
+            index += 2
         } else {
             positionals.append(arg)
             index += 1
@@ -78,7 +94,7 @@ func runPlaylistSnapshotMode() -> Never {
     }
 
     guard positionals.count >= 2 else {
-        snapshotFail("Usage: SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N] [--selected I]")
+        snapshotFail("Usage: SkinHarness --playlist-snapshot <skin.wsz> <out.png> [--scale N] [--selected I] [--size WxH]")
     }
     let skinPath = positionals[0]
     let outPath = positionals[1]
@@ -98,8 +114,6 @@ func runPlaylistSnapshotMode() -> Never {
         snapshotFail("Could not load skin at \(skinPath): \(error)")
     }
 
-    let width = PlaylistWindowGeometry.defaultWidth
-    let height = PlaylistWindowGeometry.defaultHeight
     guard let frame = PlaylistWindowComposer.compose(skin, width: width, height: height),
           let frameImage = CGImageConversion.makeImage(from: frame) else {
         snapshotFail("Could not compose the playlist frame for \(skinPath) (no pledit.bmp?).")
@@ -157,6 +171,19 @@ func runPlaylistSnapshotMode() -> Never {
 
     print("Wrote \(outPath) (\(outWidth)x\(outHeight) px)")
     exit(0)
+}
+
+/// Parse a `WxH` size token (e.g. `360x420`) into positive unscaled skin-pixel
+/// dimensions, or `nil` when malformed. The composer clamps below-minimum sizes
+/// up, so any positive pair is acceptable here.
+private func parseSize(_ token: String) -> (Int, Int)? {
+    let parts = token.lowercased().split(separator: "x", omittingEmptySubsequences: false)
+    guard parts.count == 2,
+          let w = Int(parts[0]), let h = Int(parts[1]),
+          w > 0, h > 0 else {
+        return nil
+    }
+    return (w, h)
 }
 
 private func snapshotFail(_ message: String) -> Never {

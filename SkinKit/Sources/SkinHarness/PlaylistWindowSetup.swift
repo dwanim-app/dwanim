@@ -63,22 +63,34 @@ func openPlaylistWindow(skin: Skin, core: PlayerCore, scale: Int) -> Never {
     )
 
     // The controller re-derives the interior from the same composed-frame size, so
-    // click hit-testing and the draw path share one geometry source.
+    // click hit-testing and the draw path share one geometry source. It also keeps
+    // the skin so a drag-resize can recompose the frame at the new size.
     let controller = PlaylistWindowController(
-        core: core, scale: scale, skinWidth: frame.width, skinHeight: frame.height
+        core: core, skin: skin, scale: scale, skinWidth: frame.width, skinHeight: frame.height
     )
     controller.attach(view: view)
     livePlaylistController = controller
 
+    // `.resizable` lets the user drag the window; `windowDidResize` recomputes the
+    // skin-space size (floor(bounds / scale), clamped to the composer minimum),
+    // recomposes the frame, and re-runs the layout so more/fewer rows show.
     let window = NSWindow(
         contentRect: contentRect,
-        styleMask: [.titled, .closable, .miniaturizable],
+        styleMask: [.titled, .closable, .miniaturizable, .resizable],
         backing: .buffered,
         defer: false
     )
     window.title = "Playlist"
     window.delegate = controller
     window.contentView = view
+    // Floor the draggable size at the composer minimum (scaled), so the user can
+    // never drag below where the frame corners stop fitting. The composer also
+    // clamps defensively, but this keeps the live drag from showing a clamped frame
+    // smaller than the window chrome.
+    window.contentMinSize = NSSize(
+        width: PlaylistWindowComposer.minimumWidth * scale,
+        height: PlaylistWindowComposer.minimumHeight * scale
+    )
     window.center()
     window.makeKeyAndOrderFront(nil)
 

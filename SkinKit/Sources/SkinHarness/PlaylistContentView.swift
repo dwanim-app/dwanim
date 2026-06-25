@@ -20,8 +20,10 @@ final class PlaylistContentView: NSView {
     private var frameImage: CGImage
     private let skin: Skin
     private let scale: Int
-    private let skinWidth: Int
-    private let skinHeight: Int
+    /// The composed-frame UNSCALED dimensions. Mutable so a drag-resize can swap in
+    /// a freshly composed frame at the new size and the text layout follows it.
+    private var skinWidth: Int
+    private var skinHeight: Int
 
     /// Pulled fresh each redraw so the list reflects the live core.
     var tracksProvider: () -> [Track] = { [] }
@@ -52,6 +54,17 @@ final class PlaylistContentView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    /// Swap in a freshly composed frame bitmap + its new unscaled dimensions after
+    /// a drag-resize, then redraw. The controller composes the new frame (clamped
+    /// to the composer minimum) and calls this so the chrome bitmap and the text
+    /// layout share the same size — they cannot drift.
+    func updateFrame(image: CGImage, skinWidth: Int, skinHeight: Int) {
+        self.frameImage = image
+        self.skinWidth = skinWidth
+        self.skinHeight = skinHeight
+        needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {

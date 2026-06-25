@@ -53,6 +53,33 @@ public enum PlaylistWindowComposer {
         titleBarHeight() + bottomFrameHeight() + 1
     }
 
+    // MARK: - View size -> skin size (resize)
+
+    /// Map a SCALED view size (the live window's content-view bounds, in scaled
+    /// pixels/points) back to the UNSCALED skin-space window size the frame should
+    /// be composed at, clamped UP to `minimumWidth`/`minimumHeight` so the corners
+    /// always fit.
+    ///
+    /// This is the resize hinge: as the user drags the window, the AppKit shell
+    /// reads its content bounds and asks here for the skin-space dimensions to
+    /// re-`compose` (and to feed `interiorRect` / `PlaylistLayout`). Skin pixels =
+    /// `floor(view / scale)` (the inverse of the integer nearest-neighbor upscale),
+    /// then clamped to the minimum. A non-positive `scale` is treated as 1 so the
+    /// arithmetic never traps; a tiny / negative view size clamps to the minimum.
+    public static func skinSize(
+        fromViewWidth viewWidth: Double,
+        viewHeight: Double,
+        scale: Int
+    ) -> (width: Int, height: Int) {
+        let s = Double(max(1, scale))
+        let rawW = Int((viewWidth / s).rounded(.down))
+        let rawH = Int((viewHeight / s).rounded(.down))
+        return (
+            width: max(rawW, minimumWidth),
+            height: max(rawH, minimumHeight)
+        )
+    }
+
     // MARK: - Compose (public)
 
     /// Composite the resizable playlist window frame into a single RGBA8 bitmap at

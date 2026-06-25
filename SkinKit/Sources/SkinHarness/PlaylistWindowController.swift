@@ -33,11 +33,15 @@ import SkinRender
 final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationDelegate {
     private let core: PlayerCore
     private weak var view: PlaylistContentView?
+    /// The skin, kept so a drag-resize can RE-COMPOSE the frame at the new size.
+    private let skin: Skin
     private let scale: Int
     /// The composed-frame UNSCALED dimensions, so the controller can re-derive the
-    /// interior rect (the single geometry source) for click mapping.
-    private let skinWidth: Int
-    private let skinHeight: Int
+    /// interior rect (the single geometry source) for click mapping. Mutable: a
+    /// drag-resize recomputes them from the view bounds (clamped to the composer
+    /// minimum) and recomposes the frame at the new size.
+    private var skinWidth: Int
+    private var skinHeight: Int
 
     private var scrollRow = 0
     /// Fractional residual of accumulated wheel deltas (skin-pixel units). When its
@@ -48,8 +52,9 @@ final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationD
     /// `core.currentIndex`. `nil` until the user clicks a row.
     private var selectedRow: Int?
 
-    init(core: PlayerCore, scale: Int, skinWidth: Int, skinHeight: Int) {
+    init(core: PlayerCore, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int) {
         self.core = core
+        self.skin = skin
         self.scale = scale
         self.skinWidth = skinWidth
         self.skinHeight = skinHeight
@@ -99,20 +104,31 @@ final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationD
         scrollResidual -= wholeRows * rowHeight
 
         let rowDelta = -Int(wholeRows)
-        applyScroll(rowDelta: rowDelta)
+        let moved = applyScroll(rowDelta: rowDelta)
+        // If the clamp pinned us at an end (no movement), DROP the accumulated
+        // residual. Otherwise a stale residual built up against the end would have
+        // to be spent before a direction reversal could move the list — so the
+        // first reverse event would feel dead. Zeroing here makes a reversal
+        // respond on its very first event.
+        if !moved {
+            scrollResidual = 0
+        }
     }
 
     /// Apply a whole-row delta, clamped by the pure helper, and redraw if it moved.
-    private func applyScroll(rowDelta: Int) {
+    /// Returns whether the clamped scroll position actually changed.
+    @discardableResult
+    private func applyScroll(rowDelta: Int) -> Bool {
         let layout = PlaylistLayout.visibleRows(
             trackCount: core.playlist.count,
             scrollRow: scrollRow + rowDelta,
             interiorHeight: interiorHeight,
             rowHeight: PlaylistTextStyle.rowHeight
         )
-        guard layout.scrollRow != scrollRow else { return }
+        guard layout.scrollRow != scrollRow else { return false }
         scrollRow = layout.scrollRow
         view?.needsDisplay = true
+        return true
     }
 
     // MARK: - Clicks
@@ -171,6 +187,62 @@ final class PlaylistWindowController: NSObject, NSWindowDelegate, NSApplicationD
         selectedRow = row
         core.select(row)
         view?.needsDisplay = true
+    }
+
+    // MARK: - Resize (recompose at the new size + re-layout)
+
+    /// On a drag-resize, recompute the skin-space window size from the view's
+    /// current (scaled) bounds, recompose the frame at that size, swap it into the
+    /// view, and re-clamp the scroll so more/fewer rows show. The pure layers handle
+    /// arbitrary sizes; this is the wiring that re-renders the view at its bounds.
+    ///
+    /// Selection / scroll / now-playing all persist: `selectedRow` and
+    /// `core.currentIndex` are untouched, and `scrollRow` is re-clamped via the same
+    /// `PlaylistLayout` the draw path uses, so a row pinned at the bottom stays
+    /// valid when the interior grows or shrinks.
+    func windowDidResize(_ notification: Notification) {
+        guard let view else { return }
+        recomposeForViewSize(view.bounds.size)
+    }
+
+    /// Re-derive the skin-space size from a scaled view size, recompose, re-layout.
+    /// Skipped when nothing changed (same size) so an idle resize notification does
+    /// no work.
+    private func recomposeForViewSize(_ viewSize: CGSize) {
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: Double(viewSize.width),
+            viewHeight: Double(viewSize.height),
+            scale: scale
+        )
+        guard size.width != skinWidth || size.height != skinHeight else { return }
+
+        guard let frame = PlaylistWindowComposer.compose(skin, width: size.width, height: size.height),
+              let image = CGImageConversion.makeImage(from: frame) else {
+            return
+        }
+        let scaled: (image: CGImage, width: Int, height: Int)
+        do {
+            scaled = try scaledImage(image, scale: scale)
+        } catch {
+            return
+        }
+
+        // Compose returns the CLAMPED size; adopt the frame's actual dimensions so
+        // hit-testing and the text layout share the new geometry exactly.
+        skinWidth = frame.width
+        skinHeight = frame.height
+
+        // Re-clamp the scroll to the new interior so a position pinned near the
+        // bottom does not strand blank rows after the interior changed height.
+        let layout = PlaylistLayout.visibleRows(
+            trackCount: core.playlist.count,
+            scrollRow: scrollRow,
+            interiorHeight: interiorHeight,
+            rowHeight: PlaylistTextStyle.rowHeight
+        )
+        scrollRow = layout.scrollRow
+
+        view?.updateFrame(image: scaled.image, skinWidth: frame.width, skinHeight: frame.height)
     }
 
     // MARK: NSWindowDelegate / NSApplicationDelegate

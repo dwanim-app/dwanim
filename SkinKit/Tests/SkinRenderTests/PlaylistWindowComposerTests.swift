@@ -457,4 +457,82 @@ final class PlaylistWindowComposerTests: XCTestCase {
             XCTAssertFalse(sawTitle, "title must be skipped when it cannot fit between corners")
         }
     }
+
+    // MARK: - 12. skinSize(fromViewSize:scale:) — the resize hinge
+
+    func testSkinSizeDividesByScaleAndFloors() {
+        // A clearly-above-minimum view size at scale 2: skin dims = floor(view/2).
+        let view = (width: 700.0, height: 480.0)
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: view.width, viewHeight: view.height, scale: 2
+        )
+        XCTAssertEqual(size.width, 350)
+        XCTAssertEqual(size.height, 240)
+        // And both stay >= the minimum (they are far above it here).
+        XCTAssertGreaterThanOrEqual(size.width, PlaylistWindowComposer.minimumWidth)
+        XCTAssertGreaterThanOrEqual(size.height, PlaylistWindowComposer.minimumHeight)
+    }
+
+    func testSkinSizeFloorsNonMultipleViewSize() {
+        // A non-integer-multiple view size floors (does not round up), so the
+        // composed frame never claims a row/column the view cannot show.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 701.0, viewHeight: 481.0, scale: 2
+        )
+        XCTAssertEqual(size.width, 350)   // floor(701/2) = 350
+        XCTAssertEqual(size.height, 240)  // floor(481/2) = 240
+    }
+
+    func testSkinSizeScaleOneIsIdentityAboveMinimum() {
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 300.0, viewHeight: 260.0, scale: 1
+        )
+        XCTAssertEqual(size.width, 300)
+        XCTAssertEqual(size.height, 260)
+    }
+
+    func testSkinSizeClampsTinyViewToMinimum() {
+        // A view dragged smaller than the minimum frame clamps UP, exactly like
+        // compose/interiorRect, so the corners always fit.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 4.0, viewHeight: 4.0, scale: 2
+        )
+        XCTAssertEqual(size.width, PlaylistWindowComposer.minimumWidth)
+        XCTAssertEqual(size.height, PlaylistWindowComposer.minimumHeight)
+    }
+
+    func testSkinSizeNegativeViewClampsToMinimum() {
+        // A degenerate (negative) view size never traps and never yields a negative
+        // skin dimension — it clamps to the minimum.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: -100.0, viewHeight: -100.0, scale: 3
+        )
+        XCTAssertEqual(size.width, PlaylistWindowComposer.minimumWidth)
+        XCTAssertEqual(size.height, PlaylistWindowComposer.minimumHeight)
+    }
+
+    func testSkinSizeNonPositiveScaleTreatedAsOne() {
+        // A non-positive scale must not divide-by-zero / trap; it is treated as 1.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 300.0, viewHeight: 260.0, scale: 0
+        )
+        XCTAssertEqual(size.width, 300)
+        XCTAssertEqual(size.height, 260)
+    }
+
+    func testSkinSizeRoundTripsThroughComposeAtTheSameDimensions() {
+        // The skin size from a view size composes to EXACTLY those dimensions, so
+        // the resize loop (view bounds -> skinSize -> compose) is self-consistent.
+        let size = PlaylistWindowComposer.skinSize(
+            fromViewWidth: 700.0, viewHeight: 480.0, scale: 2
+        )
+        guard let composed = PlaylistWindowComposer.compose(
+            makeSkin(playlist: normalBG), width: size.width, height: size.height
+        ) else {
+            XCTFail("compose returned nil for a skinSize result")
+            return
+        }
+        XCTAssertEqual(composed.width, size.width)
+        XCTAssertEqual(composed.height, size.height)
+    }
 }
