@@ -377,6 +377,42 @@ final class SpriteCoordinatesFitTests: XCTestCase {
                 + "truncated-sheet skins")
     }
 
+    /// Pins the graph line COLOR RAMP geometry: a 1px-wide, 19px-tall vertical
+    /// strip that tints the response curve by height. Its height MUST equal the
+    /// graph height (`EQWindowLayout.graphFrame.height`) so the compositor can index
+    /// one ramp row per graph row. It lives below the 116px face (y >= 116) so it is
+    /// allowed to fall off the truncated minority sheets — but it must fit the
+    /// canonical 275 x 315 real sheet where it genuinely lives. Asserts directly
+    /// against the table, non-circular against the canonical dim.
+    func testEqualizerGraphLineColorRampIsPinned() {
+        guard let eq = SpriteCoordinates.equalizerWindow["eqmain.bmp"] else {
+            XCTFail("eqmain.bmp missing from the equalizer coordinate table")
+            return
+        }
+        guard let ramp = eq.first(where: { $0.name == "graphLineColorRamp" }) else {
+            XCTFail("eqmain.bmp is missing the graphLineColorRamp sprite")
+            return
+        }
+        XCTAssertEqual(ramp.width, 1, "the color ramp is a single 1px-wide column")
+        XCTAssertEqual(
+            ramp.height, EQWindowLayout.graphFrame.height,
+            "the color ramp height must equal the graph height so the compositor "
+                + "indexes one ramp row per graph row")
+        // Lives in the lower control band, below the 116px face — so truncated
+        // sheets gracefully omit it.
+        XCTAssertGreaterThanOrEqual(
+            ramp.y, 116,
+            "the color ramp must live below the 116px face (truncated sheets omit it)")
+        // Fits the canonical 275 x 315 real sheet where it genuinely lives.
+        let canonical = Self.standardDimensions["eqmain.bmp"]
+        XCTAssertLessThanOrEqual(
+            ramp.x + ramp.width, canonical?.width ?? 0,
+            "color ramp right edge overruns canonical real eqmain width")
+        XCTAssertLessThanOrEqual(
+            ramp.y + ramp.height, canonical?.height ?? 0,
+            "color ramp bottom edge overruns canonical real eqmain height")
+    }
+
     /// The equalizer face must declare the core sprites needed to composite the
     /// static EQ window — the background, active/inactive title bars, the shared
     /// slider thumb (normal + pressed), and the ON / AUTO toggles (off + on) — and

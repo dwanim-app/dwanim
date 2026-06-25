@@ -258,10 +258,11 @@ public enum EQWindowLayout {
     //
     // The rectangular region in the upper-right of the EQ face where the
     // equalizer response curve / band-graph is drawn (the colored line plotting
-    // the current band gains). The compositor draws the curve into this rect;
-    // pixels outside it are left untouched. The colored line gradient itself
-    // (its per-row colors) is DEFERRED in `SpriteCoordinates` — only the area is
-    // pinned here.
+    // the current band gains). The compositor (`EQWindowComposer`) maps the band
+    // gains to a per-column polyline (`EQResponseCurve`) and plots it into this
+    // rect, tinted by the `graphLineColorRamp` sprite; pixels outside the rect are
+    // left untouched. Both the curve helper and the line color ramp are now
+    // implemented — only this area rectangle is pinned here.
 
     /// The graph/curve area: `(x, y)` top-left corner; `width`/`height` the
     /// region size, in window pixels.

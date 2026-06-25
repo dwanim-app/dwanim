@@ -54,8 +54,9 @@ public enum SpriteCoordinates {
     /// ten band sliders, and the ON / AUTO toggle buttons (each off + on).
     ///
     /// The windowshade variant lives in `eq_ex.bmp` and is DEFERRED (it is not
-    /// keyed here). The colored band-graph line gradient and the preset/text
-    /// micro-region are also DEFERRED — see the comment block on `equalizerFace`.
+    /// keyed here). The 1px-wide colored band-graph LINE color ramp is now pinned
+    /// (`graphLineColorRamp`); the preset/text micro-region remains DEFERRED — see
+    /// the comment block on `equalizerFace`.
     public static let equalizerWindow: [String: [SpriteRect]] = [
         "eqmain.bmp": equalizerFace
     ]
@@ -184,15 +185,29 @@ public enum SpriteCoordinates {
     //     state. Public layout packs them near the upper-left of the EQ face's
     //     control row; their off/on pairs sit in the (10,119) / (128,119) bands.
     //
+    // GRAPH LINE COLOR RAMP (`graphLineColorRamp`): the classic eqmain.bmp packs a
+    // single 1px-wide, 19px-tall vertical COLOR RAMP used to tint the response-
+    // curve line by its height inside the graph — the line shifts hue as it climbs
+    // from the bottom (cut) to the top (boost) of the graph. The public EQ layout
+    // places this strip in the lower control band of the sheet, just to the right
+    // of the ON/AUTO button column, at x = 115, y = 294 (a 1x19 column on the
+    // canonical 275x315 sheet). It is 19px tall to match the 19px graph height
+    // (`EQWindowLayout.graphFrame.height`): one ramp pixel per graph row. Like the
+    // other sub-y=116 sprites it lives BELOW the 116px face, so the truncated
+    // minority sheets (which carry only the face band) simply won't have it —
+    // `SpriteCutter` drops it and the compositor degrades gracefully (it falls back
+    // to a single sane line color, never crashes). The exact 1px width / 19px
+    // height is the standard public-layout figure; the (115, 294) origin keeps the
+    // column clear of the title bars (y=134/149), the thumb (y=164), and the
+    // ON/AUTO toggles (y=119, x up to 186) while staying inside the canonical sheet.
+    //
     // DEFERRED (documented, not modelled here):
     //   * eq_ex.bmp — the EQ windowshade (rolled-up title-bar-only) variant. Its
     //     own sheet; not keyed in `equalizerWindow`. A later increment.
-    //   * the colored band-graph LINE gradient (the 1px-wide vertical color ramp
-    //     the curve is drawn with) and the PRESET/TEXT micro-region: the public
-    //     spec under-pins their exact packing, and neither is needed to composite
-    //     the static EQ window (face + chrome + thumbs + ON/AUTO) in the next
-    //     increment. Left to a later pass, exactly as the playlist micro-buttons
-    //     were.
+    //   * the PRESET/TEXT micro-region: the public spec under-pins its exact
+    //     packing, and it is not needed to composite the EQ window (face + chrome +
+    //     thumbs + ON/AUTO + curve). Left to a later pass, exactly as the playlist
+    //     micro-buttons were.
 
     private static let equalizerFace: [SpriteRect] = [
         // --- Window background / EQ face (drawn whole), y = 0 ---
@@ -218,7 +233,13 @@ public enum SpriteCoordinates {
         // --- AUTO button (auto-preset): off + on ---
         // provisional — tune at render
         SpriteRect(name: "autoButtonOff", x: 36,  y: 119, width: 32, height: 12),
-        SpriteRect(name: "autoButtonOn",  x: 154, y: 119, width: 32, height: 12)
+        SpriteRect(name: "autoButtonOn",  x: 154, y: 119, width: 32, height: 12),
+
+        // --- Graph line COLOR RAMP: 1px-wide, 19px-tall vertical gradient ---
+        // Tints the response curve by height (one ramp row per graph row). Lives
+        // below y=116, so truncated sheets simply won't have it (graceful — the
+        // compositor falls back to a single line color). provisional — tune at render.
+        SpriteRect(name: "graphLineColorRamp", x: 115, y: 294, width: 1, height: 19)
     ]
 
     // MARK: - main.bmp (window background)
