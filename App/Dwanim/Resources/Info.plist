@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Identity. CFBundleName/DisplayName are the literal product name; the
+	     identifier and executable come from build settings so the project.yml
+	     stays the single source of truth for the bundle id and target name. -->
+	<key>CFBundleName</key>
+	<string>Dwanim</string>
+	<key>CFBundleDisplayName</key>
+	<string>Dwanim</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+
+	<!-- Bundle plumbing. APPL marks this as an application bundle; the version
+	     keys carry the marketing (1.0) and build (1) numbers. -->
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<!-- Platform + capabilities. Min macOS 14.0 (matches the SkinKit package
+	     platform tier); Retina-aware; music category for the App Store. -->
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+
+	<!-- App icon (the AppIcon.appiconset authored in increment #3). -->
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+
+	<!-- SwiftUI App lifecycle: the default principal class is the standard
+	     AppKit application. Stated explicitly so the generated bundle launches
+	     as a normal NSApplication-hosted app rather than relying on an implicit
+	     default. -->
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+
+	<!-- Neutral MIT copyright line (no brand words, per §8.5/§8.6). -->
+	<key>NSHumanReadableCopyright</key>
+	<string>Released under the MIT License.</string>
+
+	<!-- Intentionally NO network usage keys and NO CFBundleDocumentTypes / UTI:
+	     the app makes no network connections, and .wsz is opened only via the
+	     user-selected file panel (it is not a registered document type). -->
+</dict>
+</plist>
