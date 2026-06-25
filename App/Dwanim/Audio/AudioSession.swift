@@ -82,9 +82,18 @@ final class AudioSession {
     private var sessionScopes: [(url: URL, didStart: Bool)] = []
 
     /// Whether `start()` has run without a matching `stop()`. Guards against a
-    /// second window's `.onAppear` double-starting the shared `@State` session
-    /// (and a stray `.onDisappear` double-stopping it).
+    /// second `.onAppear` double-starting the shared `@State` session (and a stray
+    /// `.onDisappear` double-stopping it) — the feed start/stop is paired with this.
     private var started = false
+
+    /// Whether the once-per-process launch resolve has already run. SEPARATE from
+    /// `started` on purpose: `started` is paired with the feed (start/stop), but the
+    /// launch-resolve of the last playlist / skin must happen EXACTLY ONCE for the
+    /// lifetime of the process — never again if `start()` is somehow re-entered (e.g.
+    /// SwiftUI re-creating the scene window). Re-running resolve would reset the live
+    /// playlist + transport position back to the last-saved song; this flag prevents
+    /// that. Belt-and-suspenders alongside the `started` idempotency guard.
+    private var didLaunchResolve = false
 
     /// Spectrum bar count for the compact default-skin row (matches the harness).
     private static let barCount = 24
@@ -140,13 +149,25 @@ final class AudioSession {
 
     // MARK: Lifecycle
 
-    /// Start the feed and reopen the last song (ready/paused). Call once when the
-    /// app's window appears. Idempotent: a second window's `.onAppear` on the
-    /// shared session returns early rather than double-starting.
+    /// Start the feed and (on the genuine first start of the process) reopen the last
+    /// song (ready/paused). Call when the app's main window appears. Idempotent: a
+    /// repeated `.onAppear` on the shared session returns early rather than
+    /// double-starting the feed.
+    ///
+    /// The launch-resolve is gated SEPARATELY (`didLaunchResolve`) so that even if
+    /// `start()` ran a full start/stop/start cycle (the feed legitimately restarts),
+    /// the last-song / last-skin resolve never runs a second time and so never resets
+    /// the live playlist + transport position back to the saved song.
     func start() {
         guard !started else { return }
         started = true
         redrawLoop?.start()
+
+        // ONCE PER PROCESS: reopen the last playlist + remember the last skin. Guarded
+        // independently of `started` so a re-entry of start() never re-resolves (which
+        // would clobber the live playlist/position with the saved one).
+        guard !didLaunchResolve else { return }
+        didLaunchResolve = true
         resolveLastAudioOnLaunch()
         // Remember (but do NOT auto-open) the last classic skin — see
         // ClassicSkinPresenter.resolveLastSkinOnLaunch for why auto-open is
@@ -154,16 +175,24 @@ final class AudioSession {
         classicSkin.resolveLastSkinOnLaunch()
     }
 
-    /// Tear the session down on quit: stop the feed and release the session
-    /// security scope. Mirrors `DefaultSkinController.tearDown`. Idempotent: a
-    /// `.onDisappear` with no live session returns early.
+    /// Tear the session down on genuine app TERMINATION: stop the feed, release the
+    /// session security scope, and close the hosted classic-window cluster. Mirrors
+    /// `DefaultSkinController.tearDown`. Idempotent.
+    ///
+    /// Driven from `applicationWillTerminate(_:)` (NOT a window's `.onDisappear`), so
+    /// it runs exactly once when the process is actually quitting — closing the single
+    /// main window quits the app (see `applicationShouldTerminateAfterLastWindowClosed`),
+    /// which then tears down here. Because this only runs at real termination, the
+    /// `closeAllWindows()` below never fires from a mere window-disappear path; the
+    /// classic cluster windows otherwise manage their own close.
     func stop() {
         guard started else { return }
         started = false
         redrawLoop?.stop()
         endSession()
         // Close every hosted classic window (main + playlist + EQ) too, so a hosted
-        // window never outlives the session that drives it.
+        // window never outlives the session that drives it. Safe here because `stop()`
+        // now runs ONLY at real app termination.
         classicSkin.closeAllWindows()
     }
 
