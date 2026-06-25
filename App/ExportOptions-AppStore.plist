@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ExportOptions-AppStore.plist — PRIMARY distribution path (Mac App Store).
+
+  Consumed by:
+    xcodebuild -exportArchive \
+      -archivePath build/Dwanim.xcarchive \
+      -exportPath build/export-appstore \
+      -exportOptionsPlist App/ExportOptions-AppStore.plist
+
+  ┌──────────────────────── REQUIRES YOUR APPLE ACCOUNT ────────────────────────┐
+  │ The <teamID> below is a PLACEHOLDER. The account owner MUST replace          │
+  │ REPLACE_WITH_YOUR_TEAM_ID with the 10-character Apple Developer Team ID      │
+  │ (Apple Developer portal -> Membership -> Team ID), and the bundle id        │
+  │ app.dwanim.Dwanim must already be registered in the portal + App Store      │
+  │ Connect, before this export can succeed. Nothing here works without an      │
+  │ Apple Developer Program membership and a Mac App Distribution signing        │
+  │ identity / provisioning profile available to the toolchain.                 │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  signingStyle = automatic lets Xcode/xcodebuild pick the matching
+  "Apple Distribution" identity + "Mac App Store" provisioning profile from
+  the team. To pin them manually, switch signingStyle to "manual" and add
+  signingCertificate + provisioningProfiles entries.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Store / App Store Connect distribution. -->
+	<key>method</key>
+	<string>app-store-connect</string>
+
+	<!-- PLACEHOLDER: account owner replaces with the 10-char Team ID. -->
+	<key>teamID</key>
+	<string>REPLACE_WITH_YOUR_TEAM_ID</string>
+
+	<!-- Let Xcode resolve the distribution cert + provisioning profile. -->
+	<key>signingStyle</key>
+	<string>automatic</string>
+
+	<!-- Upload dSYMs so App Store Connect can symbolicate crash reports. -->
+	<key>uploadSymbols</key>
+	<true/>
+
+	<!-- Manage app version + build number locally (we set them in project.yml /
+	     Info.plist); do not let the toolchain bump them on export. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>

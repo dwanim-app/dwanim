@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ExportOptions-DeveloperID.plist — ALTERNATIVE path (notarized direct download).
+
+  Use this to ship a Developer-ID-signed .app/.dmg outside the Mac App Store
+  (downloaded straight from a website). The exported app is later notarized
+  with `xcrun notarytool submit` and stapled with `xcrun stapler staple`.
+
+  Consumed by:
+    xcodebuild -exportArchive \
+      -archivePath build/Dwanim.xcarchive \
+      -exportPath build/export-developerid \
+      -exportOptionsPlist App/ExportOptions-DeveloperID.plist
+
+  ┌──────────────────────── REQUIRES YOUR APPLE ACCOUNT ────────────────────────┐
+  │ The <teamID> below is a PLACEHOLDER. The account owner MUST replace          │
+  │ REPLACE_WITH_YOUR_TEAM_ID with the 10-character Apple Developer Team ID,     │
+  │ and a valid "Developer ID Application" signing identity must be installed    │
+  │ in the keychain. Notarization additionally needs an App-Store-Connect API    │
+  │ key or an app-specific password (see md_files/SHIPPING.md). None of this     │
+  │ works without an Apple Developer Program membership.                         │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  ENABLE_HARDENED_RUNTIME = YES is already set in project.yml, which is a hard
+  requirement for notarization. signingStyle = automatic lets Xcode resolve the
+  Developer ID Application certificate from the team.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Developer-ID signing for notarized direct distribution. -->
+	<key>method</key>
+	<string>developer-id</string>
+
+	<!-- PLACEHOLDER: account owner replaces with the 10-char Team ID. -->
+	<key>teamID</key>
+	<string>REPLACE_WITH_YOUR_TEAM_ID</string>
+
+	<!-- Let Xcode resolve the Developer ID Application certificate. -->
+	<key>signingStyle</key>
+	<string>automatic</string>
+
+	<!-- Upload dSYMs alongside the export so crash reports symbolicate. -->
+	<key>uploadSymbols</key>
+	<true/>
+
+	<!-- Do not auto-bump the version/build on export. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>
