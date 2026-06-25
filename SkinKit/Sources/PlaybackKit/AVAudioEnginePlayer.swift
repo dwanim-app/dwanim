@@ -324,6 +324,13 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine {
 /// `AudioEqualizing`. The mapping (gains, preamp -> `globalGain`, enabled ->
 /// bypass) lives in `EQConfig.apply`, the same routine the offline DSP-proof test
 /// exercises, so the test runs the real production band setup.
+///
+/// GRAPH-ORDER PIN (do not regress): the EQ sits BEFORE the mixer and the PCM tap
+/// sits on the mixer INPUT, so the tap captures POST-EQ but PRE-(mixer-output)
+/// volume audio. That ordering is INTENTIONAL: the spectrum/graph visualizer
+/// reacts to EQ changes yet is independent of the volume fader (`outputVolume` is
+/// applied after the tap point). A future reader must not move the EQ after the
+/// tap or move the tap past `outputVolume`. See `AudioTapProviding`.
 extension AVAudioEnginePlayer: AudioEqualizing {
 
     public func applyEqualizer(_ state: EQState) {
@@ -362,12 +369,19 @@ extension AVAudioEnginePlayer: TrackFormatProviding {
 
 /// Live PCM tap, kept separate from the transport surface.
 ///
-/// The tap sits on `engine.mainMixerNode` — the post-mix point — so it captures
-/// whatever is actually being rendered regardless of the source file's channel
-/// layout. Each delivered buffer is downmixed to a single mono `[Float]` frame
-/// (the per-channel average) before the stored callback is invoked. This is the
-/// payoff of building transport on `AVAudioEngine` (ADR §3.3): the analyzer can
-/// observe audio without `PlayerCore` ever touching PCM.
+/// The tap sits on `engine.mainMixerNode` bus 0 — the mixer INPUT, after the EQ
+/// node but before `outputVolume` — so it captures whatever is being rendered
+/// regardless of the source file's channel layout. Each delivered buffer is
+/// downmixed to a single mono `[Float]` frame (the per-channel average) before the
+/// stored callback is invoked. This is the payoff of building transport on
+/// `AVAudioEngine` (ADR §3.3): the analyzer can observe audio without `PlayerCore`
+/// ever touching PCM.
+///
+/// POST-EQ, PRE-VOLUME (do not regress): because the EQ is upstream and the volume
+/// fader is `outputVolume` (applied after this tap point), the captured PCM is
+/// POST-EQ but PRE-(mixer-output)volume. This is the INTENTIONAL visualizer
+/// contract — the graph reacts to EQ yet ignores the volume control. See
+/// `AudioTapProviding` and the `AudioEqualizing` graph-order pin above.
 extension AVAudioEnginePlayer: AudioTapProviding {
 
     public func installTap(

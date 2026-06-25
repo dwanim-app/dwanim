@@ -223,4 +223,129 @@ final class EQWindowLayoutTests: XCTestCase {
             XCTAssertLessThanOrEqual(top + thumbHeight, EQWindowLayout.sliderTrackBottom)
         }
     }
+
+    // MARK: - thumbGain (thumb top-left y -> gain) — the inverse of thumbTopY
+    //
+    // The pure inverse the EQ drag uses to turn a thumb-top y (clicked/dragged in
+    // skin space) back into a band/preamp dB gain. The track top maps to +12 dB,
+    // the track bottom (`sliderTrackBottom - thumbHeight`) to -12 dB; linear and
+    // clamped between. Higher on screen (smaller y) ⇒ more boost.
+
+    /// The thumb-top y at the TOP of the track maps back to +12 dB (max boost).
+    func testThumbGainAtTrackTopIsMaxBoost() {
+        XCTAssertEqual(EQWindowLayout.thumbGain(forThumbTopY: topTravelY), 12, accuracy: 0.0001)
+    }
+
+    /// The thumb-top y at the BOTTOM of the track maps back to -12 dB (max cut).
+    func testThumbGainAtTrackBottomIsMaxCut() {
+        XCTAssertEqual(EQWindowLayout.thumbGain(forThumbTopY: bottomTravelY), -12, accuracy: 0.0001)
+    }
+
+    /// The thumb-top y at the centre of the travel maps back to 0 dB (flat).
+    func testThumbGainAtTrackCenterIsFlat() {
+        let center = (topTravelY + bottomTravelY) / 2
+        XCTAssertEqual(EQWindowLayout.thumbGain(forThumbTopY: center), 0, accuracy: 0.5)
+    }
+
+    /// A y above the track top (smaller than `sliderTrackTop`) clamps to +12 dB;
+    /// a y below the track bottom clamps to -12 dB — the gain never escapes ±12.
+    func testThumbGainClampsOutOfTrackY() {
+        XCTAssertEqual(
+            EQWindowLayout.thumbGain(forThumbTopY: topTravelY - 100), 12, accuracy: 0.0001,
+            "y above the top clamps to +12")
+        XCTAssertEqual(
+            EQWindowLayout.thumbGain(forThumbTopY: bottomTravelY + 100), -12, accuracy: 0.0001,
+            "y below the bottom clamps to -12")
+    }
+
+    /// The inverse is monotonic non-increasing in y: a larger y (lower on screen)
+    /// never yields a LARGER gain than a smaller y. Sampled across the track plus
+    /// the out-of-range tails.
+    func testThumbGainIsMonotonicNonIncreasingInY() {
+        var previous = EQWindowLayout.thumbGain(forThumbTopY: topTravelY - 10)
+        for y in stride(from: topTravelY - 10, through: bottomTravelY + 10, by: 1) {
+            let gain = EQWindowLayout.thumbGain(forThumbTopY: y)
+            XCTAssertLessThanOrEqual(
+                gain, previous + 0.0001,
+                "gain must not increase as y rises (y \(y))")
+            previous = gain
+        }
+    }
+
+    /// Round-trip: `thumbTopY(thumbGain(y))` returns to the same y for every
+    /// in-track y. The two functions are inverses (within the integer-rounding the
+    /// forward map applies), so a thumb dragged to a y and re-placed lands back.
+    func testThumbGainRoundTripsThroughThumbTopY() {
+        for y in topTravelY...bottomTravelY {
+            let gain = EQWindowLayout.thumbGain(forThumbTopY: y)
+            XCTAssertEqual(
+                EQWindowLayout.thumbTopY(forGain: gain), y,
+                "thumbTopY(thumbGain(\(y))) must round-trip to \(y)")
+        }
+    }
+
+    /// Round-trip the OTHER way at representative gains: `thumbGain(thumbTopY(g))`
+    /// returns approximately `g` for 0, ±12, and a few mid gains (within the
+    /// per-pixel quantization the forward map's rounding introduces).
+    func testThumbTopYRoundTripsThroughThumbGainAtRepresentativeGains() {
+        // One pixel of travel is the whole ±12→±12 range over the pixel span, so
+        // the round-trip tolerance is one pixel's worth of dB.
+        let span = Double(bottomTravelY - topTravelY)
+        let dBPerPixel = (EQWindowLayout.gainMaxDB - EQWindowLayout.gainMinDB) / span
+        for gain in [-12.0, -6.0, -3.0, 0.0, 3.0, 6.0, 12.0] {
+            let y = EQWindowLayout.thumbTopY(forGain: gain)
+            let back = EQWindowLayout.thumbGain(forThumbTopY: y)
+            XCTAssertEqual(
+                back, gain, accuracy: dBPerPixel + 0.0001,
+                "thumbGain(thumbTopY(\(gain))) must round-trip to ~\(gain)")
+        }
+    }
+
+    // MARK: - slider(atSkinX:) — column -> which slider (preamp or band index)
+
+    /// A click on the exact preamp column resolves to the preamp slider.
+    func testSliderAtPreampColumnIsPreamp() {
+        XCTAssertEqual(EQWindowLayout.slider(atSkinX: EQWindowLayout.preampSliderX), .preamp)
+    }
+
+    /// A click on each band column resolves to that band index, in order.
+    func testSliderAtBandColumnsResolveToTheirIndex() {
+        for (index, x) in EQWindowLayout.bandSliderXs.enumerated() {
+            XCTAssertEqual(
+                EQWindowLayout.slider(atSkinX: x), .band(index),
+                "x \(x) should resolve to band \(index)")
+        }
+    }
+
+    /// A click a few px off a column still snaps to the nearest column within the
+    /// hit width (the columns are `bandSliderSpacing` apart, so the thumb's own
+    /// width comfortably covers a near-miss).
+    func testSliderAtNearMissSnapsToNearestColumn() {
+        // Just right of band 0's column, still well within half the spacing.
+        let near = EQWindowLayout.bandSliderXs[0] + 2
+        XCTAssertEqual(EQWindowLayout.slider(atSkinX: near), .band(0))
+    }
+
+    /// A click far from every column (e.g. above the slider block, far left of
+    /// the preamp) is not on any slider.
+    func testSliderAtFarColumnIsNil() {
+        XCTAssertNil(
+            EQWindowLayout.slider(atSkinX: -100), "far left of every column is nil")
+        XCTAssertNil(
+            EQWindowLayout.slider(atSkinX: EQWindowLayout.windowWidth + 100),
+            "far right of every column is nil")
+    }
+
+    /// The midpoint between the preamp column and the first band column resolves
+    /// to whichever is genuinely nearer (a defined, non-ambiguous tie-break), and
+    /// every resolved column is one of the eleven sliders.
+    func testSliderResolutionPicksNearestColumn() {
+        // A point closer to the first band than to the preamp picks the band.
+        let preamp = EQWindowLayout.preampSliderX
+        let band0 = EQWindowLayout.bandSliderXs[0]
+        let nearerBand = band0 - 1
+        XCTAssertEqual(EQWindowLayout.slider(atSkinX: nearerBand), .band(0))
+        // A point right on the preamp picks preamp.
+        XCTAssertEqual(EQWindowLayout.slider(atSkinX: preamp), .preamp)
+    }
 }

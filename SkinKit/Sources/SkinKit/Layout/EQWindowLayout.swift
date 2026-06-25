@@ -79,6 +79,51 @@ public enum EQWindowLayout {
         (sliderTrackTop + sliderTrackBottom) / 2
     }
 
+    // MARK: - Column -> which slider
+    //
+    // Which of the eleven sliders (the preamp or one of the ten bands) a click /
+    // drag at a skin-space x belongs to. Used by the interactive drag to route a
+    // gesture to the right gain. Pure column arithmetic — no y component, since
+    // every slider shares the same track.
+
+    /// Identifies a single EQ slider: the preamp, or one of the ten frequency
+    /// bands by index `0..<10` (low to high frequency).
+    public enum EQSlider: Equatable, Sendable {
+        case preamp
+        case band(Int)
+    }
+
+    /// The slider whose column is nearest the skin-space `x`, or `nil` when `x`
+    /// is farther than the hit width from EVERY column. Each slider's column is
+    /// its thumb's top-left x (`preampSliderX` / `bandSliderXs`); a click anywhere
+    /// within `hitHalfWidth` of a column counts as that slider (so a near-miss on
+    /// the thumb still grabs it). The half-width is the thumb's own half-width but
+    /// never more than half the inter-column spacing, so neighbouring band columns
+    /// never both claim the same x — the nearer one always wins.
+    public static func slider(atSkinX x: Int) -> EQSlider? {
+        // Hit half-width: cover the thumb body, but never reach past the midpoint
+        // to the next column (bands are `bandSliderSpacing` apart).
+        let half = Swift.min(thumbWidth / 2, bandSliderSpacing / 2)
+
+        // Find the nearest column among preamp + the ten bands; reject if it is
+        // beyond the hit half-width.
+        var best: (slider: EQSlider, distance: Int)?
+        func consider(_ slider: EQSlider, columnX: Int) {
+            let distance = abs(x - columnX)
+            if best == nil || distance < best!.distance {
+                best = (slider, distance)
+            }
+        }
+
+        consider(.preamp, columnX: preampSliderX)
+        for (index, columnX) in bandSliderXs.enumerated() {
+            consider(.band(index), columnX: columnX)
+        }
+
+        guard let best, best.distance <= half else { return nil }
+        return best.slider
+    }
+
     /// Height of the shared slider thumb knob, in pixels, read from the EQ sprite
     /// table (`eqmain.bmp/sliderThumb`). The thumb travel and the gain→y mapping
     /// account for this so the thumb body never spills past the track ends.
@@ -88,6 +133,16 @@ public enum EQWindowLayout {
         SpriteCoordinates.equalizerWindow["eqmain.bmp"]?
             .first { $0.name == "sliderThumb" }?
             .height ?? 11
+    }
+
+    /// Width of the shared slider thumb knob, in pixels, read from the same EQ
+    /// sprite (`eqmain.bmp/sliderThumb`). Used to size the click hit-width when
+    /// resolving which slider column a skin-space x lands on. Falls back to the
+    /// canonical 14px if the sprite is absent, keeping `slider(atSkinX:)` total.
+    public static var thumbWidth: Int {
+        SpriteCoordinates.equalizerWindow["eqmain.bmp"]?
+            .first { $0.name == "sliderThumb" }?
+            .width ?? 14
     }
 
     // MARK: - Gain -> thumb position
@@ -130,6 +185,41 @@ public enum EQWindowLayout {
         // Round to the nearest pixel, then clamp to the travel for total safety.
         let rounded = Int(y.rounded())
         return Swift.min(Swift.max(rounded, topY), bottomY)
+    }
+
+    // MARK: - Thumb position -> gain (inverse)
+    //
+    // The exact inverse of `thumbTopY`, used by the interactive drag: turn a
+    // thumb-top y (where the cursor put the thumb, in skin space) back into a dB
+    // gain. The track top (`sliderTrackTop`) maps to +12 dB, the track bottom
+    // (`sliderTrackBottom - thumbHeight`) to -12 dB, linear and clamped between.
+    // Higher on screen (smaller y) ⇒ more boost.
+
+    /// The band/preamp `gain` in dB for a thumb top-left **y**, the inverse of
+    /// `thumbTopY(forGain:)`. The y is clamped to the thumb-top travel
+    /// `[sliderTrackTop, sliderTrackBottom - thumbHeight]` first, so the result is
+    /// always inside `-12...+12 dB`:
+    ///
+    /// - `sliderTrackTop` (or above) ⇒ `+12` (max boost).
+    /// - `sliderTrackBottom - thumbHeight` (or below) ⇒ `-12` (max cut).
+    /// - the travel midpoint ⇒ `0` (flat).
+    ///
+    /// Within rounding, `thumbTopY(forGain: thumbGain(forThumbTopY: y)) == y` for
+    /// every in-track y, and `thumbGain(forThumbTopY: thumbTopY(forGain: g)) ≈ g`.
+    public static func thumbGain(forThumbTopY y: Int) -> Double {
+        let topY = sliderTrackTop
+        let bottomY = sliderTrackBottom - thumbHeight
+
+        // A degenerate (zero-length) travel cannot map a y to a gain; report flat
+        // rather than dividing by zero. The layout always has top < bottom, so
+        // this only guards a future mis-tuning.
+        guard bottomY > topY else { return 0 }
+
+        // Clamp y into the travel, then invert the linear map: fraction 0 at the
+        // top (max boost) → +12, fraction 1 at the bottom (max cut) → -12.
+        let clampedY = Swift.min(Swift.max(y, topY), bottomY)
+        let fraction = Double(clampedY - topY) / Double(bottomY - topY)
+        return gainMaxDB - fraction * (gainMaxDB - gainMinDB)
     }
 
     /// The classic graphic-equalizer per-gain dB range the slider travel maps,

@@ -18,6 +18,13 @@ import Foundation
 /// payload is `Bool`/`Double`), so it lives in the pure core while the concrete,
 /// `AVAudioUnitEQ`-backed implementation stays in the playback module.
 ///
+/// ## Engine-coupling taxonomy
+/// Two directions, deliberately kept apart: core-PUSHED state (volume, EQ) is
+/// authoritative in `PlayerCore` and mirrored DOWN to the engine in a `didSet` /
+/// setter (here, `applyEqualizer`); consumer-PULLED streams (the PCM tap, the
+/// track format) are read UP from the engine by the shell/consumer via an opt-in
+/// cast, never through `PlayerCore`'s transport.
+///
 /// - Note: `applyEqualizer` is the FULL, idempotent state: the engine should set
 ///   itself to exactly `state` (gains, preamp, and enabled/bypass), not apply a
 ///   delta. `PlayerCore` calls it with the complete current `EQState` on every
