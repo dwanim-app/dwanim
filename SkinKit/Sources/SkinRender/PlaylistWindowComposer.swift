@@ -178,12 +178,39 @@ public enum PlaylistWindowComposer {
     /// at 0, never negative). The harness shell uses this to know where — and how
     /// wide/tall — to draw the platform text, and feeds `h` to
     /// `PlaylistLayout.visibleRows` as the interior height.
-    public static func interiorRect(width: Int, height: Int) -> (x: Int, y: Int, w: Int, h: Int) {
+    ///
+    /// SIDE INSETS GATE ON ACTUAL SPRITE PRESENCE. `compose` draws the left / right
+    /// edges only when `skin.sprite(sheet:name:)` returns a REAL sprite; a `pledit`
+    /// sheet may lack those edge pieces entirely. So when a `skin` is supplied, the
+    /// left / right inset is the edge sprite's width only when that sprite is
+    /// actually drawn, and 0 otherwise — the text inset then matches exactly what
+    /// `compose` painted (no phantom inset over blank background on an edge-less
+    /// sheet). When `skin` is `nil` (geometry-only callers that have no skin in
+    /// hand), the insets fall back to the nominal sprite-table widths so the rect is
+    /// still well-formed. The top / bottom bands are unconditional — `compose`
+    /// always lays a title bar and bottom frame (it returns `nil` up front if the
+    /// frame sheet is absent), so those bands always exist when a rect is asked for.
+    public static func interiorRect(
+        width: Int,
+        height: Int,
+        skin: Skin? = nil
+    ) -> (x: Int, y: Int, w: Int, h: Int) {
         let canvasWidth = max(width, minimumWidth)
         let canvasHeight = max(height, minimumHeight)
 
-        let leftInset = rect("leftEdge")?.width ?? 25
-        let rightInset = rect("rightEdge")?.width ?? 20
+        // Match `compose`'s gating: inset only by edges that are actually drawn.
+        // With a skin in hand, the edge contributes its width ONLY when the sprite
+        // exists (the same `skin.sprite(...)` check `compose` uses); without one,
+        // fall back to the nominal sprite-table widths.
+        let leftInset: Int
+        let rightInset: Int
+        if let skin {
+            leftInset = skin.sprite(sheet: sheet, name: "leftEdge")?.width ?? 0
+            rightInset = skin.sprite(sheet: sheet, name: "rightEdge")?.width ?? 0
+        } else {
+            leftInset = rect("leftEdge")?.width ?? 25
+            rightInset = rect("rightEdge")?.width ?? 20
+        }
         let topInset = titleBarHeight()
         let bottomInset = bottomFrameHeight()
 

@@ -384,16 +384,59 @@ final class PlaylistLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: - interiorRect: side insets gate on actual edge-sprite presence
+
+    /// A pledit sheet that has the corner / fill sprites (so `compose` succeeds and
+    /// draws the title + bottom bands) but LACKS the left/right edge sprites. Since
+    /// `compose` draws the side edges only when those sprites exist, `interiorRect`
+    /// must NOT phantom-inset the text past blank background: with a skin in hand it
+    /// gates the side insets on the same `skin.sprite(...)` presence, so a missing
+    /// edge contributes 0 — the interior starts at x == 0 and spans the FULL width.
+    func testInteriorRectNoSideInsetWhenEdgeSpritesAbsent() {
+        let skin = makeFrameSkin(includingEdges: false)
+        // Sanity: this sheet really has no edge sprites (so `compose` draws none).
+        XCTAssertNil(skin.sprite(sheet: "pledit.bmp", name: "leftEdge"))
+        XCTAssertNil(skin.sprite(sheet: "pledit.bmp", name: "rightEdge"))
+
+        let r = PlaylistWindowComposer.interiorRect(width: 400, height: 300, skin: skin)
+        // No drawn edge -> no inset: the interior hugs the left at x == 0 and spans
+        // the full clamped width (only the top/bottom bands inset it vertically).
+        XCTAssertEqual(r.x, 0)
+        XCTAssertEqual(r.w, 400)
+        XCTAssertEqual(r.y, 20)
+        XCTAssertEqual(r.h, 300 - 20 - 38)
+    }
+
+    /// A pledit sheet WITH the edge sprites is unchanged: the side insets are the
+    /// edge widths exactly as before, so `interiorRect(skin:)` matches the legacy
+    /// geometry-only result for a fully-cut frame.
+    func testInteriorRectSideInsetUnchangedWhenEdgeSpritesPresent() {
+        let skin = makeFrameSkin(includingEdges: true)
+        XCTAssertNotNil(skin.sprite(sheet: "pledit.bmp", name: "leftEdge"))
+        XCTAssertNotNil(skin.sprite(sheet: "pledit.bmp", name: "rightEdge"))
+
+        let r = PlaylistWindowComposer.interiorRect(width: 350, height: 250, skin: skin)
+        XCTAssertEqual(r.x, 25) // left edge width
+        XCTAssertEqual(r.y, 20)
+        XCTAssertEqual(r.w, 350 - 25 - 20)
+        XCTAssertEqual(r.h, 250 - 20 - 38)
+    }
+
     // MARK: - Helpers
 
     /// A synthetic pledit frame skin (solid sprites at nominal sizes) so compose
-    /// succeeds for the interiorRect cross-check.
-    private func makeFrameSkin() -> Skin {
+    /// succeeds for the interiorRect cross-check. When `includingEdges` is false the
+    /// left/right EDGE sprites are omitted, modelling a sheet that has the corners /
+    /// fills cut but no side edges — exactly the case the inset gating must handle.
+    private func makeFrameSkin(includingEdges: Bool = true) -> Skin {
         guard let rects = SpriteCoordinates.playlistWindow["pledit.bmp"] else {
             fatalError("pledit.bmp coordinates missing")
         }
         var sheet: [String: DecodedBitmap] = [:]
         for rect in rects {
+            if !includingEdges, rect.name == "leftEdge" || rect.name == "rightEdge" {
+                continue
+            }
             let pixels = [UInt8](repeating: 128, count: rect.width * rect.height * 4)
             sheet[rect.name] = DecodedBitmap(width: rect.width, height: rect.height, pixels: pixels)
         }

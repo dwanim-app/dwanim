@@ -47,7 +47,7 @@ public func drawPlaylistTrackList(
     skinHeight: Int,
     scale: Int
 ) {
-    let interior = PlaylistWindowComposer.interiorRect(width: skinWidth, height: skinHeight)
+    let interior = PlaylistWindowComposer.interiorRect(width: skinWidth, height: skinHeight, skin: skin)
     guard interior.w > 0, interior.h > 0 else { return }
 
     let rowHeight = PlaylistTextStyle.rowHeight

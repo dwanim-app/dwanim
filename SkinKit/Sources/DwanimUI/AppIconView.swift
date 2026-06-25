@@ -59,6 +59,22 @@ public struct AppIconView: View {
         let strokeWidth = side * Self.strokeFraction
         let markInset = side * Self.markInsetFraction
 
+        // Optically centre the mark on its ACTUAL inked bounds, not the nominal
+        // 100x100 box. `DwennimmenMark.fitTransform` (used by the mark stroke and
+        // the dot) centres the nominal box, but the inked content (horns + dot)
+        // sits in the upper part of that box, so box-centring leaves more empty
+        // plate below the horns than above. Shift the whole mark by the inked
+        // centroid offset, converted from design units into the mark frame's
+        // points: the mark+dot ZStack is framed at `plateSide` (square), and
+        // `fitTransform` fits the 100x100 design box as the largest centred square,
+        // so one design unit maps to `plateSide / designSize` points here.
+        let markScale = plateSide / DwennimmenMark.designSize
+        let centring = DwennimmenMark.inkedCentringOffset
+        let markOffset = CGSize(
+            width: centring.width * markScale,
+            height: centring.height * markScale
+        )
+
         ZStack {
             // The plate: a SOLID dark gradient (deep indigo -> teal, the brand
             // backdrop), NOT a material. A thin gold edge stroke and a soft gold
@@ -83,7 +99,9 @@ public struct AppIconView: View {
                 }
                 .frame(width: plateSide, height: plateSide)
 
-            // The mark: gold horns + the separate gold dot, inset inside the plate.
+            // The mark: gold horns + the separate gold dot, inset inside the plate
+            // and shifted by `markOffset` so the inked content is OPTICALLY centred
+            // on the plate (see `markOffset` above) rather than nominally box-centred.
             ZStack {
                 DwennimmenMark()
                     .stroke(
@@ -97,6 +115,7 @@ public struct AppIconView: View {
                 dot
             }
             .frame(width: plateSide, height: plateSide)
+            .offset(markOffset)
             .padding(markInset)
         }
         .frame(width: side, height: side)
