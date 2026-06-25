@@ -110,6 +110,15 @@ final class ClassicSkinPresenter {
     /// host's View menu consults to enable the Playlist / Equalizer toggles.
     private var loadedSkin: Skin?
 
+    /// File-URL DROP handler routed onto every hosted classic window (main /
+    /// playlist / EQ) via the `ScaledImageView` drop hook, so dropping files onto
+    /// ANY classic window opens them through the same app drop path as the default
+    /// scene. Set by the host (`AudioSession`) after construction (the handler
+    /// captures the session, which is not available at the presenter's init). `nil`
+    /// until set — then windows register for `.fileURL` dragging; before it is set
+    /// they do not (harmless, since it is set immediately after init).
+    var onFileDrop: (([URL]) -> Void)?
+
     /// Per-window handles (controller + window) of the three-window cluster. Each is
     /// held while its window is open (so it is not deallocated for the window's
     /// lifetime) and dropped on that window's own close (the `onClose` callback), so
@@ -181,6 +190,16 @@ final class ClassicSkinPresenter {
         panel.message = "Choose a skin archive (.wsz) to apply."
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        recordAndOpen(url: url)
+    }
+
+    // MARK: Open Skin… (the drop flow)
+
+    /// Open a `.wsz` skin DROPPED onto a window. A drop grants sandbox access to the
+    /// URL for this launch exactly like an open-panel pick, so this is the same
+    /// record-then-open flow `presentOpenPanel` uses — mint + persist the `.lastSkin`
+    /// bookmark while the drop grant is live, then load + host the classic window.
+    func openDropped(url: URL) {
         recordAndOpen(url: url)
     }
 
@@ -305,7 +324,10 @@ final class ClassicSkinPresenter {
                 // classic windows survive). The controller is NOT installed as the
                 // app's NSApplicationDelegate.
                 terminatesAppOnClose: false,
-                onClose: { [weak self] in self?.mainHandle = nil }
+                onClose: { [weak self] in self?.mainHandle = nil },
+                // Route a file drop onto this classic main window through the same
+                // app drop handler as the default scene.
+                onFileDrop: onFileDrop
             )
         } catch {
             presentLoadFailure(error)
@@ -322,7 +344,8 @@ final class ClassicSkinPresenter {
                 scale: ClassicSkinPresenter.scale,
                 title: ClassicSkinPresenter.playlistWindowTitle,
                 terminatesAppOnClose: false,
-                onClose: { [weak self] in self?.playlistHandle = nil }
+                onClose: { [weak self] in self?.playlistHandle = nil },
+                onFileDrop: onFileDrop
             )
         } catch {
             presentLoadFailure(error)
@@ -341,7 +364,8 @@ final class ClassicSkinPresenter {
                 scale: ClassicSkinPresenter.scale,
                 title: ClassicSkinPresenter.eqWindowTitle,
                 terminatesAppOnClose: false,
-                onClose: { [weak self] in self?.eqHandle = nil }
+                onClose: { [weak self] in self?.eqHandle = nil },
+                onFileDrop: onFileDrop
             )
         } catch {
             presentLoadFailure(error)
