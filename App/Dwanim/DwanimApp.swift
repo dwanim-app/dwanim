@@ -224,6 +224,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return !session.isAnyClassicWindowOpen
     }
 
+    /// Dock-reopen / app-reactivation guard (P2-6, one-face-at-a-time). AppKit's
+    /// default reopen behaviour re-fronts a hidden window when the user clicks the
+    /// Dock icon or reactivates the app — which would un-hide the default `Window`
+    /// that the classic-skin presenter `orderOut`-ed, leaving BOTH faces visible at
+    /// once. So while a classic window is open we return `false` (do NOT let AppKit
+    /// un-hide / re-front the default window); when no classic window is open the
+    /// default IS the face, so we return `true` and normal reopen proceeds.
+    ///
+    /// Reads the SAME `session.isAnyClassicWindowOpen` signal that drives
+    /// `applicationShouldTerminateAfterLastWindowClosed`. No session yet
+    /// (pre-`.onAppear`) means no classic window, so normal reopen is allowed.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        return !(session?.isAnyClassicWindowOpen ?? false)
+    }
+
     /// Genuine termination: tear the shared session down exactly once (feed off,
     /// security scope released, hosted classic cluster closed). This is the ONLY
     /// teardown trigger — no window-disappear path stops the session.
