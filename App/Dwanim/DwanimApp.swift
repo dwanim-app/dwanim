@@ -68,10 +68,15 @@ struct DwanimApp: App {
                 // a mix does both, unsupported types are ignored — minting +
                 // persisting a security-scoped bookmark per file exactly as the open
                 // panels do (a drop grants sandbox access just like a panel pick).
-                // Returning `true` accepts the drop; an empty/unsupported drop is a
-                // harmless no-op inside the handler.
+                // Filter to file URLs only (matching the AppKit ScaledImageView
+                // path's `urlReadingFileURLsOnly: true`): a dragged web link is not a
+                // file and must be rejected. Return `true` only when at least one file
+                // URL survives the filter, so the acceptance value is honest; a
+                // non-file / empty drop returns `false` and never reaches the handler.
                 .dropDestination(for: URL.self) { urls, _ in
-                    session.handleDroppedURLs(urls)
+                    let files = urls.filter(\.isFileURL)
+                    guard !files.isEmpty else { return false }
+                    session.handleDroppedURLs(files)
                     return true
                 }
                 // Start the feed + launch-resolve (once per process) when the window
