@@ -93,23 +93,33 @@ public enum EQWindowLayout {
         case band(Int)
     }
 
-    /// The slider whose column is nearest the skin-space `x`, or `nil` when `x`
-    /// is farther than the hit width from EVERY column. Each slider's column is
-    /// its thumb's top-left x (`preampSliderX` / `bandSliderXs`); a click anywhere
-    /// within `hitHalfWidth` of a column counts as that slider (so a near-miss on
-    /// the thumb still grabs it). The half-width is the thumb's own half-width but
-    /// never more than half the inter-column spacing, so neighbouring band columns
-    /// never both claim the same x — the nearer one always wins.
+    /// The slider whose DRAWN THUMB is nearest the skin-space `x`, or `nil` when
+    /// `x` is farther than the hit half-width from EVERY thumb. The compositor
+    /// (`EQWindowComposer`) blits each thumb with its TOP-LEFT x AT the slider's
+    /// column (`preampSliderX` / `bandSliderXs`), so the VISIBLE thumb spans
+    /// `[columnX, columnX + thumbWidth)` and its DRAWN CENTRE is `columnX +
+    /// thumbWidth/2`. This routine compares `x` against each thumb's DRAWN CENTRE
+    /// (not its top-left column), so the hit region is centred on the visible thumb
+    /// — clicking anywhere over the thumb, including its right half, grabs it. This
+    /// mirrors the Y-axis centre compensation the drag uses (`skinY -
+    /// thumbHeight/2`). A click within `hitHalfWidth` of a centre counts as that
+    /// slider (so a near-miss still grabs it). The half-width is the thumb's own
+    /// half-width but never more than half the inter-column spacing, so
+    /// neighbouring band thumbs never both claim the same x — the nearer one wins.
     public static func slider(atSkinX x: Int) -> EQSlider? {
         // Hit half-width: cover the thumb body, but never reach past the midpoint
-        // to the next column (bands are `bandSliderSpacing` apart).
+        // to the next thumb (bands are `bandSliderSpacing` apart).
         let half = Swift.min(thumbWidth / 2, bandSliderSpacing / 2)
+        let drawnCentreOffset = thumbWidth / 2
 
-        // Find the nearest column among preamp + the ten bands; reject if it is
-        // beyond the hit half-width.
+        // Find the thumb whose DRAWN CENTRE is nearest `x` among preamp + the ten
+        // bands; reject if it is beyond the hit half-width.
         var best: (slider: EQSlider, distance: Int)?
         func consider(_ slider: EQSlider, columnX: Int) {
-            let distance = abs(x - columnX)
+            // Compare against the thumb's DRAWN CENTRE (top-left column + half the
+            // thumb width), matching the composer's top-left blit.
+            let centreX = columnX + drawnCentreOffset
+            let distance = abs(x - centreX)
             if best == nil || distance < best!.distance {
                 best = (slider, distance)
             }

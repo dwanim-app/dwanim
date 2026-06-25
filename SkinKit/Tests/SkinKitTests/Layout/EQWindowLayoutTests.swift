@@ -336,16 +336,95 @@ final class EQWindowLayoutTests: XCTestCase {
             "far right of every column is nil")
     }
 
-    /// The midpoint between the preamp column and the first band column resolves
-    /// to whichever is genuinely nearer (a defined, non-ambiguous tie-break), and
-    /// every resolved column is one of the eleven sliders.
+    /// A point over the first band thumb (but not the preamp's) resolves to the
+    /// band, and a point over the preamp thumb resolves to the preamp — a defined,
+    /// non-ambiguous nearest-DRAWN-thumb tie-break. The hit region is centred on
+    /// each thumb's DRAWN centre (`column + thumbWidth/2`), so the in-thumb sample
+    /// points use that centre rather than the bare top-left column.
     func testSliderResolutionPicksNearestColumn() {
-        // A point closer to the first band than to the preamp picks the band.
-        let preamp = EQWindowLayout.preampSliderX
-        let band0 = EQWindowLayout.bandSliderXs[0]
-        let nearerBand = band0 - 1
-        XCTAssertEqual(EQWindowLayout.slider(atSkinX: nearerBand), .band(0))
-        // A point right on the preamp picks preamp.
-        XCTAssertEqual(EQWindowLayout.slider(atSkinX: preamp), .preamp)
+        let offset = hitThumbWidth / 2
+        let preampCentre = EQWindowLayout.preampSliderX + offset
+        let band0Centre = EQWindowLayout.bandSliderXs[0] + offset
+        // A point on band 0's drawn thumb (nearer band 0 than the preamp) -> band 0.
+        XCTAssertEqual(EQWindowLayout.slider(atSkinX: band0Centre), .band(0))
+        // A point on the preamp's drawn thumb -> preamp.
+        XCTAssertEqual(EQWindowLayout.slider(atSkinX: preampCentre), .preamp)
+    }
+
+    // MARK: - slider(atSkinX:) hit region is centred on the DRAWN thumb
+    //
+    // The composer (`EQWindowComposer`) blits each thumb with its TOP-LEFT x AT
+    // the column, so the VISIBLE thumb spans `[columnX, columnX + thumbWidth)` and
+    // its DRAWN CENTRE is `columnX + thumbWidth/2`. The hit region must be centred
+    // on that drawn centre (matching the y-axis centre compensation in `applyGain`,
+    // which uses `skinY - thumbHeight/2`), so clicking anywhere over the visible
+    // thumb — including its right half — grabs that thumb, not the neighbour.
+
+    private var hitThumbWidth: Int { eqSpriteSize("sliderThumb")?.width ?? 14 }
+
+    /// A click on the VISIBLE CENTRE of band i's thumb (`bandSliderXs[i] +
+    /// thumbWidth/2`) resolves to that band.
+    func testSliderAtBandVisibleCentreResolvesToBand() {
+        for (index, columnX) in EQWindowLayout.bandSliderXs.enumerated() {
+            let visibleCentre = columnX + hitThumbWidth / 2
+            XCTAssertEqual(
+                EQWindowLayout.slider(atSkinX: visibleCentre), .band(index),
+                "visible centre x \(visibleCentre) should resolve to band \(index)")
+        }
+    }
+
+    /// The VISIBLE LEFT edge of band i's thumb (`bandSliderXs[i]`) and its VISIBLE
+    /// RIGHT edge (`bandSliderXs[i] + thumbWidth - 1`) both resolve to band i — not
+    /// nil and not the neighbour. The right edge is the case that misfired before
+    /// the centre-on-drawn-thumb fix.
+    func testSliderAtBandVisibleEdgesResolveToBand() {
+        for (index, columnX) in EQWindowLayout.bandSliderXs.enumerated() {
+            let leftEdge = columnX
+            let rightEdge = columnX + hitThumbWidth - 1
+            XCTAssertEqual(
+                EQWindowLayout.slider(atSkinX: leftEdge), .band(index),
+                "visible left edge x \(leftEdge) should resolve to band \(index)")
+            XCTAssertEqual(
+                EQWindowLayout.slider(atSkinX: rightEdge), .band(index),
+                "visible right edge x \(rightEdge) should resolve to band \(index)")
+        }
+    }
+
+    /// A click on the VISIBLE CENTRE / LEFT / RIGHT edge of the PREAMP thumb
+    /// resolves to the preamp slider.
+    func testSliderAtPreampVisibleExtentResolvesToPreamp() {
+        let columnX = EQWindowLayout.preampSliderX
+        for x in [columnX, columnX + hitThumbWidth / 2, columnX + hitThumbWidth - 1] {
+            XCTAssertEqual(
+                EQWindowLayout.slider(atSkinX: x), .preamp,
+                "preamp visible extent x \(x) should resolve to preamp")
+        }
+    }
+
+    /// A point between two adjacent band thumbs resolves to the NEARER thumb (by
+    /// their DRAWN centres), never the farther one. A point one px on band i's side
+    /// of the inter-centre midpoint picks band i; one px on band i+1's side picks
+    /// band i+1 — provided it is still within a thumb's hit half-width of that
+    /// centre (the hit region is centred on the drawn thumb).
+    func testSliderInGapBetweenThumbsResolvesToNearer() {
+        let columns = EQWindowLayout.bandSliderXs
+        let offset = hitThumbWidth / 2
+        let centreA = columns[0] + offset
+        let centreB = columns[1] + offset
+        // A point just inside band 0's hit region (right portion of its thumb) is
+        // nearer band 0 than band 1 -> band 0; symmetrically for band 1's left
+        // portion -> band 1. Both sit on their own thumb, not in the dead gap.
+        let half = Swift.min(hitThumbWidth / 2, EQWindowLayout.bandSliderSpacing / 2)
+        let nearA = centreA + half        // band 0's far (right) hit boundary
+        let nearB = centreB - half        // band 1's near (left) hit boundary
+        XCTAssertEqual(
+            EQWindowLayout.slider(atSkinX: nearA), .band(0),
+            "x \(nearA) is nearer band 0's drawn centre -> band 0")
+        XCTAssertEqual(
+            EQWindowLayout.slider(atSkinX: nearB), .band(1),
+            "x \(nearB) is nearer band 1's drawn centre -> band 1")
+        // And neither resolves to the FARTHER neighbour.
+        XCTAssertNotEqual(EQWindowLayout.slider(atSkinX: nearA), .band(1))
+        XCTAssertNotEqual(EQWindowLayout.slider(atSkinX: nearB), .band(0))
     }
 }
