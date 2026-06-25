@@ -27,15 +27,17 @@ import UniformTypeIdentifiers
 // driven by the SwiftUI App lifecycle rather than an AppKit window controller.
 //
 // ## Security-scope lifetime (documented)
-// A file is playable only inside an open security scope. We keep ONE scope open
-// for the *currently loaded* file (the "session scope"): `beginSession(for:)`
-// calls `startAccessingSecurityScopedResource()` once and stashes the URL; the
-// scope stays open while that file is loaded/playing/paused, and is closed
-// (matching `stopAccessing…`) only when we replace it with another file or the
-// app quits (`endSession()`). Short, self-contained touches (minting a bookmark
-// at open time) use the transient `withAccess` bracket instead. This avoids
-// re-opening/closing the scope on every transport tick while still keeping the
-// bracket balanced.
+// A file is playable only inside an open security scope. We keep scopes open for
+// the *currently loaded playlist* (the "session scopes"): `beginSession(for:)`
+// takes the loaded URLs, calls `startAccessingSecurityScopedResource()` once per
+// URL, and stashes each (with whether it actually opened a scope). The scopes
+// stay open while that playlist is loaded — so the playlist window can select +
+// play ANY queued track, not just the first — and are closed (matching
+// `stopAccessing…`) only when we replace the playlist or the app quits
+// (`endSession()`). A single-file open is just a one-element playlist. Short,
+// self-contained touches (minting a bookmark at open time) use the transient
+// `withAccess` bracket instead. This avoids re-opening/closing scopes on every
+// transport tick while still keeping every bracket balanced.
 @MainActor
 final class AudioSession {
 
@@ -70,14 +72,14 @@ final class AudioSession {
     private let latestSamples = SpectrumFeed()
     private var redrawLoop: RedrawLoop?
 
-    /// The URL whose security scope is currently held open for the session, or
-    /// `nil` when no file is loaded, paired with whether the matching
-    /// `startAccessingSecurityScopedResource()` actually opened a scope. We only
-    /// issue the balancing `stop…` when it did — mirroring the `withAccess`
-    /// bracket discipline (don't decrement a scope another owner holds, e.g. the
-    /// live panel grant for a freshly-picked URL). See the lifetime note above.
-    private var sessionScopedURL: URL?
-    private var sessionScopeDidStart = false
+    /// The URLs whose security scopes are currently held open for the session
+    /// (the loaded playlist — one element for a single-file open), each paired with
+    /// whether the matching `startAccessingSecurityScopedResource()` actually opened
+    /// a scope. We only issue the balancing `stop…` for the ones that did — mirroring
+    /// the `withAccess` bracket discipline (don't decrement a scope another owner
+    /// holds, e.g. the live panel grant for a freshly-picked URL). Empty when nothing
+    /// is loaded. See the lifetime note above.
+    private var sessionScopes: [(url: URL, didStart: Bool)] = []
 
     /// Whether `start()` has run without a matching `stop()`. Guards against a
     /// second window's `.onAppear` double-starting the shared `@State` session
@@ -151,9 +153,9 @@ final class AudioSession {
         started = false
         redrawLoop?.stop()
         endSession()
-        // Close any hosted classic window too, so a hosted window never outlives
-        // the session that drives it.
-        classicSkin.closeCurrentWindow()
+        // Close every hosted classic window (main + playlist + EQ) too, so a hosted
+        // window never outlives the session that drives it.
+        classicSkin.closeAllWindows()
     }
 
     // MARK: Open Skin…
@@ -165,6 +167,35 @@ final class AudioSession {
     /// window).
     func presentOpenSkinPanel() {
         classicSkin.presentOpenPanel()
+    }
+
+    // MARK: View menu (Playlist / Equalizer toggles)
+
+    /// Whether a classic skin is currently loaded — i.e. whether the View-menu
+    /// Playlist / Equalizer toggles can host anything. The SwiftUI `.commands`
+    /// reads this to gate (and, when absent, redirect to "Open Skin…") those items.
+    var isSkinLoaded: Bool { classicSkin.isSkinLoaded }
+
+    /// Toggle the hosted classic PLAYLIST window. When no skin is loaded yet, fall
+    /// back to presenting "Open Skin…" (the playlist is a face of a loaded skin, so
+    /// there is nothing to show without one) — the menu item stays usable rather
+    /// than dead.
+    func togglePlaylistWindow() {
+        guard classicSkin.isSkinLoaded else {
+            classicSkin.presentOpenPanel()
+            return
+        }
+        classicSkin.togglePlaylistWindow()
+    }
+
+    /// Toggle the hosted classic EQ window. Same no-skin fallback as the playlist
+    /// toggle (present "Open Skin…" when nothing is loaded yet).
+    func toggleEQWindow() {
+        guard classicSkin.isSkinLoaded else {
+            classicSkin.presentOpenPanel()
+            return
+        }
+        classicSkin.toggleEQWindow()
     }
 
     // MARK: One tick (the feed)
@@ -180,97 +211,134 @@ final class AudioSession {
 
     // MARK: Open + play
 
-    /// Show an NSOpenPanel filtered to audio files; on pick, record + play.
+    /// Show an NSOpenPanel filtered to audio files, allowing MULTIPLE selection; on
+    /// pick, record the whole selection as the ordered playlist + play it.
     ///
-    /// The panel itself grants access to the picked URL for this launch, so we
-    /// can mint a bookmark from it directly (a transient `withAccess` bracket
-    /// guards the mint). We persist that bookmark as `.lastAudio`, then open the
-    /// long-lived session scope and load + play.
+    /// The panel grants access to the picked URLs for this launch, so we can mint a
+    /// bookmark per file directly (a transient `withAccess` bracket guards each
+    /// mint). We persist them as the ordered `PersistedBookmarks.playlist` (and keep
+    /// `.lastAudio` pointing at the first file for coherence), then open the
+    /// long-lived session scopes and load + play the whole queue.
     func presentOpenPanel() {
         let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = AudioSession.audioContentTypes
         panel.prompt = "Open"
-        panel.message = "Choose an audio file to play."
+        panel.message = "Choose one or more audio files to play."
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        openAndPlay(url: url)
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        guard !urls.isEmpty else { return }
+        openAndPlay(urls: urls)
     }
 
-    /// Record `url` as the last audio (minting + persisting its bookmark), open
-    /// the session scope, then load and play it.
-    private func openAndPlay(url: URL) {
-        // Mint + persist the bookmark while the panel grant is live. The transient
-        // bracket is belt-and-suspenders: the panel already grants access, but
-        // bracketing the mint keeps the contract uniform.
-        var current = store.load()
-        do {
-            current = try access.withAccess(to: url) {
-                try resolver.record(url: url, as: .lastAudio, in: current)
-            }
-            store.save(current)
-        } catch {
-            // Minting failed (vanished file / missing entitlement). We can still
-            // play this launch's pick (the panel grant is live), it just will not
-            // be remembered across relaunch. Fall through to play.
-        }
-
-        beginSession(for: url)
-        core.load([trackForURL(url)])
+    /// Record `urls` as the ordered playlist (minting + persisting a bookmark per
+    /// file, plus the first as `.lastAudio` for coherence), open the session scopes,
+    /// then load the queue and play from the top.
+    ///
+    /// ## `.lastAudio` vs the playlist (coherence)
+    /// The playlist SUPERSEDES the single `.lastAudio` slot: whenever we open a
+    /// selection we also re-point `.lastAudio` at the first file, so the two never
+    /// disagree, and launch-resolve prefers the playlist (falling back to
+    /// `.lastAudio` only when the playlist is empty — e.g. a store written by an
+    /// older build). The single-file open is just a one-element playlist.
+    private func openAndPlay(urls: [URL]) {
+        recordPlaylist(urls)
+        beginSession(for: urls)
+        core.load(urls.map(trackForURL))
         core.play()
+    }
+
+    /// Mint a bookmark per `url` (each inside its own live panel-grant bracket) and
+    /// persist them as the ordered playlist, plus re-point `.lastAudio` at the first
+    /// file. A per-file mint failure simply drops that file from the persisted
+    /// playlist (it still plays THIS launch via the session scope); a file with no
+    /// bookmark just won't reopen on the next launch.
+    private func recordPlaylist(_ urls: [URL]) {
+        var current = store.load()
+        var playlistData: [Data] = []
+        for url in urls {
+            // Belt-and-suspenders bracket: the panel already grants access, but
+            // bracketing the mint keeps the contract uniform with the resolve path.
+            if let data = try? access.withAccess(to: url, perform: {
+                try access.bookmarkData(for: url)
+            }) {
+                playlistData.append(data)
+            }
+        }
+        current.setPlaylist(playlistData)
+        // Keep the single-slot `.lastAudio` coherent with the playlist head.
+        if let first = urls.first {
+            current = (try? access.withAccess(to: first) {
+                try resolver.record(url: first, as: .lastAudio, in: current)
+            }) ?? current
+        }
+        store.save(current)
     }
 
     // MARK: Launch resolve
 
-    /// On launch: resolve the `.lastAudio` bookmark; if it yields a URL, open its
-    /// session scope and load it **ready/paused** (do NOT auto-play), so the app
-    /// reopens the last song across launches. Persist the store if the resolver
-    /// refreshed (stale re-mint) or dropped (failed resolve) the entry.
+    /// On launch: reopen the last session **ready/paused** (do NOT auto-play). The
+    /// ordered PLAYLIST is preferred — if it resolves to one or more URLs we open
+    /// their session scopes and load the whole queue. When the playlist is empty
+    /// (e.g. a store written by an older single-file build) we fall back to the
+    /// `.lastAudio` slot. Either way the store is persisted when the resolver
+    /// refreshed (stale re-mint) or dropped (failed resolve) anything.
     private func resolveLastAudioOnLaunch() {
         let loaded = store.load()
-        let resolution = resolver.resolve(role: .lastAudio, in: loaded)
 
-        // The resolver hands back a possibly-updated store; write it back only
-        // when it actually changed (refresh/drop), per the resolver's contract.
+        // Prefer the playlist.
+        let playlist = resolver.resolvePlaylist(in: loaded)
+        if !playlist.urls.isEmpty {
+            if playlist.store != loaded {
+                store.save(playlist.store)
+            }
+            beginSession(for: playlist.urls)
+            // Load (selects index 0) WITHOUT play: the scene shows the reopened
+            // first title and a ready transport until the user presses play.
+            core.load(playlist.urls.map(trackForURL))
+            return
+        }
+
+        // No playlist — fall back to the single `.lastAudio` slot. Resolve over the
+        // playlist's possibly-updated store so a playlist drop is not lost.
+        let resolution = resolver.resolve(role: .lastAudio, in: playlist.store)
         if resolution.store != loaded {
             store.save(resolution.store)
         }
-
         guard let url = resolution.url else { return }
-        beginSession(for: url)
-        // Load (selects index 0) WITHOUT play: the scene shows the reopened title
-        // and an empty/ready transport until the user presses play.
+        beginSession(for: [url])
         core.load([trackForURL(url)])
     }
 
     // MARK: Session scope lifetime
 
-    /// Open the long-lived security scope for `url`, closing any previously held
-    /// session scope first (so we never leak a scope across a file replacement).
-    private func beginSession(for url: URL) {
+    /// Open the long-lived security scopes for `urls` (the loaded playlist; one
+    /// element for a single-file open), closing any previously held session scopes
+    /// first (so we never leak scopes across a playlist replacement). Holding a
+    /// scope for EVERY queued file — not just the first — is what lets the playlist
+    /// window select + play any track under the sandbox.
+    private func beginSession(for urls: [URL]) {
         endSession()
-        // Start the scope for the duration the file is loaded. For a URL freshly
-        // picked in this launch this may return `false` (already accessible);
-        // stash that result so `endSession` issues a balancing stop only when we
-        // truly opened a scope here. The resolved-from-bookmark case is the one
-        // that returns `true` and needs the matching stop.
-        let didStart = url.startAccessingSecurityScopedResource()
-        sessionScopedURL = url
-        sessionScopeDidStart = didStart
+        // Start each scope for the duration the playlist is loaded. For a URL
+        // freshly picked in this launch this may return `false` (already
+        // accessible); stash that result so `endSession` issues a balancing stop
+        // only when we truly opened a scope. The resolved-from-bookmark case is the
+        // one that returns `true` and needs the matching stop.
+        sessionScopes = urls.map { url in
+            (url: url, didStart: url.startAccessingSecurityScopedResource())
+        }
     }
 
-    /// Close the held session security scope, if any. Idempotent. Only issues the
-    /// balancing `stop…` when `beginSession` actually started a scope.
+    /// Close every held session security scope, if any. Idempotent. Only issues the
+    /// balancing `stop…` for the scopes `beginSession` actually started.
     private func endSession() {
-        if let url = sessionScopedURL {
-            if sessionScopeDidStart {
-                url.stopAccessingSecurityScopedResource()
-            }
-            sessionScopedURL = nil
-            sessionScopeDidStart = false
+        for scope in sessionScopes where scope.didStart {
+            scope.url.stopAccessingSecurityScopedResource()
         }
+        sessionScopes = []
     }
 
     // MARK: Helpers

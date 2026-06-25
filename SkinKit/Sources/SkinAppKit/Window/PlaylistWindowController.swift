@@ -63,13 +63,21 @@ public final class PlaylistWindowController: SkinWindowController {
     /// `core.currentIndex`. `nil` until the user clicks a row.
     private var selectedRow: Int?
 
-    public init(core: PlayerCore, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int) {
+    public init(
+        core: PlayerCore,
+        skin: Skin,
+        scale: Int,
+        skinWidth: Int,
+        skinHeight: Int,
+        terminatesAppOnClose: Bool = true,
+        onClose: (() -> Void)? = nil
+    ) {
         self.core = core
         self.skin = skin
         self.scale = scale
         self.skinWidth = skinWidth
         self.skinHeight = skinHeight
-        super.init()
+        super.init(terminatesAppOnClose: terminatesAppOnClose, onClose: onClose)
     }
 
     public func attach(view: PlaylistContentView) {

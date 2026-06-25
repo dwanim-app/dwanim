@@ -34,12 +34,21 @@ public struct EQWindowHandle {
 ///
 /// `title` is the window's title-bar text (a host-supplied label; NO brand name
 /// is invented here).
+///
+/// `terminatesAppOnClose` defaults to `true` — the original single-window CLI
+/// harness behavior (closing the window quits the process). A larger host (the
+/// real app) passes `false` so closing this hosted window only tears it down and
+/// fires `onClose` (e.g. to drop the host's retained handle) without quitting the
+/// app. In the hosted (`false`) mode the host must NOT install the returned
+/// controller as `NSApp.delegate`.
 @discardableResult
 public func showEQWindow(
     skin: Skin,
     core: PlayerCore,
     scale: Int,
-    title: String
+    title: String,
+    terminatesAppOnClose: Bool = true,
+    onClose: (() -> Void)? = nil
 ) throws -> EQWindowHandle {
     let eq = core.equalizer
     guard let base = EQWindowComposer.compose(
@@ -54,7 +63,10 @@ public func showEQWindow(
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
     let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
 
-    let controller = EQController(skin: skin, core: core, view: contentView, scale: scale)
+    let controller = EQController(
+        skin: skin, core: core, view: contentView, scale: scale,
+        terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
+    )
 
     let window = NSWindow(
         contentRect: contentRect,

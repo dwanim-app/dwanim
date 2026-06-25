@@ -47,12 +47,19 @@ public final class EQController: SkinWindowController {
     /// on the ON button or empty face, and cleared on mouse-up.
     private var draggingSlider: EQWindowLayout.EQSlider?
 
-    public init(skin: Skin, core: PlayerCore, view: ScaledImageView, scale: Int) {
+    public init(
+        skin: Skin,
+        core: PlayerCore,
+        view: ScaledImageView,
+        scale: Int,
+        terminatesAppOnClose: Bool = true,
+        onClose: (() -> Void)? = nil
+    ) {
         self.skin = skin
         self.core = core
         self.view = view
         self.scale = scale
-        super.init()
+        super.init(terminatesAppOnClose: terminatesAppOnClose, onClose: onClose)
 
         // Mouse-down is a fresh gesture (isDown: true); a drag continues it
         // (isDown: false). The shared view's clickCount is ignored here (the EQ

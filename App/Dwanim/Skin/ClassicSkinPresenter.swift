@@ -23,19 +23,46 @@ import UniformTypeIdentifiers
 //     machinery lives (`AudioSession`). The pure resolve/record policy stays in
 //     `BookmarkResolver`; the platform calls stay in `SecurityScopedFileAccess` /
 //     `BookmarkStore`.
-//   - The window CONSTRUCTION + the live controller live one tier down, in
-//     `SkinAppKit` (`showInteractiveWindow`). This presenter just calls it with
-//     `terminatesAppOnClose: false` so closing the classic window tears it down
-//     and drops the handle WITHOUT quitting the app (the default scene survives).
+//   - The window CONSTRUCTION + the live controllers live one tier down, in
+//     `SkinAppKit` (`showInteractiveWindow` / `showPlaylistWindow` /
+//     `showEQWindow`). This presenter just calls them with
+//     `terminatesAppOnClose: false` so closing a classic window tears it down and
+//     drops that window's handle WITHOUT quitting the app (the default scene and
+//     the other classic windows survive).
+//
+// ## The three-window CLUSTER
+// A single loaded skin drives a cluster of up to THREE classic windows — the MAIN
+// window, the PLAYLIST window, and the EQ window — all built from the SAME loaded
+// `Skin` and driven by the SAME shared `PlayerCore`. The presenter keeps:
+//   - the loaded `skin` (so the playlist / EQ windows can be opened on demand, and
+//     so an "Open Skin…" re-skin can rebuild any open window with the new skin),
+//   - one independent handle per window (`mainHandle` / `playlistHandle` /
+//     `eqHandle`), each held while its window is open and dropped on that window's
+//     own close. Closing one window does NOT close the others or quit the app.
+// The main window opens immediately when a skin is applied; the playlist and EQ
+// windows are TOGGLED open/closed by the host (the View menu).
+//
+// ## Re-skin strategy (Open Skin… with windows already open)
+// Opening a NEW skin while windows are open RE-SKINS the cluster: the presenter
+// records which windows are currently open (main is always open after a load; the
+// playlist / EQ open-state is captured first), tears every open window down, swaps
+// in the new `skin`, then REBUILDS each window that was open — same shared core,
+// new skin bitmaps. This is simpler and more robust than mutating a live
+// controller's skin in place (the controllers cache composed geometry derived from
+// the old skin), and it keeps one construction path. Window position is not
+// preserved across a re-skin (each rebuilt window re-centers) — an acceptable
+// trade for this increment.
 //
 // ## Shared core
 // The shared `PlayerCore` (and the engine's opt-in PCM-tap / format sources) are
-// injected from `AudioSession`, so the classic window and the default scene are
-// two faces of ONE transport: pressing play in either drives the same playback.
+// injected from `AudioSession`, so every classic window and the default scene are
+// faces of ONE transport: pressing play in any of them drives the same playback,
+// and dragging an EQ band changes the SAME audio (the EQ controller pushes to the
+// shared core, which drives the real `AVAudioUnitEQ`).
 //
 // ## Security-scope lifetime
 // The skin file is only read at OPEN time (decoded into memory once; the live
-// window draws from the in-memory `Skin`, never re-reading the archive). So,
+// windows draw from the in-memory `Skin`, never re-reading the archive). So,
 // unlike the audio session, NO long-lived skin scope is held — the transient
 // `withAccess` bracket around the load is sufficient. The freshly-picked panel
 // URL is already accessible for this launch; the bracket re-arms the grant for a
@@ -62,21 +89,31 @@ final class ClassicSkinPresenter {
     private let store: BookmarkStore
     private let resolver: BookmarkResolver
 
-    /// The live classic-window handle (controller + window) while one is open, held
-    /// so it is not deallocated for the window's lifetime. Dropped on close (the
-    /// `onClose` callback) so reopening builds a fresh one. `nil` when no classic
-    /// window is open.
-    private var handle: InteractiveWindowHandle?
+    /// The currently-loaded skin, kept so the playlist / EQ windows can be opened
+    /// on demand and so an "Open Skin…" re-skin can rebuild any open window with the
+    /// new bitmaps. `nil` until the first successful load. Its presence is what the
+    /// host's View menu consults to enable the Playlist / Equalizer toggles.
+    private var loadedSkin: Skin?
 
-    /// Integer zoom for the hosted classic window. Matches the harness's default
-    /// `--interactive --scale 2` so the in-app window reads at the same size as the
-    /// dev path.
+    /// Per-window handles (controller + window) of the three-window cluster. Each is
+    /// held while its window is open (so it is not deallocated for the window's
+    /// lifetime) and dropped on that window's own close (the `onClose` callback), so
+    /// reopening builds a fresh one. Closing one leaves the others untouched.
+    private var mainHandle: InteractiveWindowHandle?
+    private var playlistHandle: PlaylistWindowHandle?
+    private var eqHandle: EQWindowHandle?
+
+    /// Integer zoom for the hosted classic windows. Matches the harness's default
+    /// `--scale 2` so the in-app windows read at the same size as the dev path.
     private static let scale = 2
 
-    /// The hosted classic window's title-bar text used ONLY when a skin declares
-    /// no custom region (the titled-fallback path). A neutral, brand-free label —
-    /// the skin filename is NOT used (filenames may carry third-party brand names).
-    private static let windowTitle = "Skin"
+    /// The hosted classic windows' title-bar text used on the titled-fallback path
+    /// (and for the playlist / EQ windows, which are always titled). Neutral,
+    /// brand-free labels — the skin filename is NOT used (filenames may carry
+    /// third-party brand names).
+    private static let mainWindowTitle = "Skin"
+    private static let playlistWindowTitle = "Playlist"
+    private static let eqWindowTitle = "Equalizer"
 
     /// The content types the open panel accepts. A `.wsz` skin archive has no
     /// system-declared UTI (this app deliberately does NOT claim it as a document
@@ -174,10 +211,20 @@ final class ClassicSkinPresenter {
         // resolution.url is deliberately NOT acted on — see the doc comment.
     }
 
+    // MARK: Cluster state (read by the host's View menu)
+
+    /// Whether a skin is currently loaded — i.e. whether the Playlist / Equalizer
+    /// toggles can do anything. The host's View menu reads this to enable/disable
+    /// (or gate) those commands.
+    var isSkinLoaded: Bool { loadedSkin != nil }
+
     // MARK: Window hosting
 
-    /// Load the skin at `url` (inside its security scope) and host the classic main
-    /// window driven by the shared core. Replaces any window already open.
+    /// Load the skin at `url` (inside its security scope), remember it, and host the
+    /// cluster. The MAIN window always (re)opens; if a playlist / EQ window was open
+    /// under the previous skin it is RE-SKINNED (rebuilt with the new skin), so
+    /// "Open Skin…" swaps the whole visible cluster to the new look. Leaves any
+    /// existing windows untouched on a load failure.
     private func openWindow(for url: URL) {
         let skin: Skin
         do {
@@ -187,7 +234,7 @@ final class ClassicSkinPresenter {
             }
         } catch {
             // Could not read / decode the skin (vanished file, malformed archive).
-            // Surface a non-fatal alert and leave any existing window untouched.
+            // Surface a non-fatal alert and leave any existing windows untouched.
             presentLoadFailure(error)
             return
         }
@@ -200,41 +247,140 @@ final class ClassicSkinPresenter {
             return
         }
 
-        // Close any window already open before building a new one, so reopening a
-        // skin never stacks two classic windows on the one shared core.
-        closeCurrentWindow()
+        // Re-skin: capture which auxiliary windows are open BEFORE tearing the old
+        // cluster down, so we can rebuild exactly those with the new skin. (The main
+        // window is always (re)opened after a load.)
+        let hadPlaylist = playlistHandle != nil
+        let hadEQ = eqHandle != nil
 
+        // Close any windows already open before building new ones, so reopening a
+        // skin never stacks two clusters on the one shared core.
+        closeAllWindows()
+
+        loadedSkin = skin
+        openMainWindow(skin: skin)
+        if hadPlaylist { openPlaylistWindow(skin: skin) }
+        if hadEQ { openEQWindow(skin: skin) }
+    }
+
+    /// Build the classic MAIN window from `skin`, driven by the shared core, and
+    /// hold its handle. A failure surfaces an alert and leaves the handle `nil`.
+    private func openMainWindow(skin: Skin) {
         // Normalize an empty-polygon region to nil (same as the harness path).
         let region = skin.region.flatMap { $0.polygons.isEmpty ? nil : $0 }
-
         do {
-            handle = try showInteractiveWindow(
+            mainHandle = try showInteractiveWindow(
                 skin: skin,
                 core: core,
                 tap: tap,
                 format: format,
                 region: region,
                 scale: ClassicSkinPresenter.scale,
-                title: ClassicSkinPresenter.windowTitle,
-                // HOSTED mode: closing the classic window tears it down + drops our
-                // handle WITHOUT quitting the app (the default scene survives). The
-                // controller is NOT installed as the app's NSApplicationDelegate.
+                title: ClassicSkinPresenter.mainWindowTitle,
+                // HOSTED mode: closing this window tears it down + drops just this
+                // handle WITHOUT quitting the app (the default scene + the other
+                // classic windows survive). The controller is NOT installed as the
+                // app's NSApplicationDelegate.
                 terminatesAppOnClose: false,
-                onClose: { [weak self] in self?.handle = nil }
+                onClose: { [weak self] in self?.mainHandle = nil }
             )
         } catch {
             presentLoadFailure(error)
-            return
         }
     }
 
-    /// Programmatically close the currently-hosted classic window, if any. Closing
-    /// the window triggers `windowWillClose` → `tearDown()` → our `onClose`, which
-    /// nils the handle; we proactively nil it here too so the path is idempotent.
-    func closeCurrentWindow() {
-        guard let handle else { return }
-        self.handle = nil
-        handle.window.close()
+    /// Build the classic PLAYLIST window from `skin`, driven by the shared core, and
+    /// hold its handle. A failure surfaces an alert and leaves the handle `nil`.
+    private func openPlaylistWindow(skin: Skin) {
+        do {
+            playlistHandle = try showPlaylistWindow(
+                skin: skin,
+                core: core,
+                scale: ClassicSkinPresenter.scale,
+                title: ClassicSkinPresenter.playlistWindowTitle,
+                terminatesAppOnClose: false,
+                onClose: { [weak self] in self?.playlistHandle = nil }
+            )
+        } catch {
+            presentLoadFailure(error)
+        }
+    }
+
+    /// Build the classic EQ window from `skin`, driven by the shared core, and hold
+    /// its handle. A failure surfaces an alert and leaves the handle `nil`. The EQ
+    /// controller pushes slider / preamp / ON gestures straight to the SHARED core,
+    /// so moving a band changes the SAME playing audio.
+    private func openEQWindow(skin: Skin) {
+        do {
+            eqHandle = try showEQWindow(
+                skin: skin,
+                core: core,
+                scale: ClassicSkinPresenter.scale,
+                title: ClassicSkinPresenter.eqWindowTitle,
+                terminatesAppOnClose: false,
+                onClose: { [weak self] in self?.eqHandle = nil }
+            )
+        } catch {
+            presentLoadFailure(error)
+        }
+    }
+
+    // MARK: Playlist / EQ toggles (the View menu)
+
+    /// Toggle the PLAYLIST window: close it if open, else open it (when a skin is
+    /// loaded). A no-op when no skin is loaded — the host gates the command on
+    /// `isSkinLoaded`, but this guards the path defensively too.
+    func togglePlaylistWindow() {
+        if playlistHandle != nil {
+            closePlaylistWindow()
+        } else if let skin = loadedSkin {
+            openPlaylistWindow(skin: skin)
+        }
+    }
+
+    /// Toggle the EQ window: close it if open, else open it (when a skin is loaded).
+    /// A no-op when no skin is loaded.
+    func toggleEQWindow() {
+        if eqHandle != nil {
+            closeEQWindow()
+        } else if let skin = loadedSkin {
+            openEQWindow(skin: skin)
+        }
+    }
+
+    // MARK: Programmatic close
+
+    /// Close the hosted playlist window, if any. Closing routes through
+    /// `windowWillClose` → `tearDown()` → our `onClose` (which nils the handle); we
+    /// proactively nil it here too so the path is idempotent.
+    private func closePlaylistWindow() {
+        guard let playlistHandle else { return }
+        self.playlistHandle = nil
+        playlistHandle.window.close()
+    }
+
+    /// Close the hosted EQ window, if any. Idempotent (see `closePlaylistWindow`).
+    private func closeEQWindow() {
+        guard let eqHandle else { return }
+        self.eqHandle = nil
+        eqHandle.window.close()
+    }
+
+    /// Close the hosted main window, if any. Idempotent (see `closePlaylistWindow`).
+    private func closeMainWindow() {
+        guard let mainHandle else { return }
+        self.mainHandle = nil
+        mainHandle.window.close()
+    }
+
+    /// Close EVERY hosted classic window (the whole cluster). Used on app teardown
+    /// and before a re-skin so a hosted window never outlives the session that
+    /// drives it. The loaded skin is intentionally KEPT (a re-skin replaces it; a
+    /// teardown does not need to clear it).
+    func closeAllWindows() {
+        closeMainWindow()
+        closePlaylistWindow()
+        closeEQWindow()
     }
 
     // MARK: Failure UI
