@@ -14,7 +14,8 @@ let package = Package(
         .library(name: "PlayerControl", targets: ["PlayerControl"]),
         .library(name: "PlaybackKit", targets: ["PlaybackKit"]),
         .library(name: "SpectrumKit", targets: ["SpectrumKit"]),
-        .library(name: "DwanimUI", targets: ["DwanimUI"])
+        .library(name: "DwanimUI", targets: ["DwanimUI"]),
+        .library(name: "SkinAppKit", targets: ["SkinAppKit"])
     ],
     targets: [
         .target(name: "SkinKit"),
@@ -48,12 +49,23 @@ let package = Package(
             name: "DwanimUITests",
             dependencies: ["DwanimUI", "PlayerCore"]
         ),
+        // The reusable AppKit tier (same platform tier as the harness: AppKit is
+        // allowed here). Holds the window-controller base, the shared scaled
+        // mouse/scroll-forwarding view, the region-mask layer, the CGImage
+        // bridge, and the redraw-loop/tap wiring.
+        .target(
+            name: "SkinAppKit",
+            dependencies: [
+                "SkinKit", "SkinRender", "PlayerCore",
+                "SpectrumKit"
+            ]
+        ),
         .executableTarget(
             name: "SkinHarness",
             dependencies: [
                 "SkinKit", "SkinKitImageIO", "SkinRender",
                 "PlayerCore", "PlayerControl", "PlaybackKit", "SpectrumKit",
-                "DwanimUI"
+                "DwanimUI", "SkinAppKit"
             ]
         )
     ]

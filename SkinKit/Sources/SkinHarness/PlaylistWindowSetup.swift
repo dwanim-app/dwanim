@@ -2,6 +2,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import PlayerCore
+import SkinAppKit
 import SkinKit
 import SkinRender
 

@@ -3,6 +3,7 @@ import DwanimUI
 import Foundation
 import PlaybackKit
 import PlayerCore
+import SkinAppKit
 import SpectrumKit
 import SwiftUI
 
@@ -72,32 +73,6 @@ private func parseDefaultSkinArguments(_ argv: [String]) -> DefaultSkinArguments
     return DefaultSkinArguments(audioPaths: positionals, scale: scale)
 }
 
-// MARK: - Latest-samples holder
-
-/// Lock-guarded handoff of the most recent mono frame + sample rate from the
-/// audio render thread to the main-thread redraw timer. Identical contract to
-/// the one in `InteractiveMode`: the tap does the minimum (stash + return) and
-/// the main thread reads the latest snapshot and runs the FFT. Kept local so the
-/// default-skin path is self-contained.
-private final class DefaultSkinLatestSamples {
-    private let lock = NSLock()
-    private var samples: [Float] = []
-    private var sampleRate: Double = 44_100
-
-    func store(_ samples: [Float], sampleRate: Double) {
-        lock.lock()
-        self.samples = samples
-        self.sampleRate = sampleRate
-        lock.unlock()
-    }
-
-    func latest() -> (samples: [Float], sampleRate: Double) {
-        lock.lock()
-        defer { lock.unlock() }
-        return (samples, sampleRate)
-    }
-}
-
 // MARK: - Controller
 
 /// Owns the live default-skin window: the core, the view-model, the hosting
@@ -105,13 +80,16 @@ private final class DefaultSkinLatestSamples {
 /// observes `core` + `model`; this controller only feeds the model (clock +
 /// levels) and tears down on close.
 @MainActor
-private final class DefaultSkinController: NSObject, NSWindowDelegate, NSApplicationDelegate {
+private final class DefaultSkinController: SkinWindowController {
     private let core: PlayerCore
     private let model: PlayerViewModel
-    private let tap: AudioTapProviding?
     private let analyzer: SpectrumAnalyzer
-    private let latestSamples = DefaultSkinLatestSamples()
-    private var timer: Timer?
+    private let latestSamples = SpectrumFeed()
+
+    /// The shared redraw cadence + audio-tap wiring (timer + tap install / remove
+    /// + the `SpectrumFeed` write). Built in `init`, started by `start()`, stopped
+    /// by `tearDown()`.
+    private var redrawLoop: RedrawLoop?
 
     /// Number of spectrum bars in the default-skin row. A small fixed count
     /// reads well in the compact bar (the SwiftUI row lays them out to fit);
@@ -121,35 +99,26 @@ private final class DefaultSkinController: NSObject, NSWindowDelegate, NSApplica
     init(core: PlayerCore, model: PlayerViewModel, tap: AudioTapProviding?) {
         self.core = core
         self.model = model
-        self.tap = tap
         self.analyzer = SpectrumAnalyzer(barCount: DefaultSkinController.barCount)
         super.init()
-    }
 
-    /// Install the PCM tap (audio thread: stash only) and start the main-thread
-    /// timer that copies the engine clock into the model and runs the analyzer.
-    func start() {
-        tap?.installTap { [weak self] samples, sampleRate in
-            // AUDIO THREAD: minimum work — stash and return.
-            self?.latestSamples.store(samples, sampleRate: sampleRate)
-        }
-
-        tick()
-        // ~22 Hz: smooth enough for the spectrum and progress without burning
-        // the main thread. Scheduled on .common so it keeps firing during
-        // window interaction.
-        let timer = Timer(timeInterval: 0.045, repeats: true) { [weak self] _ in
+        // ~22 Hz: smooth enough for the spectrum and progress without burning the
+        // main thread. The per-tick work is `@MainActor`; the shared loop fires it
+        // on the main run loop, so `assumeIsolated` is sound (same pattern the
+        // controller used before the lift).
+        redrawLoop = RedrawLoop(
+            interval: 0.045,
+            tap: tap,
+            feed: latestSamples
+        ) { [weak self] in
             MainActor.assumeIsolated { self?.tick() }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
-    /// Stop the timer and remove the tap. Safe if nothing was installed.
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-        tap?.removeTap()
+    /// Install the PCM tap and start the main-thread timer that copies the engine
+    /// clock into the model and runs the analyzer (both via the shared loop).
+    func start() {
+        redrawLoop?.start()
     }
 
     // MARK: One tick
@@ -163,15 +132,17 @@ private final class DefaultSkinController: NSObject, NSWindowDelegate, NSApplica
         model.levels = analyzer.process(snapshot.samples, sampleRate: snapshot.sampleRate)
     }
 
-    // MARK: NSWindowDelegate / NSApplicationDelegate
+    // MARK: Teardown
 
-    func windowWillClose(_ notification: Notification) {
-        stop()
-        NSApp.terminate(nil)
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+    /// The window is closing — stop the redraw loop (invalidate the timer + remove
+    /// the tap) before the base terminates the app.
+    nonisolated override func tearDown() {
+        // `redrawLoop?.stop()` only touches the loop's own (Sendable) state; hop
+        // is unnecessary, but the property is main-actor-isolated, so read it
+        // through an assumeIsolated to match the controller's isolation.
+        MainActor.assumeIsolated {
+            redrawLoop?.stop()
+        }
     }
 }
 

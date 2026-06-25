@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SkinAppKit
 import SkinKit
 import SkinKitImageIO
 import SkinRender
@@ -221,34 +222,15 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
         )
     }
 
-    let window: NSWindow
-    if let maskLayer {
-        // Shaped window: borderless + non-opaque + clear background so the area
-        // outside the region's layer mask reads through as transparent. The
-        // CONTENT image is unchanged (opaque); only the LAYER is masked.
-        window = NSWindow(
-            contentRect: contentRect,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.isMovableByWindowBackground = true
-
-        // Layer-back the content view and shape it with the region mask.
-        contentView.wantsLayer = true
-        contentView.layer?.mask = maskLayer
-    } else {
-        window = NSWindow(
-            contentRect: contentRect,
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "SkinHarness"
-    }
-    window.contentView = contentView
+    // The shared region-window builder applies the borderless/masked vs titled
+    // chrome decision: a shaped window stays opaque in content but is clipped by
+    // the CAShapeLayer mask; a no-region skin gets a plain titled window.
+    let window = RegionWindowBuilder.make(
+        contentRect: contentRect,
+        contentView: contentView,
+        maskLayer: maskLayer,
+        title: "SkinHarness"
+    )
     window.center()
     window.makeKeyAndOrderFront(nil)
 
