@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0F5299D82396056287980A67 /* AudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42196D23635D065291ADA673 /* AudioSession.swift */; };
+		117F5CF21A5950E99A22744C /* ClassicSkinPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B50FE2ECA9379586E036A054 /* ClassicSkinPresenter.swift */; };
 		1A872E1C7758508AC25295F6 /* SkinKitImageIO in Frameworks */ = {isa = PBXBuildFile; productRef = B35DD9637D19648C6E7A871E /* SkinKitImageIO */; };
 		1BB07527180C7AAA7DE03766 /* SecurityScopedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F22CCE9EAFA140B45BA9B2A /* SecurityScopedFileAccess.swift */; };
 		4D80099A55F1BB5A98B428E9 /* SkinRender in Frameworks */ = {isa = PBXBuildFile; productRef = 402F1482654F073DA91C010B /* SkinRender */; };
@@ -31,6 +32,7 @@
 		9ADBE284454A849116DA747C /* DwanimApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwanimApp.swift; sourceTree = "<group>"; };
 		9F22CCE9EAFA140B45BA9B2A /* SecurityScopedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityScopedFileAccess.swift; sourceTree = "<group>"; };
 		B372398582F21D8A9194195D /* Dwanim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dwanim.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B50FE2ECA9379586E036A054 /* ClassicSkinPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassicSkinPresenter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,8 +96,17 @@
 				02899A6937EFCD7E5A08EF1D /* Audio */,
 				16745F0B380FDE20C93C1D2E /* Platform */,
 				D217A1573C506892A433F497 /* Resources */,
+				C0481E8D494CED2CE4B74920 /* Skin */,
 			);
 			path = Dwanim;
+			sourceTree = "<group>";
+		};
+		C0481E8D494CED2CE4B74920 /* Skin */ = {
+			isa = PBXGroup;
+			children = (
+				B50FE2ECA9379586E036A054 /* ClassicSkinPresenter.swift */,
+			);
+			path = Skin;
 			sourceTree = "<group>";
 		};
 		D217A1573C506892A433F497 /* Resources */ = {
@@ -196,6 +207,7 @@
 			files = (
 				0F5299D82396056287980A67 /* AudioSession.swift in Sources */,
 				7D59B480B8E16C4EBAB9BD90 /* BookmarkStore.swift in Sources */,
+				117F5CF21A5950E99A22744C /* ClassicSkinPresenter.swift in Sources */,
 				93E6E4C510810A5BE07A292D /* DwanimApp.swift in Sources */,
 				1BB07527180C7AAA7DE03766 /* SecurityScopedFileAccess.swift in Sources */,
 			);

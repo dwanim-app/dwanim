@@ -17,8 +17,10 @@ import SwiftUI
 //     `session.core` (transport state + actions) and `session.model` (live clock
 //     + spectrum). The in-scene transport buttons drive the core directly.
 //
-// What this increment does NOT do (those land in 6b): no `.wsz` classic-skin
-// windows. NO brand words appear anywhere in the UI text.
+// The default scene stays the app's PRIMARY window. "Open Skin…" (⌘⇧O) is an
+// ADDITIVE path: it hosts the classic `.wsz` MAIN window as an extra window
+// driven by the same shared core (see ClassicSkinPresenter); closing that window
+// does NOT quit the app. NO brand words appear anywhere in the UI text.
 @main
 struct DwanimApp: App {
 
@@ -37,13 +39,21 @@ struct DwanimApp: App {
         }
         .windowResizability(.contentMinSize)
         .commands {
-            // Replace the standard "New" item with the app's open-audio command,
-            // so ⌘O / File ▸ Open Audio… presents the NSOpenPanel.
+            // Replace the standard "New" item with the app's open commands, so
+            // File ▸ Open Audio… (⌘O) presents the audio NSOpenPanel and
+            // File ▸ Open Skin… (⌘⇧O) presents the .wsz skin panel that hosts the
+            // classic main window (driven by the same shared core; closing it does
+            // NOT quit the app).
             CommandGroup(replacing: .newItem) {
                 Button("Open Audio…") {
                     session.presentOpenPanel()
                 }
                 .keyboardShortcut("o", modifiers: [.command])
+
+                Button("Open Skin…") {
+                    session.presentOpenSkinPanel()
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
     }

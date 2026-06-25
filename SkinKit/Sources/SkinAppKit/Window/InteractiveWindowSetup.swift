@@ -37,6 +37,13 @@ public struct InteractiveWindowHandle {
 /// the caller). `tap` / `format` are the engine's opt-in PCM-tap and
 /// format-fact sources. `title` is the titled-fallback window's title-bar text
 /// (a host-supplied label; NO brand name is invented here).
+///
+/// `terminatesAppOnClose` defaults to `true` — the original single-window CLI
+/// harness behavior (closing the window quits the process). A larger host (the
+/// real app) passes `false` so closing this hosted window only tears it down and
+/// fires `onClose` (e.g. to drop the host's retained handle) without quitting the
+/// app. In the hosted (`false`) mode the host must NOT install the returned
+/// controller as `NSApp.delegate`.
 @discardableResult
 public func showInteractiveWindow(
     skin: Skin,
@@ -45,7 +52,9 @@ public func showInteractiveWindow(
     format: TrackFormatProviding?,
     region: SkinRegion?,
     scale: Int,
-    title: String
+    title: String,
+    terminatesAppOnClose: Bool = true,
+    onClose: (() -> Void)? = nil
 ) throws -> InteractiveWindowHandle {
     // Compose an initial frame just to size the window (the controller will keep
     // it updated).
@@ -75,7 +84,8 @@ public func showInteractiveWindow(
     // the window then routes through `windowWillClose` → `tearDown()` (timer + tap
     // teardown) → clean app termination.
     let controller = InteractiveController(
-        skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format
+        skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format,
+        terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
     )
 
     // The shared region-window builder applies the same borderless/masked vs

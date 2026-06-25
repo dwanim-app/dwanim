@@ -57,6 +57,13 @@ final class AudioSession {
     private let store: BookmarkStore
     private let resolver: BookmarkResolver
 
+    /// The optional classic `.wsz` skin window coordinator. It drives the SAME
+    /// shared `core` (and the same engine tap/format sources + bookmark seams), so
+    /// the classic main window — when opened via "Open Skin…" — is just a second
+    /// face on this one transport. Created here so the shared dependencies are
+    /// injected once; the window itself is opened on demand.
+    private let classicSkin: ClassicSkinPresenter
+
     /// The spectrum pipeline: the lock-guarded latest-PCM box the tap writes and
     /// the analyzer the tick reads it through, plus the shared redraw cadence.
     private let analyzer: SpectrumAnalyzer
@@ -89,10 +96,23 @@ final class AudioSession {
         self.engine = engine
         self.core = PlayerCore(engine: engine)
         self.model = PlayerViewModel()
-        self.access = SecurityScopedFileAccess()
-        self.store = BookmarkStore()
-        self.resolver = BookmarkResolver(access: access)
+        let access = SecurityScopedFileAccess()
+        let store = BookmarkStore()
+        let resolver = BookmarkResolver(access: access)
+        self.access = access
+        self.store = store
+        self.resolver = resolver
         self.analyzer = SpectrumAnalyzer(barCount: AudioSession.barCount)
+
+        // The classic-skin coordinator shares this session's transport + engine
+        // (the engine is both the PCM-tap and track-format source, exactly as the
+        // harness passes it) and the one set of bookmark seams, so "Open Skin…"
+        // hosts a classic main window driven by the SAME core the default scene
+        // plays through.
+        self.classicSkin = ClassicSkinPresenter(
+            core: core, tap: engine, format: engine,
+            access: access, store: store, resolver: resolver
+        )
 
         // The feed: install the engine's PCM tap (audio thread stashes into the
         // feed) and run a main-thread tick that copies the clock + spectrum into
@@ -117,6 +137,10 @@ final class AudioSession {
         started = true
         redrawLoop?.start()
         resolveLastAudioOnLaunch()
+        // Remember (but do NOT auto-open) the last classic skin — see
+        // ClassicSkinPresenter.resolveLastSkinOnLaunch for why auto-open is
+        // deliberately deferred.
+        classicSkin.resolveLastSkinOnLaunch()
     }
 
     /// Tear the session down on quit: stop the feed and release the session
@@ -127,6 +151,20 @@ final class AudioSession {
         started = false
         redrawLoop?.stop()
         endSession()
+        // Close any hosted classic window too, so a hosted window never outlives
+        // the session that drives it.
+        classicSkin.closeCurrentWindow()
+    }
+
+    // MARK: Open Skin…
+
+    /// Present the "Open Skin…" panel and host the picked classic `.wsz` window,
+    /// driven by THIS session's shared core. Pass-through to the classic-skin
+    /// coordinator (which owns the panel + load + window-hosting). Closing that
+    /// window does NOT quit the app (it is hosted, not the harness's single
+    /// window).
+    func presentOpenSkinPanel() {
+        classicSkin.presentOpenPanel()
     }
 
     // MARK: One tick (the feed)
