@@ -66,14 +66,24 @@ public enum PlaylistWindowComposer {
     /// `floor(view / scale)` (the inverse of the integer nearest-neighbor upscale),
     /// then clamped to the minimum. A non-positive `scale` is treated as 1 so the
     /// arithmetic never traps; a tiny / negative view size clamps to the minimum.
+    ///
+    /// A non-finite view dimension (`NaN`/`±inf`, e.g. a degenerate bounds report)
+    /// is sanitised to the minimum BEFORE the `Int` conversion — `Int(NaN
+    /// .rounded(.down))` traps. This mirrors the project's finite-guard convention
+    /// (`RegionCoverage`, `PlaybackMath`, the EQ `thumbGain`): a non-finite value
+    /// clamps to the minimum frame size, never crashes.
     public static func skinSize(
         fromViewWidth viewWidth: Double,
         viewHeight: Double,
         scale: Int
     ) -> (width: Int, height: Int) {
         let s = Double(max(1, scale))
-        let rawW = Int((viewWidth / s).rounded(.down))
-        let rawH = Int((viewHeight / s).rounded(.down))
+        let scaledW = viewWidth / s
+        let scaledH = viewHeight / s
+        // A non-finite raw value cannot be converted to Int; map it to the minimum
+        // (the `max` below leaves it at the minimum, matching tiny/negative sizes).
+        let rawW = scaledW.isFinite ? Int(scaledW.rounded(.down)) : minimumWidth
+        let rawH = scaledH.isFinite ? Int(scaledH.rounded(.down)) : minimumHeight
         return (
             width: max(rawW, minimumWidth),
             height: max(rawH, minimumHeight)

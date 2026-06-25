@@ -20,7 +20,9 @@ import SkinRender
 ///
 /// The drag math is the payoff: a view-space point becomes a skin-space point via
 /// the SAME verified flip as the main window (`ControlHitTest.skinPoint`); the
-/// skin x picks the slider column (`EQWindowLayout.slider(atSkinX:)`); the skin y,
+/// skin x AND y pick the slider column, y-gated to the thumb-travel band
+/// (`EQWindowLayout.slider(atSkinX:skinY:)`) so a press in the graph/label area
+/// does not grab a slider; the skin y,
 /// adjusted to the thumb's TOP-LEFT the same way the draw places it (cursor under
 /// the thumb's vertical centre), is inverted to a gain
 /// (`EQWindowLayout.thumbGain(forThumbTopY:)`); and that gain is pushed to
@@ -89,7 +91,11 @@ final class EQController: NSObject, NSWindowDelegate, NSApplicationDelegate {
                 redraw()
                 return
             }
-            draggingSlider = EQWindowLayout.slider(atSkinX: point.x)
+            // Y-gated: a down in the response-curve graph area (above the track) or
+            // the label area (below it) does NOT grab a slider, even though its x
+            // overlaps the band columns — only a press inside the thumb-travel band
+            // begins a drag.
+            draggingSlider = EQWindowLayout.slider(atSkinX: point.x, skinY: point.y)
         }
 
         // For a down or a drag, adjust the slider grabbed at mouse-down (if any).

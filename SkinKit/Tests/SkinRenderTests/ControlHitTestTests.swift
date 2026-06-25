@@ -222,6 +222,51 @@ final class ControlHitTestTests: XCTestCase {
         XCTAssertEqual(inner.y, 5, "y = floor((viewHeight - viewY)/scale)")
     }
 
+    // MARK: - skinPoint finite guard (non-finite input must not trap)
+    //
+    // `skinPoint` converts external Doubles (an AppKit event point, a view height)
+    // to Int via `Int((v/scale).rounded(.down))`, which TRAPS on a non-finite
+    // value (`Int(NaN.rounded(.down))` is a fatal error). A degenerate event point
+    // (NaN/±inf) must yield a sane in-range coordinate, never a crash — mirroring
+    // the project's finite-guard convention elsewhere.
+
+    /// A non-finite `viewX`, `viewY`, or `viewHeight` (NaN, +inf, -inf) returns a
+    /// sane finite skin point (0 for the affected coordinate) instead of trapping.
+    func testSkinPointWithNonFiniteInputDoesNotTrap() {
+        let viewHeight = 232.0
+        let nonFinite: [Double] = [.nan, .infinity, -.infinity]
+
+        for bad in nonFinite {
+            // Bad viewX -> x sanitised to 0; the finite y is still computed normally.
+            let px = ControlHitTest.skinPoint(
+                viewX: bad, viewY: 0, viewHeight: viewHeight, scale: 2
+            )
+            XCTAssertEqual(px.x, 0, "non-finite viewX (\(bad)) -> x 0")
+            XCTAssertEqual(px.y, 116, "the finite y is still computed (viewY 0 -> bottom)")
+
+            // Bad viewY -> y sanitised to 0; the finite x is still computed.
+            let py = ControlHitTest.skinPoint(
+                viewX: 10, viewY: bad, viewHeight: viewHeight, scale: 2
+            )
+            XCTAssertEqual(py.x, 5, "the finite x is still computed (floor(10/2))")
+            XCTAssertEqual(py.y, 0, "non-finite viewY (\(bad)) -> y 0")
+
+            // Bad viewHeight feeds the y term -> y sanitised to 0.
+            let ph = ControlHitTest.skinPoint(
+                viewX: 10, viewY: 0, viewHeight: bad, scale: 2
+            )
+            XCTAssertEqual(ph.x, 5, "x unaffected by a bad viewHeight")
+            XCTAssertEqual(ph.y, 0, "non-finite viewHeight (\(bad)) -> y 0")
+        }
+
+        // All three non-finite at once still returns a finite (0,0), no trap.
+        let all = ControlHitTest.skinPoint(
+            viewX: .nan, viewY: .infinity, viewHeight: -.infinity, scale: 2
+        )
+        XCTAssertEqual(all.x, 0)
+        XCTAssertEqual(all.y, 0)
+    }
+
     // MARK: - viewPoint (forward map; region-mask orientation guard)
 
     /// `viewPoint` is the FORWARD draw map and MUST be the exact inverse of

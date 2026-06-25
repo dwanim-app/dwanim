@@ -93,6 +93,28 @@ public enum EQWindowLayout {
         case band(Int)
     }
 
+    /// The slider whose DRAWN THUMB is nearest the skin-space `x` AND whose y is
+    /// inside the SLIDER CONTROL band, or `nil` otherwise. This is the gated
+    /// resolver the interactive drag uses on a mouse-DOWN: a press in the
+    /// response-curve graph area ABOVE the track (`skinY < sliderTrackTop`) or in
+    /// the label area BELOW it (`skinY >= sliderTrackBottom`) must NOT grab a
+    /// slider, even though its x overlaps the band columns — without this gate a
+    /// click on the graph slammed the nearest band to its clamped extreme.
+    ///
+    /// The control band is the thumb-travel region `[sliderTrackTop,
+    /// sliderTrackBottom)` (half-open): `sliderTrackTop` is the thumb's top-left y
+    /// at the top of travel and `sliderTrackBottom` is one past the last row the
+    /// thumb body can occupy, so a press anywhere a thumb can actually sit counts.
+    /// Within the band, x-resolution is delegated UNCHANGED to
+    /// `slider(atSkinX:)` (nearest drawn-thumb centre, tie-break / near-miss
+    /// identical).
+    public static func slider(atSkinX x: Int, skinY: Int) -> EQSlider? {
+        // Y-gate: only a press inside the thumb-travel band can grab a slider.
+        // Above (graph area) or below (labels) returns nil regardless of x.
+        guard skinY >= sliderTrackTop, skinY < sliderTrackBottom else { return nil }
+        return slider(atSkinX: x)
+    }
+
     /// The slider whose DRAWN THUMB is nearest the skin-space `x`, or `nil` when
     /// `x` is farther than the hit half-width from EVERY thumb. The compositor
     /// (`EQWindowComposer`) blits each thumb with its TOP-LEFT x AT the slider's
@@ -106,6 +128,12 @@ public enum EQWindowLayout {
     /// slider (so a near-miss still grabs it). The half-width is the thumb's own
     /// half-width but never more than half the inter-column spacing, so
     /// neighbouring band thumbs never both claim the same x — the nearer one wins.
+    ///
+    /// X-ONLY: this resolver has NO y component (every slider shares the same
+    /// track). The interactive drag uses the y-gated `slider(atSkinX:skinY:)` on a
+    /// mouse-DOWN so a press off the track does not grab a slider; this bare
+    /// variant remains for callers that have already established the y is on the
+    /// track (and for the column tie-break it delegates to).
     public static func slider(atSkinX x: Int) -> EQSlider? {
         // Hit half-width: cover the thumb body, but never reach past the midpoint
         // to the next thumb (bands are `bandSliderSpacing` apart).
