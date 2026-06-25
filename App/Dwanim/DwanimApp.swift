@@ -103,6 +103,16 @@ struct DwanimApp: App {
                     appDelegate.session = session
                     session.start()
                 }
+                // P2-6 (one-face-at-a-time): capture the default scene's backing
+                // NSWindow into the session at launch. A zero-size accessor view in
+                // the background reports its enclosing window up to the session, which
+                // stores it weakly so the classic-skin presenter can HIDE the default
+                // face while a classic `.wsz` main window is shown and RESTORE it when
+                // that window closes. The AppKit window-poking stays in the App target
+                // (this accessor + the session), so DwanimUI / PlayerCore stay pure.
+                .background(WindowAccessor { window in
+                    session.setDefaultWindow(window)
+                })
         }
         // P2-5: drop the title-bar strip + title text so the glass bar is
         // full-bleed to the top. The traffic lights stay (faint, working) for

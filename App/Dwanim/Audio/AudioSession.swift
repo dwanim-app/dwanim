@@ -72,6 +72,16 @@ final class AudioSession {
     private let latestSamples = SpectrumFeed()
     private var redrawLoop: RedrawLoop?
 
+    /// The default SwiftUI scene's backing `NSWindow`, captured at launch by the
+    /// `WindowAccessor` attached to the scene content (`setDefaultWindow(_:)`).
+    /// Held WEAK: SwiftUI / AppKit own the window's lifetime; this is only a
+    /// back-reference so the classic-skin presenter can HIDE the default face when
+    /// a classic `.wsz` main window is shown and RESTORE it when that window
+    /// closes. `nil` until the accessor reports it (and again if the window is
+    /// ever torn down) — every use guards for `nil`, so a not-yet-captured window
+    /// is a safe no-op (the default simply stays visible).
+    private weak var defaultWindow: NSWindow?
+
     /// The URLs whose security scopes are currently held open for the session
     /// (the loaded playlist — one element for a single-file open), each paired with
     /// whether the matching `startAccessingSecurityScopedResource()` actually opened
@@ -133,6 +143,15 @@ final class AudioSession {
             sharedFeed: latestSamples,
             access: access, store: store, resolver: resolver
         )
+
+        // ONE-FACE-AT-A-TIME (P2-6): when the classic MAIN window is shown, hide the
+        // default SwiftUI face; when the classic MAIN window closes (no classic main
+        // remains), restore it. The presenter owns the classic cluster and knows when
+        // its main window opens / closes, but the default `NSWindow` is owned here, so
+        // we hand it these two closures (captured weak to avoid a retain cycle). Both
+        // guard internally for a not-yet-captured `defaultWindow` — see the methods.
+        classicSkin.hideDefaultWindow = { [weak self] in self?.hideDefaultWindow() }
+        classicSkin.showDefaultWindow = { [weak self] in self?.showDefaultWindow() }
 
         // The feed: install the engine's PCM tap (audio thread stashes into the
         // feed) and run a main-thread tick that copies the clock + spectrum into
@@ -203,6 +222,38 @@ final class AudioSession {
         // window never outlives the session that drives it. Safe here because `stop()`
         // now runs ONLY at real app termination.
         classicSkin.closeAllWindows()
+    }
+
+    // MARK: Default-window capture + visibility (P2-6)
+
+    /// Store the default SwiftUI scene's backing `NSWindow`, reported by the
+    /// `WindowAccessor` attached to the scene content. Called (possibly more than
+    /// once) on the main actor as the accessor view settles into / re-reports its
+    /// window; storing the same reference again is harmless. Held weak — this is
+    /// only used to hide / restore the default face while a classic skin is active.
+    func setDefaultWindow(_ window: NSWindow) {
+        defaultWindow = window
+    }
+
+    /// Hide the default SwiftUI face. Called by the classic-skin presenter when the
+    /// classic MAIN window is shown (the one-face-at-a-time rule: showing a classic
+    /// skin hides the default window). `orderOut(nil)` removes the window from the
+    /// screen WITHOUT closing it (no `windowWillClose`, so the SwiftUI scene stays
+    /// alive and `applicationShouldTerminateAfterLastWindowClosed` is NOT triggered)
+    /// — `makeKeyAndOrderFront` restores it later. A no-op when the default window
+    /// has not been captured yet (`defaultWindow` nil): the default just stays
+    /// visible, no crash.
+    private func hideDefaultWindow() {
+        defaultWindow?.orderOut(nil)
+    }
+
+    /// Restore the default SwiftUI face. Called by the classic-skin presenter when
+    /// the classic MAIN window closes and no classic main remains (back to the
+    /// default face). Re-orders the captured default window to the front and makes
+    /// it key. A no-op when the default window was never captured (`defaultWindow`
+    /// nil) — no crash.
+    private func showDefaultWindow() {
+        defaultWindow?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: Open Skin…

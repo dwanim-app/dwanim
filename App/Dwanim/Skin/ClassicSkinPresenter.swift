@@ -119,6 +119,26 @@ final class ClassicSkinPresenter {
     /// they do not (harmless, since it is set immediately after init).
     var onFileDrop: (([URL]) -> Void)?
 
+    /// ONE-FACE-AT-A-TIME (P2-6): the host's hooks to HIDE / RESTORE the default
+    /// SwiftUI face as the classic MAIN window opens / closes. Tied to the MAIN
+    /// window's presence ONLY (the playlist / EQ aux windows do NOT themselves
+    /// hide / show the default — the main window is the face). Set by the host
+    /// (`AudioSession`) after construction; the default `NSWindow` they poke is
+    /// owned by the session. `nil` until set (harmless — the presenter simply does
+    /// not toggle the default), and each closure internally guards a not-yet-
+    /// captured default window.
+    ///   - `hideDefaultWindow` fires when the classic main window is SHOWN
+    ///     (`openMainWindow`), so opening / re-skinning a classic skin hides the
+    ///     default face. A re-skin (close-then-reopen the main) hides it again, so
+    ///     the default stays hidden across a re-skin.
+    ///   - `showDefaultWindow` fires when the classic main window CLOSES with no
+    ///     classic main remaining (the main `onClose` / `closeMainWindow` path), so
+    ///     dismissing the classic face restores the default — even while the
+    ///     playlist / EQ aux windows are still open (per the existing close-UX, the
+    ///     app stays alive on the cluster; the default is what the user sees again).
+    var hideDefaultWindow: (() -> Void)?
+    var showDefaultWindow: (() -> Void)?
+
     /// Per-window handles (controller + window) of the three-window cluster. Each is
     /// held while its window is open (so it is not deallocated for the window's
     /// lifetime) and dropped on that window's own close (the `onClose` callback), so
@@ -126,6 +146,14 @@ final class ClassicSkinPresenter {
     private var mainHandle: InteractiveWindowHandle?
     private var playlistHandle: PlaylistWindowHandle?
     private var eqHandle: EQWindowHandle?
+
+    /// True only while a re-skin is tearing the old cluster down to rebuild it with a
+    /// new skin (`openWindow`). It SUPPRESSES the default-window RESTORE that the main
+    /// window's close would otherwise trigger, so a re-skin (close-then-reopen the
+    /// main) keeps the default face HIDDEN throughout — no flicker of the default
+    /// window between the old and new classic main. Reset once the rebuild has
+    /// (re-)opened the main window.
+    private var isReskinning = false
 
     /// Integer zoom for the hosted classic windows. Matches the harness's default
     /// `--scale 2` so the in-app windows read at the same size as the dev path.
@@ -301,8 +329,13 @@ final class ClassicSkinPresenter {
         let hadEQ = eqHandle != nil
 
         // Close any windows already open before building new ones, so reopening a
-        // skin never stacks two clusters on the one shared core.
+        // skin never stacks two clusters on the one shared core. Suppress the
+        // default-window restore during this teardown: a re-skin closes the old main
+        // (which would otherwise restore the default) only to immediately reopen the
+        // new main, so the default must stay hidden across the swap (no flicker).
+        isReskinning = true
         closeAllWindows()
+        isReskinning = false
 
         loadedSkin = skin
         openMainWindow(skin: skin)
@@ -335,11 +368,27 @@ final class ClassicSkinPresenter {
                 // classic windows survive). The controller is NOT installed as the
                 // app's NSApplicationDelegate.
                 terminatesAppOnClose: false,
-                onClose: { [weak self] in self?.mainHandle = nil },
+                // ONE-FACE-AT-A-TIME (P2-6): when the classic MAIN window CLOSES,
+                // drop its handle and — unless this is a re-skin teardown (the main is
+                // about to be rebuilt) — RESTORE the default face. This single funnel
+                // catches BOTH close paths: a user-driven window close AND a
+                // programmatic `closeMainWindow()` (which calls `window.close()`,
+                // routing through `windowWillClose` → here). `makeKeyAndOrderFront` is
+                // idempotent, so a doubled close is harmless.
+                onClose: { [weak self] in
+                    guard let self else { return }
+                    self.mainHandle = nil
+                    if !self.isReskinning { self.showDefaultWindow?() }
+                },
                 // Route a file drop onto this classic main window through the same
                 // app drop handler as the default scene.
                 onFileDrop: onFileDrop
             )
+            // The classic MAIN window is now the active face: HIDE the default
+            // SwiftUI window (the one-face-at-a-time rule). Only after a SUCCESSFUL
+            // show — on the `catch` path the main window did not open, so the default
+            // stays visible. A no-op if the default window was never captured.
+            hideDefaultWindow?()
         } catch {
             presentLoadFailure(error)
         }

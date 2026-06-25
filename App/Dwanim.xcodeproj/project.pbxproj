@@ -13,6 +13,7 @@
 		1BB07527180C7AAA7DE03766 /* SecurityScopedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F22CCE9EAFA140B45BA9B2A /* SecurityScopedFileAccess.swift */; };
 		4D80099A55F1BB5A98B428E9 /* SkinRender in Frameworks */ = {isa = PBXBuildFile; productRef = 402F1482654F073DA91C010B /* SkinRender */; };
 		6264CE17A1146108001B747F /* DwanimUI in Frameworks */ = {isa = PBXBuildFile; productRef = FAE4FD42A3ECB95C2FDC47B8 /* DwanimUI */; };
+		6FC1F5A065BC78ECD32F2D56 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8330E9DE56ADB97C981AD6 /* WindowAccessor.swift */; };
 		7CCCFB75B2987CBF785E2F07 /* PlaybackKit in Frameworks */ = {isa = PBXBuildFile; productRef = 91A7130925802FC0808F876C /* PlaybackKit */; };
 		7D59B480B8E16C4EBAB9BD90 /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D885E3D515E5E6E02F18D42 /* BookmarkStore.swift */; };
 		807E14E77A1013C2225D7CF3 /* PlayerCore in Frameworks */ = {isa = PBXBuildFile; productRef = F9B5E65CCC7DBB6000372F4C /* PlayerCore */; };
@@ -26,6 +27,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1C8330E9DE56ADB97C981AD6 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		42196D23635D065291ADA673 /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
 		530416ADFB480F7677F537D2 /* SkinKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SkinKit; path = ../SkinKit; sourceTree = SOURCE_ROOT; };
 		7D885E3D515E5E6E02F18D42 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
@@ -96,6 +98,7 @@
 			isa = PBXGroup;
 			children = (
 				9ADBE284454A849116DA747C /* DwanimApp.swift */,
+				1C8330E9DE56ADB97C981AD6 /* WindowAccessor.swift */,
 				02899A6937EFCD7E5A08EF1D /* Audio */,
 				16745F0B380FDE20C93C1D2E /* Platform */,
 				D217A1573C506892A433F497 /* Resources */,
@@ -214,6 +217,7 @@
 				C4C99CFDCE26CC1C2D1CA621 /* DropRouter.swift in Sources */,
 				93E6E4C510810A5BE07A292D /* DwanimApp.swift in Sources */,
 				1BB07527180C7AAA7DE03766 /* SecurityScopedFileAccess.swift in Sources */,
+				6FC1F5A065BC78ECD32F2D56 /* WindowAccessor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
