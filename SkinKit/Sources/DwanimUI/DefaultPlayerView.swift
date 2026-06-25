@@ -49,6 +49,13 @@ public struct DefaultPlayerView: View {
     /// rule as `onOpenAudio` (`session.presentOpenSkinPanel()`).
     private let onOpenSkin: (() -> Void)?
 
+    /// The definite compact width of the dock-bar panel (excluding the scene's
+    /// gradient margin). A fixed width — not a min/ideal/max range — so the
+    /// scene's `fittingSize` is compact and the window opens hugging the panel
+    /// rather than stretching to a flexible maximum. ~580 reads as a balanced
+    /// dock-bar (the progress bar + spectrum are well proportioned).
+    static let compactWidth: CGFloat = 580
+
     /// Whether the queue list is shown below the now-playing row. Collapsed by
     /// default so the bar opens as the compact dock-bar; expanding it grows the
     /// window taller (the scene does not hard-cap height).
@@ -104,12 +111,15 @@ public struct DefaultPlayerView: View {
             }
         }
         .padding(16)
-        // P2-3 (width cap): bound the bar's width so it opens as a compact,
-        // balanced dock-bar instead of stretching to ~870px. Under the app's
-        // `.windowResizability(.contentSize)` the `idealWidth` (580) drives the
-        // opening width; the user can still drag between `minWidth` (440) and
-        // `maxWidth` (720). At ~580 the progress bar + spectrum read proportioned.
-        .frame(minWidth: 440, idealWidth: 580, maxWidth: 720)
+        // P2-3 / P2-5 (width cap, redo): pin the bar to a DEFINITE compact width so
+        // it opens as a balanced dock-bar instead of stretching wide. A definite
+        // width (rather than min/ideal/max) is what makes the scene's `fittingSize`
+        // compact: under `.windowResizability(.contentSize)`, a flexible
+        // `maxWidth` frame resolves its fitting size to the MAX (the window opened
+        // ~780pt wide), whereas a fixed width opens exactly here. At
+        // `Self.compactWidth` the progress bar + spectrum read proportioned. Height
+        // stays content-driven (the queue grows the window taller, P2-1).
+        .frame(width: Self.compactWidth)
         .background {
             // The glass panel: a translucent material in a rounded rect with a
             // subtle white-ish stroke. The colourful backdrop lives behind the
