@@ -61,6 +61,18 @@ public final class PlayerCore {
     public var repeatMode: RepeatMode = .off
     public var isShuffle: Bool = false
 
+    /// The authoritative 10-band graphic-equalizer state. Defaults to flat and
+    /// disabled (a perfect pass-through). Mutated only through `setEQEnabled`,
+    /// `setEQPreamp`, and `setEQBand`, each of which also mirrors the new state
+    /// to the engine (see `setEqualizer`), exactly how `setVolume` flows.
+    ///
+    /// Settable directly (e.g. to restore a saved preset) and the `didSet`
+    /// mirror keeps the engine in sync; the named mutators are the clamping,
+    /// bounds-checked path a UI control should prefer.
+    public var equalizer: EQState = EQState() {
+        didSet { pushEqualizerToEngine() }
+    }
+
     // MARK: - Derived state
 
     /// Current playback position in seconds, delegated to the engine.
@@ -236,6 +248,44 @@ public final class PlayerCore {
         engine.volume = clamped
     }
 
+    // MARK: - Equalizer
+
+    /// Turn the equalizer on or off and mirror the change to the engine. When
+    /// disabled the engine passes audio through unchanged regardless of the
+    /// gains, so toggling does not lose the dialed-in band/preamp values.
+    public func setEQEnabled(_ enabled: Bool) {
+        equalizer.enabled = enabled
+    }
+
+    /// Set the preamp gain in dB (clamped to `EQState.gainRange`) and mirror the
+    /// change to the engine. Non-finite values are ignored (no-op).
+    public func setEQPreamp(_ dB: Double) {
+        equalizer.setPreamp(dB)
+    }
+
+    /// Set band `index`'s gain in dB (clamped to `EQState.gainRange`) and mirror
+    /// the change to the engine. An out-of-range index or a non-finite value is
+    /// a guarded no-op.
+    public func setEQBand(_ index: Int, dB: Double) {
+        equalizer.setBand(index, dB: dB)
+    }
+
+    /// Replace the whole equalizer state at once (e.g. to apply a preset) and
+    /// mirror it to the engine.
+    public func setEqualizer(_ state: EQState) {
+        equalizer = state
+    }
+
+    /// Mirror the current equalizer state to the engine, if the injected engine
+    /// opts in to `AudioEqualizing`. This is the EQ analogue of how `setVolume`
+    /// writes through to `engine.volume`: `PlayerCore` stays pure and never
+    /// touches audio frameworks — it just hands the platform-neutral `EQState`
+    /// to whatever sink the engine exposes. An engine that does not conform
+    /// silently no-ops (EQ is opt-in, like the tap).
+    private func pushEqualizerToEngine() {
+        (engine as? AudioEqualizing)?.applyEqualizer(equalizer)
+    }
+
     /// Select a playlist index (bounds-checked) and play it. Out-of-range is a
     /// guarded no-op.
     public func select(_ index: Int) {
@@ -285,6 +335,10 @@ public final class PlayerCore {
                 // two cannot silently diverge across a track change (a real
                 // engine may reset volume when it swaps the underlying file).
                 engine.volume = volume
+                // Likewise re-apply the equalizer: the concrete engine re-wires
+                // its graph on load, so push the authoritative EQ state through
+                // again to keep the DSP in sync across a track change.
+                pushEqualizerToEngine()
                 currentIndex = cursor
                 loadedIndex = cursor
                 engine.play()

@@ -45,6 +45,7 @@ private let usage = "Usage: SkinHarness <path.wsz> [--png <out.png>] [--scale N]
     + "\n   or: SkinHarness --play <audiofile>"
     + "\n   or: SkinHarness --interactive <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
     + "\n   or: SkinHarness --playlist <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
+    + "\n   or: SkinHarness --eq <skin.wsz> <audiofile> [<audiofile>...] [--scale N]"
     + "\n   or: SkinHarness --default-skin <audiofile> [<audiofile>...] [--scale N]"
 
 private func parseArguments(_ argv: [String]) -> Arguments {
@@ -280,6 +281,23 @@ if CommandLine.arguments.contains("--playlist-snapshot") {
 // `runPlaylistMode` never returns (it drives the run loop).
 if CommandLine.arguments.contains("--playlist") {
     MainActor.assumeIsolated { runPlaylistMode() }
+}
+
+// EQ snapshot: `--eq-snapshot <skin.wsz> <out.png>` composes the equalizer face
+// at a representative curve + ON state and writes it to a PNG offscreen (no
+// window, no run loop, no audio). Dispatched before `--eq` so it is matched as
+// its own subcommand. `runEQSnapshotMode` never returns.
+if CommandLine.arguments.contains("--eq-snapshot") {
+    runEQSnapshotMode()
+}
+
+// EQ mode: `--eq <skin.wsz> <audiofile>...` opens the classic equalizer window
+// for a skin, wired to a live `PlayerCore` so dragging a slider drives the real
+// `AVAudioUnitEQ` (the sound changes). It is handled in `EQMode.swift`; dispatch
+// here before skin-path parsing so its positional audio files are not mistaken
+// for extra `.wsz` arguments. `runEQMode` never returns (it drives the run loop).
+if CommandLine.arguments.contains("--eq") {
+    runEQMode()
 }
 
 // Default-skin mode: `--default-skin <audiofile>...` opens the app's OWN

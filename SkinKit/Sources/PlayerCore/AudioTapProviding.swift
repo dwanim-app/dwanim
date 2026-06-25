@@ -17,6 +17,14 @@ import Foundation
 /// - Note: Samples are mono `Float`. The callback fires on an audio render
 ///   thread; the consumer is responsible for thread-hopping before touching UI
 ///   or main-actor state.
+/// - Note: The PCM the tap delivers is captured POST-EQ but PRE-(mixer-output)
+///   volume — i.e. it reflects the equalizer's effect but NOT the volume fader.
+///   This is INTENTIONAL visualizer behavior: a spectrum/graph reacts to EQ
+///   changes (so a boost visibly lifts those bars) yet stays independent of the
+///   volume control (so turning the volume down does not flatten the display).
+///   Do not "fix" the graph to read the post-volume signal — that would regress
+///   this deliberate contract. See `AVAudioEnginePlayer`'s tap (it sits on the
+///   mixer input, before `outputVolume`).
 public protocol AudioTapProviding: AnyObject {
     /// Install a tap that delivers downmixed mono PCM as audio flows.
     ///

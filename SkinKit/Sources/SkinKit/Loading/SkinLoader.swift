@@ -33,19 +33,26 @@ public enum SkinLoader {
 
     // MARK: - Sprites
 
-    /// Cuts every sheet listed in `SpriteCoordinates.mainWindow` and
-    /// `SpriteCoordinates.playlistWindow`, keyed by the lowercased sheet filename.
-    /// Each sheet is read and decoded **exactly once**; sheets that are absent or
-    /// that the decoder rejects are omitted entirely (no empty entry is left
-    /// behind).
+    /// Cuts every sheet listed in `SpriteCoordinates.mainWindow`,
+    /// `SpriteCoordinates.playlistWindow`, and `SpriteCoordinates.equalizerWindow`,
+    /// keyed by the lowercased sheet filename. Each sheet is read and decoded
+    /// **exactly once**; sheets that are absent or that the decoder rejects are
+    /// omitted entirely (no empty entry is left behind).
     private static func loadSprites(
         from archive: SkinArchive,
         decoder: BitmapDecoding
     ) -> [String: [String: DecodedBitmap]] {
         var sprites: [String: [String: DecodedBitmap]] = [:]
-        // The main-window and playlist-window tables key disjoint sheets (no sheet
-        // filename appears in both), so a single merged pass is unambiguous.
-        let tables = [SpriteCoordinates.mainWindow, SpriteCoordinates.playlistWindow]
+        // The main-window, playlist-window, and equalizer-window tables key
+        // disjoint sheets (no sheet filename appears in more than one), so a
+        // single merged pass is unambiguous. The disjointness is enforced by a
+        // unit test (SpriteCoordinatesTests) so this merge can never silently
+        // double-process or clobber a shared sheet.
+        let tables = [
+            SpriteCoordinates.mainWindow,
+            SpriteCoordinates.playlistWindow,
+            SpriteCoordinates.equalizerWindow
+        ]
         for (sheet, rects) in tables.flatMap({ $0 }) {
             guard let bytes = archive.file(named: sheet),
                   let bitmap = decoder.decode(bytes)

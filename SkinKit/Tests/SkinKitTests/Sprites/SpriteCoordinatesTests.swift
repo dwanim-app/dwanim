@@ -112,6 +112,88 @@ final class SpriteCoordinatesTests: XCTestCase {
                 + "filename (SkinLoader merges them in one pass): \(main.intersection(pl))")
     }
 
+    /// All THREE sprite tables (main, playlist, equalizer) must key pairwise
+    /// disjoint sheets — SkinLoader merges them in a single pass, so a shared
+    /// filename would be double-processed / clobbered.
+    func testAllThreeWindowTablesKeyPairwiseDisjointSheets() {
+        let main = Set(SpriteCoordinates.mainWindow.keys)
+        let pl = Set(SpriteCoordinates.playlistWindow.keys)
+        let eq = Set(SpriteCoordinates.equalizerWindow.keys)
+        XCTAssertTrue(
+            main.isDisjoint(with: eq),
+            "main-window and equalizer-window tables share a sheet: "
+                + "\(main.intersection(eq))")
+        XCTAssertTrue(
+            pl.isDisjoint(with: eq),
+            "playlist-window and equalizer-window tables share a sheet: "
+                + "\(pl.intersection(eq))")
+        XCTAssertTrue(
+            main.isDisjoint(with: pl),
+            "main-window and playlist-window tables share a sheet: "
+                + "\(main.intersection(pl))")
+    }
+
+    // MARK: - equalizer window table
+
+    func testEqualizerWindowContainsEqmain() {
+        XCTAssertTrue(
+            SpriteCoordinates.equalizerWindow.keys.contains("eqmain.bmp"),
+            "equalizerWindow should contain eqmain.bmp")
+    }
+
+    func testEqualizerWindowKeysAreLowercasedBmpFilenames() {
+        for key in SpriteCoordinates.equalizerWindow.keys {
+            XCTAssertEqual(key, key.lowercased(), "sheet key \(key) should be lowercased")
+            XCTAssertTrue(key.hasSuffix(".bmp"), "sheet key \(key) should be a .bmp filename")
+        }
+    }
+
+    /// The EQ windowshade sheet (`eq_ex.bmp`) is DEFERRED and must NOT be keyed in
+    /// the equalizer table yet (documented deferral).
+    func testEqualizerWindowDefersEqExWindowshade() {
+        XCTAssertFalse(
+            SpriteCoordinates.equalizerWindow.keys.contains("eq_ex.bmp"),
+            "eq_ex.bmp (windowshade variant) is deferred and must not be keyed yet")
+    }
+
+    func testEqualizerFaceSpriteGeometryIsSane() {
+        for (sheet, rects) in SpriteCoordinates.equalizerWindow {
+            XCTAssertFalse(rects.isEmpty, "sheet \(sheet) should declare at least one sprite")
+            let names = rects.map(\.name)
+            XCTAssertEqual(Set(names).count, names.count, "duplicate sprite name in \(sheet)")
+            for rect in rects {
+                XCTAssertGreaterThanOrEqual(rect.x, 0, "\(sheet)/\(rect.name) x >= 0")
+                XCTAssertGreaterThanOrEqual(rect.y, 0, "\(sheet)/\(rect.name) y >= 0")
+                XCTAssertGreaterThan(rect.width, 0, "\(sheet)/\(rect.name) width > 0")
+                XCTAssertGreaterThan(rect.height, 0, "\(sheet)/\(rect.name) height > 0")
+            }
+        }
+    }
+
+    /// The EQ face must carry a single full-window 275x116 background, the shared
+    /// slider thumb pair, and the ON/AUTO toggle pairs.
+    func testEqualizerFaceModelsBackgroundThumbAndToggles() {
+        let eq = try! XCTUnwrap(SpriteCoordinates.equalizerWindow["eqmain.bmp"])
+        let byName = Dictionary(uniqueKeysWithValues: eq.map { ($0.name, $0) })
+
+        let bg = try! XCTUnwrap(byName["background"])
+        XCTAssertEqual(bg.x, 0, "background x"); XCTAssertEqual(bg.y, 0, "background y")
+        XCTAssertEqual(bg.width, 275, "EQ background width")
+        XCTAssertEqual(bg.height, 116, "EQ background height (the 275x116 EQ face)")
+
+        // The thumb (shared by preamp + 10 bands) has a normal and a pressed state
+        // of identical size.
+        let thumb = try! XCTUnwrap(byName["sliderThumb"])
+        let thumbPressed = try! XCTUnwrap(byName["sliderThumbPressed"])
+        XCTAssertEqual(thumb.width, thumbPressed.width, "thumb states share width")
+        XCTAssertEqual(thumb.height, thumbPressed.height, "thumb states share height")
+
+        // ON and AUTO each have off + on states.
+        for name in ["onButtonOff", "onButtonOn", "autoButtonOff", "autoButtonOn"] {
+            XCTAssertNotNil(byName[name], "EQ face missing toggle sprite \(name)")
+        }
+    }
+
     func testPlaylistFrameSpriteGeometryIsSane() {
         for (sheet, rects) in SpriteCoordinates.playlistWindow {
             XCTAssertFalse(rects.isEmpty, "sheet \(sheet) should declare at least one sprite")

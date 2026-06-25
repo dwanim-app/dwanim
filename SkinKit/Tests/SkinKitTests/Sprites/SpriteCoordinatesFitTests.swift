@@ -47,13 +47,38 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         // the SMALLEST real sheet — 276 x 186 — so any rect fitting here fits
         // every real pledit.bmp. See testPleditStandardSizeIsMeasuredSmallest for
         // the NON-circular pin to those measured numbers.
-        "pledit.bmp":   (276, 186)
+        "pledit.bmp":   (276, 186),
+        // eqmain.bmp (equalizer window). Measured across the ~200-skin corpus
+        // (194 carried it): width is 275 in 189 skins (dominant), height is 315 in
+        // 169 skins (modal/canonical). Unlike the other sheets, the EQ sheet's
+        // CANONICAL size is used as the fit floor, NOT the absolute smallest:
+        // a minority ship eqmain.bmp TRUNCATED to 116/134/163/164px tall, but
+        // those truncated sheets only contain the top band (the 275x116 EQ face),
+        // having omitted the lower sprite rows. This is the posbar situation — the
+        // title bars / thumb / ON+AUTO genuinely live in rows below y=116 on the
+        // 87% canonical majority, so shrinking the floor to 116 would throw those
+        // sprites away. Instead every non-face rect is kept inside 275x315 (where
+        // it really lives), the face rect is SEPARATELY pinned to fit the absolute
+        // smallest 275x116 (see testEqmainBackgroundFitsTheSmallestRealSheet), and
+        // truncated sheets degrade gracefully (SpriteCutter drops the out-of-bounds
+        // lower sprites, the face still renders). The non-circular pin to the
+        // measured canonical 275x315 is testEqmainStandardSizeIsMeasuredCanonical.
+        "eqmain.bmp":   (275, 315)
     ]
 
-    /// Every sheet across BOTH the main-window and playlist-window tables, so a
-    /// newly added playlist sheet is covered by the same fit guard.
+    /// The absolute smallest real `eqmain.bmp` measured in the corpus (June 2026):
+    /// 275 x 116, shipped by 4 truncated-sheet skins. The EQ window BACKGROUND
+    /// (the face the window always needs) must fit even this floor.
+    private static let smallestRealEqmain = (width: 275, height: 116)
+
+    /// Every sheet across the main-window, playlist-window, AND equalizer-window
+    /// tables, so a newly added sheet is covered by the same fit guard. The three
+    /// tables key disjoint sheets (enforced by SpriteCoordinatesTests), so the
+    /// merge closures never actually fire.
     private var allSheets: [String: [SpriteRect]] {
-        SpriteCoordinates.mainWindow.merging(SpriteCoordinates.playlistWindow) { a, _ in a }
+        SpriteCoordinates.mainWindow
+            .merging(SpriteCoordinates.playlistWindow) { a, _ in a }
+            .merging(SpriteCoordinates.equalizerWindow) { a, _ in a }
     }
 
     func testEverySpriteRectFitsItsStandardSheetDimensions() {
@@ -294,5 +319,100 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         XCTAssertLessThan(
             fill?.width ?? .max, title?.width ?? 0,
             "fill (narrow texture) must be narrower than the title piece")
+    }
+
+    // MARK: - eqmain.bmp (equalizer window) — balance-bug guard
+
+    /// NON-CIRCULAR pin: the standard eqmain.bmp size used by the fit test must
+    /// equal the CANONICAL value actually MEASURED from the real corpus, not
+    /// whatever the coordinate table happens to declare. Measured June 2026 over
+    /// ~200 skins (194 carried eqmain.bmp): width was 275 in 189 skins, height was
+    /// 315 in 169 skins (modal). The fit floor is the canonical 275 x 315 — the
+    /// sheet where every declared sprite genuinely lives — rather than the
+    /// absolute-smallest 275 x 116, because the truncated minority ship only the
+    /// face band (see the comment on the "eqmain.bmp" standardDimensions entry).
+    /// If a future edit declares a fit floor LARGER than the canonical real sheet,
+    /// this test fails — the balance-bug class (declaring a sheet bigger than real
+    /// skins ship, so rects silently overrun and the piece vanishes).
+    func testEqmainStandardSizeIsMeasuredCanonical() {
+        let dims = Self.standardDimensions["eqmain.bmp"]
+        XCTAssertEqual(
+            dims?.width, 275,
+            "eqmain.bmp fit width must be the measured dominant real width (275)")
+        XCTAssertEqual(
+            dims?.height, 315,
+            "eqmain.bmp fit height must be the measured canonical real height (315), "
+                + "the modal sheet where every EQ sprite genuinely lives")
+    }
+
+    /// The EQ window BACKGROUND (the face the window always needs) must fit the
+    /// ABSOLUTE smallest real eqmain.bmp — 275 x 116, the truncated-sheet floor.
+    /// Every other EQ sprite legitimately lives below y=116 and is allowed to fall
+    /// out of bounds on those truncated sheets (SpriteCutter drops it, the face
+    /// still renders), but the face itself must NEVER overrun even the shortest
+    /// real sheet. Asserts directly against the coordinate table, non-circular
+    /// against the measured smallest dim.
+    func testEqmainBackgroundFitsTheSmallestRealSheet() {
+        guard let eq = SpriteCoordinates.equalizerWindow["eqmain.bmp"] else {
+            XCTFail("eqmain.bmp missing from the equalizer coordinate table")
+            return
+        }
+        guard let bg = eq.first(where: { $0.name == "background" }) else {
+            XCTFail("eqmain.bmp is missing the background sprite")
+            return
+        }
+        let floor = Self.smallestRealEqmain
+        XCTAssertEqual(floor.width, 275, "measured smallest real eqmain width")
+        XCTAssertEqual(floor.height, 116, "measured smallest real eqmain height")
+        XCTAssertEqual(bg.x, 0, "background x")
+        XCTAssertEqual(bg.y, 0, "background y")
+        XCTAssertLessThanOrEqual(
+            bg.x + bg.width, floor.width,
+            "EQ background right edge \(bg.x + bg.width) overruns the smallest real "
+                + "eqmain width \(floor.width)")
+        XCTAssertLessThanOrEqual(
+            bg.y + bg.height, floor.height,
+            "EQ background bottom edge \(bg.y + bg.height) overruns the smallest real "
+                + "eqmain height \(floor.height) — the EQ face would vanish on "
+                + "truncated-sheet skins")
+    }
+
+    /// The equalizer face must declare the core sprites needed to composite the
+    /// static EQ window — the background, active/inactive title bars, the shared
+    /// slider thumb (normal + pressed), and the ON / AUTO toggles (off + on) — and
+    /// every one must fit inside the canonical real sheet (275 x 315). Asserts
+    /// directly against the table so it does not lean on the generic fit loop.
+    func testEqualizerFaceHasCorePiecesThatFitTheCanonicalSheet() {
+        guard let eq = SpriteCoordinates.equalizerWindow["eqmain.bmp"] else {
+            XCTFail("eqmain.bmp missing from the equalizer coordinate table")
+            return
+        }
+        let names = Set(eq.map(\.name))
+        let required: Set<String> = [
+            "background",
+            "titleBarActive", "titleBarInactive",
+            "sliderThumb", "sliderThumbPressed",
+            "onButtonOff", "onButtonOn",
+            "autoButtonOff", "autoButtonOn"
+        ]
+        XCTAssertTrue(
+            required.isSubset(of: names),
+            "equalizer face is missing core pieces: \(required.subtracting(names))")
+
+        // Hard fit floor: every rect inside the canonical 275 x 315 real sheet.
+        for rect in eq {
+            XCTAssertGreaterThanOrEqual(rect.x, 0, "\(rect.name): x >= 0")
+            XCTAssertGreaterThanOrEqual(rect.y, 0, "\(rect.name): y >= 0")
+            XCTAssertGreaterThan(rect.width, 0, "\(rect.name): width > 0")
+            XCTAssertGreaterThan(rect.height, 0, "\(rect.name): height > 0")
+            XCTAssertLessThanOrEqual(
+                rect.x + rect.width, 275,
+                "\(rect.name): right edge \(rect.x + rect.width) overruns canonical "
+                    + "real eqmain width 275")
+            XCTAssertLessThanOrEqual(
+                rect.y + rect.height, 315,
+                "\(rect.name): bottom edge \(rect.y + rect.height) overruns canonical "
+                    + "real eqmain height 315")
+        }
     }
 }
