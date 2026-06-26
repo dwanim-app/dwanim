@@ -190,6 +190,34 @@ struct DwanimApp: App {
                 }
                 .keyboardShortcut("g", modifiers: [.command])
             }
+
+            // P2-7: a top-level "Skin" menu. Closing the classic skin's MAIN window
+            // now QUITS the app (the user disliked the default face popping back), so
+            // this menu is the standard-mac way to leave a classic skin WITHOUT
+            // quitting: "Default Skin" (⌘D) closes the classic cluster and restores
+            // the default SwiftUI face. The cluster close is programmatic, so the
+            // presenter's close→quit guard (an internal switching flag) keeps it from
+            // terminating. "Open Skin…" / "Open Audio…" are mirrored here for one
+            // coherent home for the skin commands (same session calls the File menu
+            // uses — one source of truth). NO brand words (§12).
+            CommandMenu("Skin") {
+                Button("Default Skin") {
+                    session.switchToDefaultSkin()
+                }
+                .keyboardShortcut("d", modifiers: [.command])
+
+                Divider()
+
+                Button("Open Skin…") {
+                    session.presentOpenSkinPanel()
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Button("Open Audio…") {
+                    session.presentOpenPanel()
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+            }
         }
     }
 }
@@ -207,6 +235,12 @@ struct DwanimApp: App {
 //   • `applicationWillTerminate(_:)` tears the shared `AudioSession` down EXACTLY
 //     ONCE, when the process is actually quitting — releasing the security scope,
 //     stopping the feed, and closing the hosted classic-window cluster.
+//
+// P2-7 note: this method governs the DEFAULT face's close. Closing the CLASSIC
+// MAIN window does NOT go through here — it routes through the presenter's
+// `onClose` → `NSApp.terminate(nil)` (the close→quit rule), which then drives
+// `applicationWillTerminate` below. So the two faces quit by different paths but
+// both end in the same single teardown.
 //
 // The `session` is handed in from the scene's `.onAppear` (the App owns the one
 // `@State` instance; this delegate only holds a weak back-reference to drive

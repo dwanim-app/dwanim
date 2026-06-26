@@ -105,6 +105,13 @@ final class AudioSession {
     /// that. Belt-and-suspenders alongside the `started` idempotency guard.
     private var didLaunchResolve = false
 
+    /// True once genuine app TERMINATION has begun (set by `stop()`, which runs from
+    /// `applicationWillTerminate`). Checked in `showDefaultWindow()` so the default
+    /// face never flashes back while the app is tearing down (P2-7). One-way:
+    /// termination never reverses. The presenter holds its own mirror of this
+    /// (`prepareForTermination`) to suppress its close→quit on the teardown close.
+    private var isTerminating = false
+
     /// Spectrum bar count for the compact default-skin row (matches the harness).
     private static let barCount = 24
     /// ~22 Hz feed cadence (matches the harness default-skin player).
@@ -144,14 +151,20 @@ final class AudioSession {
             access: access, store: store, resolver: resolver
         )
 
-        // ONE-FACE-AT-A-TIME (P2-6): when the classic MAIN window is shown, hide the
-        // default SwiftUI face; when the classic MAIN window closes (no classic main
-        // remains), restore it. The presenter owns the classic cluster and knows when
-        // its main window opens / closes, but the default `NSWindow` is owned here, so
-        // we hand it these two closures (captured weak to avoid a retain cycle). Both
-        // guard internally for a not-yet-captured `defaultWindow` — see the methods.
+        // ONE-FACE-AT-A-TIME (P2-6/P2-7): the classic MAIN window opens / closes; the
+        // default `NSWindow` and the app-terminate call live HERE, so the presenter
+        // (which owns the classic cluster) is handed three closures (captured weak to
+        // avoid a retain cycle):
+        //   • hideDefaultWindow — when the classic main is SHOWN, hide the default.
+        //   • showDefaultWindow — on the explicit "Default Skin" switch-back, restore
+        //     the default (guards an uncaptured window AND a terminating teardown).
+        //   • quitApp — when the user CLOSES the classic main window, QUIT the app
+        //     (P2-7: closing the classic face closes the app, NOT restore the
+        //     default). Routed through `NSApp.terminate`, which drives
+        //     `applicationWillTerminate` → `stop()` → clean teardown.
         classicSkin.hideDefaultWindow = { [weak self] in self?.hideDefaultWindow() }
         classicSkin.showDefaultWindow = { [weak self] in self?.showDefaultWindow() }
+        classicSkin.quitApp = { NSApp.terminate(nil) }
 
         // The feed: install the engine's PCM tap (audio thread stashes into the
         // feed) and run a main-thread tick that copies the clock + spectrum into
@@ -216,11 +229,19 @@ final class AudioSession {
     func stop() {
         guard started else { return }
         started = false
+        // P2-7: latch termination BEFORE closing the cluster, on BOTH faces. Setting
+        // it here (and on the presenter) means the classic main window's `onClose` —
+        // fired by the `closeAllWindows()` below — neither re-enters
+        // `NSApp.terminate` (no double-terminate) nor restores the default face (no
+        // flash during teardown).
+        isTerminating = true
+        classicSkin.prepareForTermination()
         redrawLoop?.stop()
         endSession()
         // Close every hosted classic window (main + playlist + EQ) too, so a hosted
         // window never outlives the session that drives it. Safe here because `stop()`
-        // now runs ONLY at real app termination.
+        // now runs ONLY at real app termination, and the termination latch above makes
+        // the resulting main-window close a no-op (no quit, no restore).
         classicSkin.closeAllWindows()
     }
 
@@ -275,12 +296,15 @@ final class AudioSession {
         defaultWindow?.orderOut(nil)
     }
 
-    /// Restore the default SwiftUI face. Called by the classic-skin presenter when
-    /// the classic MAIN window closes and no classic main remains (back to the
-    /// default face). Re-orders the captured default window to the front and makes
+    /// Restore the default SwiftUI face. Called by the classic-skin presenter ONLY
+    /// on the explicit "Default Skin" switch-back command (`switchToDefaultSkin`) —
+    /// NOT on a plain user close of the classic main window, which quits the app
+    /// instead (P2-7). Re-orders the captured default window to the front and makes
     /// it key. A no-op when the default window was never captured (`defaultWindow`
-    /// nil) — no crash.
+    /// nil), or once termination has begun (`isTerminating`) so the default never
+    /// flashes back during quit-teardown — no crash either way.
     private func showDefaultWindow() {
+        guard !isTerminating else { return }
         defaultWindow?.makeKeyAndOrderFront(nil)
     }
 
@@ -293,6 +317,18 @@ final class AudioSession {
     /// window).
     func presentOpenSkinPanel() {
         classicSkin.presentOpenPanel()
+    }
+
+    // MARK: Default Skin (return without quitting — P2-7)
+
+    /// RETURN to the default face WITHOUT quitting: close the classic cluster and
+    /// restore the default SwiftUI window. The menu-bar "Default Skin" command
+    /// (⌘D) routes here. This is the counterpart to the close→quit rule — closing
+    /// the classic main window quits the app, while THIS leaves the app running on
+    /// the default face. Pass-through to the presenter, which guards its own
+    /// close→quit so this programmatic cluster close does not terminate.
+    func switchToDefaultSkin() {
+        classicSkin.switchToDefaultSkin()
     }
 
     // MARK: Drag-and-drop
