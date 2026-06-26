@@ -27,9 +27,16 @@ struct PlaylistPanel: View {
     /// sizes to its content under this ceiling).
     private let maxListHeight: CGFloat = 220
 
-    /// Estimated height of one queue row (the `PlaylistRow`'s ~16pt text line plus
-    /// its 12pt vertical padding). Used to give the panel a DEFINITE ideal height
-    /// so the window actually GROWS when the queue expands — see `listHeight`.
+    /// ESTIMATED height of one queue row, used to give the panel a DEFINITE ideal
+    /// height so the window actually GROWS when the queue expands — see `listHeight`.
+    ///
+    /// IMPORTANT — kept in sync with `PlaylistRow` BY HAND (this is an estimate, not a
+    /// measurement): it must track `PlaylistRow`'s actual font + padding metrics, i.e.
+    /// the title `Text`'s `.font(.system(size: 13, …))` line (~16pt rendered) plus its
+    /// `.padding(.vertical, 6)` (6 top + 6 bottom = 12pt) → ~28pt. If you change the
+    /// `PlaylistRow` font SIZE or its vertical padding, UPDATE this constant to match,
+    /// or the queue-expand window growth will be slightly off (rows clipped or a small
+    /// gap). There is no compile-time link between the two.
     private static let rowHeight: CGFloat = 28
     /// Vertical spacing between rows in the `LazyVStack`.
     private static let rowSpacing: CGFloat = 2

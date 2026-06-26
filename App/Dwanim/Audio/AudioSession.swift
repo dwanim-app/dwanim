@@ -82,6 +82,18 @@ final class AudioSession {
     /// is a safe no-op (the default simply stays visible).
     private weak var defaultWindow: NSWindow?
 
+    /// The last content height the scene reported (fix-5), CACHED on EVERY report —
+    /// even while the default window is hidden behind a classic skin. The cache is
+    /// the source of truth for the restore-on-show path: a content-height change that
+    /// happens WHILE a classic skin is up (e.g. a different-length playlist replaces
+    /// the queue) cannot resize the hidden window then, and on a ⌘⇧D switch-back the
+    /// unchanged SwiftUI height preference does not re-fire — so without this cache the
+    /// restored window would keep its STALE height (clipped queue / empty gradient
+    /// strip). `showDefaultWindow()` re-applies this value after `makeKeyAndOrderFront`
+    /// so the default face restores at the correct height. `nil` until the scene first
+    /// reports a height. See `setDefaultContentHeight` / `showDefaultWindow`.
+    private var lastReportedContentHeight: CGFloat?
+
     /// The URLs whose security scopes are currently held open for the session
     /// (the loaded playlist — one element for a single-file open), each paired with
     /// whether the matching `startAccessingSecurityScopedResource()` actually opened
@@ -271,9 +283,28 @@ final class AudioSession {
     /// top anchor is kept fixed so the window grows DOWNWARD, matching the queue
     /// expanding below the now-playing row.
     func setDefaultContentHeight(_ height: CGFloat) {
-        guard let window = defaultWindow, window.isVisible else { return }
+        // CACHE FIRST, on every report (visible OR hidden): the cache is the source
+        // of truth the restore-on-show path re-applies. A change reported while the
+        // default is hidden behind a classic skin must not be dropped — it is
+        // re-applied on the ⌘⇧D switch-back (see `showDefaultWindow`). Round here so
+        // the cache matches the value `applyContentHeight` compares against (keeps the
+        // re-apply from looping against its own rounding).
         let rounded = height.rounded()
         guard rounded > 0 else { return }
+        lastReportedContentHeight = rounded
+        // Only resize when the window is actually visible — fighting a hidden window
+        // is pointless (and the restore-on-show re-applies the cached value anyway).
+        guard let window = defaultWindow, window.isVisible else { return }
+        applyContentHeight(rounded, to: window)
+    }
+
+    /// Resize `window`'s CONTENT HEIGHT to `rounded` (already rounded), keeping its
+    /// width and pinning the TOP-LEFT so it grows/shrinks DOWNWARD. No-ops when the
+    /// height already matches (within 0.5pt) so re-applying the cached value on a
+    /// switch-back does not loop against the SwiftUI preference re-report. Shared by
+    /// the live `setDefaultContentHeight` report path and the `showDefaultWindow`
+    /// restore path so both resize identically.
+    private func applyContentHeight(_ rounded: CGFloat, to window: NSWindow) {
         let currentContentHeight = window.contentRect(forFrameRect: window.frame).height
         guard abs(currentContentHeight - rounded) > 0.5 else { return }
 
@@ -293,7 +324,15 @@ final class AudioSession {
     /// has not been captured yet (`defaultWindow` nil): the default just stays
     /// visible, no crash.
     private func hideDefaultWindow() {
-        defaultWindow?.orderOut(nil)
+        guard let window = defaultWindow else { return }
+        // Harden against a miniaturized window: `orderOut` on a window that is in the
+        // Dock (miniaturized) does not reliably remove it from the screen, so
+        // deminiaturize first when needed. `deminiaturize(nil)` is a no-op for a
+        // window that is not miniaturized.
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.orderOut(nil)
     }
 
     /// Restore the default SwiftUI face. Called by the classic-skin presenter ONLY
@@ -304,8 +343,18 @@ final class AudioSession {
     /// nil), or once termination has begun (`isTerminating`) so the default never
     /// flashes back during quit-teardown — no crash either way.
     private func showDefaultWindow() {
-        guard !isTerminating else { return }
-        defaultWindow?.makeKeyAndOrderFront(nil)
+        guard !isTerminating, let window = defaultWindow else { return }
+        window.makeKeyAndOrderFront(nil)
+        // fix-5 stale-height restore: a content-height change reported WHILE the
+        // window was hidden (e.g. a different-length playlist replaced the queue)
+        // could not resize the hidden window, and the unchanged SwiftUI height
+        // preference does not re-fire on this re-order — so re-apply the cached
+        // height now that the window is visible again. `applyContentHeight`'s 0.5pt
+        // tolerance makes this a no-op when the height already matches, so it does
+        // not loop.
+        if let cached = lastReportedContentHeight {
+            applyContentHeight(cached, to: window)
+        }
     }
 
     // MARK: Open Skin…
@@ -323,7 +372,7 @@ final class AudioSession {
 
     /// RETURN to the default face WITHOUT quitting: close the classic cluster and
     /// restore the default SwiftUI window. The menu-bar "Default Skin" command
-    /// (⌘D) routes here. This is the counterpart to the close→quit rule — closing
+    /// (⌘⇧D) routes here. This is the counterpart to the close→quit rule — closing
     /// the classic main window quits the app, while THIS leaves the app running on
     /// the default face. Pass-through to the presenter, which guards its own
     /// close→quit so this programmatic cluster close does not terminate.

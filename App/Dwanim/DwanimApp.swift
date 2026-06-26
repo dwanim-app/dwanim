@@ -194,7 +194,7 @@ struct DwanimApp: App {
             // P2-7: a top-level "Skin" menu. Closing the classic skin's MAIN window
             // now QUITS the app (the user disliked the default face popping back), so
             // this menu is the standard-mac way to leave a classic skin WITHOUT
-            // quitting: "Default Skin" (⌘D) closes the classic cluster and restores
+            // quitting: "Default Skin" (⌘⇧D) closes the classic cluster and restores
             // the default SwiftUI face. The cluster close is programmatic, so the
             // presenter's close→quit guard (an internal switching flag) keeps it from
             // terminating. "Open Skin…" / "Open Audio…" are mirrored here for one
@@ -204,19 +204,25 @@ struct DwanimApp: App {
                 Button("Default Skin") {
                     session.switchToDefaultSkin()
                 }
-                .keyboardShortcut("d", modifiers: [.command])
+                // ⌘⇧D (not plain ⌘D): the macOS-standard ⌘D is Duplicate / "Don't
+                // Save", so the Default Skin command takes the shifted chord to avoid
+                // colliding with it. Unique across the menu bar.
+                .keyboardShortcut("d", modifiers: [.command, .shift])
 
                 Divider()
 
+                // "Open Skin…" / "Open Audio…" are mirrored here as clickable items
+                // for a coherent Skin-menu home, but their accelerators (⌘⇧O / ⌘O)
+                // live on the File-menu items above (the conventional home) — declared
+                // there ONCE. Declaring the same chord on these duplicates too would be
+                // an accelerator ambiguity, so these carry NO `.keyboardShortcut`.
                 Button("Open Skin…") {
                     session.presentOpenSkinPanel()
                 }
-                .keyboardShortcut("o", modifiers: [.command, .shift])
 
                 Button("Open Audio…") {
                     session.presentOpenPanel()
                 }
-                .keyboardShortcut("o", modifiers: [.command])
             }
         }
     }
