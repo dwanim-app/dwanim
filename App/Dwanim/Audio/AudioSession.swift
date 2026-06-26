@@ -198,6 +198,15 @@ final class AudioSession {
         classicSkin.onFileDrop = { [weak self] urls in
             self?.handleDroppedURLs(urls)
         }
+
+        // EJECT: the classic main window's open-file button opens the AUDIO open
+        // panel through THIS session — the same flow as the menu-bar / ⌘O
+        // "Open Audio…". The presenter cannot reach the audio panel on its own (it
+        // owns only the SKIN panel), so the host supplies the hook, mirroring
+        // `onFileDrop`.
+        classicSkin.onEject = { [weak self] in
+            self?.presentOpenPanel()
+        }
     }
 
     // MARK: Lifecycle

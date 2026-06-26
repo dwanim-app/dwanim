@@ -352,6 +352,82 @@ final class PlayerCoreTests: XCTestCase {
         XCTAssertEqual(engine.volume, 0.5)
     }
 
+    func testSetVolumeNonFiniteIsNoOp() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+        core.setVolume(0.4)
+        for bad: Float in [.nan, .infinity, -.infinity] {
+            core.setVolume(bad)
+            // A non-finite value is ignored: the prior value is preserved on BOTH
+            // the core and the engine, so no NaN reaches the audio unit.
+            XCTAssertEqual(core.volume, 0.4)
+            XCTAssertEqual(engine.volume, 0.4)
+        }
+    }
+
+    // MARK: - 9b. setBalance clamps to -1...1, sets engine.pan, NaN-safe
+
+    func testBalanceDefaultsToCentered() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+        // Default is centered (0), matching the engine's default pan.
+        XCTAssertEqual(core.balance, 0)
+        XCTAssertEqual(engine.pan, 0)
+    }
+
+    func testSetBalanceClampsLow() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+        core.setBalance(-2)
+        XCTAssertEqual(core.balance, -1)
+        XCTAssertEqual(engine.pan, -1)
+    }
+
+    func testSetBalanceClampsHigh() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+        core.setBalance(2)
+        XCTAssertEqual(core.balance, 1)
+        XCTAssertEqual(engine.pan, 1)
+    }
+
+    func testSetBalanceMidRange() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+        core.setBalance(-0.5)
+        XCTAssertEqual(core.balance, -0.5)
+        XCTAssertEqual(engine.pan, -0.5)
+        core.setBalance(0.25)
+        XCTAssertEqual(core.balance, 0.25)
+        XCTAssertEqual(engine.pan, 0.25)
+    }
+
+    func testSetBalanceNonFiniteIsNoOp() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+        core.setBalance(0.3)
+        for bad: Float in [.nan, .infinity, -.infinity] {
+            core.setBalance(bad)
+            // Non-finite is ignored: the prior pan is preserved on core + engine, so
+            // no NaN reaches the player node's pan.
+            XCTAssertEqual(core.balance, 0.3)
+            XCTAssertEqual(engine.pan, 0.3)
+        }
+    }
+
+    func testBalanceIsReAppliedToEngineOnTrackLoad() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+        core.load([track("a"), track("b")])
+        core.setBalance(-0.7)
+        // Simulate an engine that resets pan when it swaps the underlying file.
+        engine.pan = 0
+        // Selecting (load + play) a track must re-apply the core's authoritative
+        // balance, so the engine cannot silently diverge across a track change.
+        core.select(1)
+        XCTAssertEqual(engine.pan, -0.7)
+    }
+
     // MARK: - 10. empty playlist: play/next/previous/seek are safe no-ops
 
     func testEmptyPlaylistCommandsAreNoOps() {

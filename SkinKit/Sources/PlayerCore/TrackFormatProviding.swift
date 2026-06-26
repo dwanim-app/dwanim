@@ -27,4 +27,12 @@ public protocol TrackFormatProviding: AnyObject {
     /// unknown or nothing is loaded. A lossless/uncompressed source reports its
     /// large effective rate (e.g. ~1411 kbps for 44.1k/16-bit/stereo).
     var bitrateKbps: Int { get }
+
+    /// The loaded file's channel count (e.g. `1` for mono, `2` for stereo). `0`
+    /// when unknown or nothing is loaded. The main window lights the mono vs
+    /// stereo indicator from this: `1` -> mono lit, `>= 2` -> stereo lit, `0`
+    /// (nothing loaded) -> neither forced (the static default art shows). Captured
+    /// synchronously on load from the file's processing format, like
+    /// `sampleRateHz`.
+    var channelCount: Int { get }
 }

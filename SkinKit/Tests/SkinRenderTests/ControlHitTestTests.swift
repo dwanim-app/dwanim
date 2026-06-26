@@ -25,6 +25,15 @@ final class ControlHitTestTests: XCTestCase {
         .toggleRepeat:  ("shufrep.bmp", "repeatOff")
     ]
 
+    /// The COMPOSITED controls (transport + toggles) — the ones whose origin lives
+    /// in `MainWindowLayout.elements`, so `expectedRect` (which reads `elements`)
+    /// applies to them. The host-action controls (EQ / PL / eject / minimize) are
+    /// baked into `main.bmp` and have NO `elements` entry, so they are exercised
+    /// separately in the "Host-action button hit rects" section, not here.
+    private static let compositedControls: [SkinControl] = [
+        .previous, .play, .pause, .stop, .next, .toggleShuffle, .toggleRepeat
+    ]
+
     /// Expected hit rect for a control, derived from the layout element (x, y) and
     /// the matching sprite's (width, height) — the single source of truth.
     private func expectedRect(
@@ -50,7 +59,7 @@ final class ControlHitTestTests: XCTestCase {
     // MARK: - Center of each control hits it
 
     func testCenterOfEachControlReturnsThatControl() {
-        for control in SkinControl.allCases {
+        for control in Self.compositedControls {
             let rect = expectedRect(for: control)
             let cx = rect.x + rect.width / 2
             let cy = rect.y + rect.height / 2
@@ -71,7 +80,10 @@ final class ControlHitTestTests: XCTestCase {
 
     func testTopLeftCornerIsInsideAndPixelLeftOrAboveIsOutside() {
         for control in SkinControl.allCases {
-            let rect = ControlHitTest.hitRect(for: control)!
+            guard let rect = ControlHitTest.hitRect(for: control) else {
+                XCTFail("hitRect for \(control) should be non-nil")
+                continue
+            }
 
             // Top-left corner is inside (half-open lower bound is inclusive).
             XCTAssertTrue(contains(rect, x: rect.x, y: rect.y),
@@ -97,7 +109,7 @@ final class ControlHitTestTests: XCTestCase {
     }
 
     func testRightAndBottomEdgesAreExclusive() {
-        for control in SkinControl.allCases {
+        for control in Self.compositedControls {
             let rect = expectedRect(for: control)
 
             // The pixel at the right edge (x + width) is outside (half-open).
@@ -322,7 +334,7 @@ final class ControlHitTestTests: XCTestCase {
     // MARK: - hitRect(for:)
 
     func testHitRectMatchesDerivedRectForEachControl() {
-        for control in SkinControl.allCases {
+        for control in Self.compositedControls {
             let expected = expectedRect(for: control)
             let actual = ControlHitTest.hitRect(for: control)
             XCTAssertNotNil(actual, "hitRect for \(control) should be non-nil")
@@ -561,5 +573,241 @@ final class ControlHitTestTests: XCTestCase {
             .toggleShuffle,
             "overlap column should resolve to the first control in order"
         )
+    }
+
+    // MARK: - Host-action button hit rects (EQ / PL / eject / minimize)
+    //
+    // These buttons are baked into `main.bmp` (not composited as separate
+    // sprites), so their origin comes from the standalone hit-only origins on
+    // `MainWindowLayout`, while the SIZE still comes from the matching
+    // `SpriteCoordinates` sprite — the same single-source-of-truth pattern. The
+    // tests derive the expected rect from those two sources rather than hardcoding.
+
+    /// The (origin, sheet, sprite) backing each host-action control, mirrored from
+    /// `ControlHitTest`'s mapping, used only to DERIVE expected rects.
+    private static let hostActionMapping: [SkinControl: (origin: (x: Int, y: Int), sheet: String, sprite: String)] = [
+        .eqButton:  (MainWindowLayout.eqButtonOrigin, "titlebar.bmp", "eqButtonOff"),
+        .plButton:  (MainWindowLayout.plButtonOrigin, "titlebar.bmp", "plButtonOff"),
+        .eject:     (MainWindowLayout.ejectOrigin,    "cbuttons.bmp", "eject"),
+        .minimize:  (MainWindowLayout.minimizeOrigin, "titlebar.bmp", "minimize")
+    ]
+
+    func testHostActionHitRectsDeriveFromOriginAndSpriteSize() {
+        for (control, m) in Self.hostActionMapping {
+            let sprite = SpriteCoordinates.mainWindow[m.sheet]?.first { $0.name == m.sprite }
+            guard let sprite else {
+                XCTFail("missing sprite \(m.sprite) in \(m.sheet) for \(control)")
+                continue
+            }
+            let rect = ControlHitTest.hitRect(for: control)
+            XCTAssertNotNil(rect, "hitRect for \(control) should be non-nil")
+            guard let rect else { continue }
+            XCTAssertEqual(rect.x, m.origin.x, "x for \(control)")
+            XCTAssertEqual(rect.y, m.origin.y, "y for \(control)")
+            XCTAssertEqual(rect.width, sprite.width, "width for \(control)")
+            XCTAssertEqual(rect.height, sprite.height, "height for \(control)")
+        }
+    }
+
+    func testHostActionButtonsCenterRoutesToThatButton() {
+        for control in Self.hostActionMapping.keys {
+            guard let rect = ControlHitTest.hitRect(for: control) else {
+                XCTFail("no hitRect for \(control)")
+                continue
+            }
+            let cx = rect.x + rect.width / 2
+            let cy = rect.y + rect.height / 2
+            XCTAssertEqual(
+                ControlHitTest.control(atX: cx, y: cy), control,
+                "center of \(control) should hit \(control)"
+            )
+        }
+    }
+
+    /// Every control's hit rect (transport + toggle + host-action) is positive-size
+    /// and fits the window — extends the original `allCases` guard to the new cases.
+    func testAllControlHitRectsFitWindowIncludingHostActions() {
+        for control in SkinControl.allCases {
+            guard let rect = ControlHitTest.hitRect(for: control) else {
+                XCTFail("hitRect for \(control) should be non-nil")
+                continue
+            }
+            XCTAssertGreaterThan(rect.width, 0, "width > 0 for \(control)")
+            XCTAssertGreaterThan(rect.height, 0, "height > 0 for \(control)")
+            XCTAssertGreaterThanOrEqual(rect.x, 0, "x >= 0 for \(control)")
+            XCTAssertGreaterThanOrEqual(rect.y, 0, "y >= 0 for \(control)")
+            XCTAssertLessThanOrEqual(rect.x + rect.width, MainWindowLayout.windowWidth,
+                                     "right edge within window for \(control)")
+            XCTAssertLessThanOrEqual(rect.y + rect.height, MainWindowLayout.windowHeight,
+                                     "bottom edge within window for \(control)")
+        }
+    }
+
+    /// The host-action buttons must not overlap the transport / toggle controls or
+    /// each other — a click on one resolves to exactly one control.
+    func testHostActionButtonsDoNotOverlapOtherControls() {
+        let all = SkinControl.allCases
+        for i in 0..<all.count {
+            for j in (i + 1)..<all.count {
+                guard let a = ControlHitTest.hitRect(for: all[i]),
+                      let b = ControlHitTest.hitRect(for: all[j]) else { continue }
+                // Skip the one documented provisional toggle overlap (covered by
+                // `testToggleOverlapResolvesToFirstInOrder`).
+                if Set([all[i], all[j]]) == Set([.toggleShuffle, .toggleRepeat]) { continue }
+                XCTAssertFalse(rectsOverlap(a, b), "\(all[i]) \(a) overlaps \(all[j]) \(b)")
+            }
+        }
+    }
+
+    // MARK: - Volume slider region + value mapping
+
+    private func expectedSliderRect(sheet: String, frame: String) -> (x: Int, y: Int, width: Int, height: Int) {
+        let element = MainWindowLayout.elements.first { $0.sheet == sheet && $0.sprite == frame }
+        guard let element else {
+            XCTFail("no layout element for \(sheet)/\(frame)")
+            return (0, 0, 0, 0)
+        }
+        let sprite = SpriteCoordinates.mainWindow[sheet]?.first { $0.name == frame }
+        guard let sprite else {
+            XCTFail("no sprite \(frame) in \(sheet)")
+            return (0, 0, 0, 0)
+        }
+        return (element.x, element.y, sprite.width, sprite.height)
+    }
+
+    func testVolumeRectMatchesDerivedRectAndFitsWindow() {
+        let expected = expectedSliderRect(sheet: "volume.bmp", frame: "level27")
+        guard let actual = ControlHitTest.volumeRect() else {
+            XCTFail("volumeRect nil")
+            return
+        }
+        XCTAssertEqual(actual.x, expected.x)
+        XCTAssertEqual(actual.y, expected.y)
+        XCTAssertEqual(actual.width, expected.width)
+        XCTAssertEqual(actual.height, expected.height)
+        XCTAssertGreaterThan(actual.width, 0)
+        XCTAssertGreaterThan(actual.height, 0)
+        XCTAssertLessThanOrEqual(actual.x + actual.width, MainWindowLayout.windowWidth)
+        XCTAssertLessThanOrEqual(actual.y + actual.height, MainWindowLayout.windowHeight)
+    }
+
+    func testHitsVolumeInsideAndOutside() {
+        let rect = expectedSliderRect(sheet: "volume.bmp", frame: "level27")
+        XCTAssertTrue(ControlHitTest.hitsVolume(skinX: rect.x, skinY: rect.y))
+        XCTAssertTrue(ControlHitTest.hitsVolume(skinX: rect.x + rect.width / 2, skinY: rect.y + rect.height / 2))
+        // Half-open: right + bottom exclusive; a pixel left is out.
+        XCTAssertFalse(ControlHitTest.hitsVolume(skinX: rect.x + rect.width, skinY: rect.y))
+        XCTAssertFalse(ControlHitTest.hitsVolume(skinX: rect.x, skinY: rect.y + rect.height))
+        XCTAssertFalse(ControlHitTest.hitsVolume(skinX: rect.x - 1, skinY: rect.y))
+    }
+
+    func testVolumeFractionEndpointsClampAndMonotone() {
+        let rect = expectedSliderRect(sheet: "volume.bmp", frame: "level27")
+        XCTAssertEqual(ControlHitTest.volumeFraction(skinX: rect.x)!, 0, accuracy: 1e-9, "left edge -> 0")
+        XCTAssertEqual(ControlHitTest.volumeFraction(skinX: rect.x + rect.width - 1)!, 1, accuracy: 1e-9,
+                       "last in-bounds column -> 1")
+        XCTAssertEqual(ControlHitTest.volumeFraction(skinX: rect.x + (rect.width - 1) / 2)!, 0.5, accuracy: 0.03,
+                       "midpoint ~ 0.5")
+        // Past either edge clamps.
+        XCTAssertEqual(ControlHitTest.volumeFraction(skinX: rect.x - 50)!, 0, accuracy: 1e-9)
+        XCTAssertEqual(ControlHitTest.volumeFraction(skinX: rect.x + rect.width + 50)!, 1, accuracy: 1e-9)
+    }
+
+    func testVolumeLevelFrameMapping() {
+        // 0 -> level0, 1 -> level(count-1), 0.5 -> a middle frame.
+        XCTAssertEqual(ControlHitTest.volumeLevelFrame(forVolume: 0), "level0")
+        XCTAssertEqual(ControlHitTest.volumeLevelFrame(forVolume: 1),
+                       "level\(ControlHitTest.volumeLevelCount - 1)")
+        // Out-of-range and non-finite clamp to the ends / default, never trapping.
+        XCTAssertEqual(ControlHitTest.volumeLevelFrame(forVolume: -5), "level0")
+        XCTAssertEqual(ControlHitTest.volumeLevelFrame(forVolume: 5),
+                       "level\(ControlHitTest.volumeLevelCount - 1)")
+        XCTAssertEqual(ControlHitTest.volumeLevelFrame(forVolume: .nan), "level0")
+        // Midpoint maps near the middle frame.
+        let mid = ControlHitTest.volumeLevelFrame(forVolume: 0.5)
+        XCTAssertEqual(mid, "level\(Int((0.5 * Double(ControlHitTest.volumeLevelCount - 1)).rounded()))")
+    }
+
+    /// Round-trip: a volume's chosen frame index, read back as the fraction at that
+    /// index's center, recovers a level frame within one step.
+    func testVolumeFrameValueRoundTrip() {
+        for v in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let frame = ControlHitTest.volumeLevelFrame(forVolume: v)
+            // Parse the index out and confirm it matches round(v * (count-1)).
+            let expectedIndex = Int((v * Double(ControlHitTest.volumeLevelCount - 1)).rounded())
+            XCTAssertEqual(frame, "level\(expectedIndex)", "frame for volume \(v)")
+        }
+    }
+
+    // MARK: - Balance slider region + value mapping (center = 0, -1...1)
+
+    func testBalanceRectMatchesDerivedRectAndFitsWindow() {
+        let expected = expectedSliderRect(sheet: "balance.bmp", frame: "level13")
+        guard let actual = ControlHitTest.balanceRect() else {
+            XCTFail("balanceRect nil")
+            return
+        }
+        XCTAssertEqual(actual.x, expected.x)
+        XCTAssertEqual(actual.y, expected.y)
+        XCTAssertEqual(actual.width, expected.width)
+        XCTAssertEqual(actual.height, expected.height)
+        XCTAssertLessThanOrEqual(actual.x + actual.width, MainWindowLayout.windowWidth)
+        XCTAssertLessThanOrEqual(actual.y + actual.height, MainWindowLayout.windowHeight)
+    }
+
+    func testBalanceFractionEndpointsAndCenter() {
+        let rect = expectedSliderRect(sheet: "balance.bmp", frame: "level13")
+        // Left edge -> -1 (hard left), right edge -> +1 (hard right), center -> ~0.
+        XCTAssertEqual(ControlHitTest.balanceFraction(skinX: rect.x)!, -1, accuracy: 1e-9, "left -> -1")
+        XCTAssertEqual(ControlHitTest.balanceFraction(skinX: rect.x + rect.width - 1)!, 1, accuracy: 1e-9,
+                       "right -> +1")
+        XCTAssertEqual(ControlHitTest.balanceFraction(skinX: rect.x + (rect.width - 1) / 2)!, 0, accuracy: 0.05,
+                       "center -> ~0 (balanced)")
+        // Past either edge clamps to ±1.
+        XCTAssertEqual(ControlHitTest.balanceFraction(skinX: rect.x - 50)!, -1, accuracy: 1e-9)
+        XCTAssertEqual(ControlHitTest.balanceFraction(skinX: rect.x + rect.width + 50)!, 1, accuracy: 1e-9)
+    }
+
+    func testBalanceLevelFrameMapping() {
+        // -1 -> level0, 0 (centered) -> middle frame, +1 -> last frame.
+        XCTAssertEqual(ControlHitTest.balanceLevelFrame(forBalance: -1), "level0")
+        XCTAssertEqual(ControlHitTest.balanceLevelFrame(forBalance: 1),
+                       "level\(ControlHitTest.balanceLevelCount - 1)")
+        let centered = ControlHitTest.balanceLevelFrame(forBalance: 0)
+        let expectedCenter = Int((0.5 * Double(ControlHitTest.balanceLevelCount - 1)).rounded())
+        XCTAssertEqual(centered, "level\(expectedCenter)", "centered pan -> middle frame")
+        // Out-of-range + non-finite are safe (clamp / treat as centered).
+        XCTAssertEqual(ControlHitTest.balanceLevelFrame(forBalance: -5), "level0")
+        XCTAssertEqual(ControlHitTest.balanceLevelFrame(forBalance: 5),
+                       "level\(ControlHitTest.balanceLevelCount - 1)")
+        XCTAssertEqual(ControlHitTest.balanceLevelFrame(forBalance: .nan), "level\(expectedCenter)",
+                       "non-finite pan -> centered frame")
+    }
+
+    /// Volume and balance sliders must not overlap (a press resolves to exactly one).
+    func testVolumeAndBalanceSlidersDoNotOverlap() {
+        guard let v = ControlHitTest.volumeRect(), let b = ControlHitTest.balanceRect() else {
+            XCTFail("slider rects nil")
+            return
+        }
+        XCTAssertFalse(rectsOverlap(v, b), "volume \(v) overlaps balance \(b)")
+    }
+
+    /// No control's hit rect (transport, toggle, OR host-action button) may overlap
+    /// the volume / balance scrub regions — otherwise a mouse-DOWN on the slider's
+    /// edge would route to a button (buttons take precedence) instead of starting a
+    /// scrub. This pins the collision-free layout (e.g. the EQ button sitting just
+    /// right of the balance slider, not over it).
+    func testNoControlOverlapsTheSliderRegions() {
+        guard let volume = ControlHitTest.volumeRect(),
+              let balance = ControlHitTest.balanceRect() else {
+            XCTFail("slider rects nil")
+            return
+        }
+        for control in SkinControl.allCases {
+            guard let rect = ControlHitTest.hitRect(for: control) else { continue }
+            XCTAssertFalse(rectsOverlap(rect, volume), "\(control) \(rect) overlaps volume \(volume)")
+            XCTAssertFalse(rectsOverlap(rect, balance), "\(control) \(rect) overlaps balance \(balance)")
+        }
     }
 }

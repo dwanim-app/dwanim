@@ -143,6 +143,15 @@ final class ClassicSkinPresenter {
     var showDefaultWindow: (() -> Void)?
     var quitApp: (() -> Void)?
 
+    /// EJECT (the classic main window's open-file button): open the AUDIO
+    /// open-file panel. Set by the host (`AudioSession`) to call its audio
+    /// `presentOpenPanel()` — the same flow as the menu-bar / ⌘O "Open Audio…".
+    /// Mirrors `onFileDrop` (a host action the presenter cannot reach on its own —
+    /// the audio panel lives in `AudioSession`, not here, which owns only the SKIN
+    /// panel). `nil` until set (the eject button is then inert), which is harmless
+    /// since it is set immediately after init.
+    var onEject: (() -> Void)?
+
     /// Per-window handles (controller + window) of the three-window cluster. Each is
     /// held while its window is open (so it is not deallocated for the window's
     /// lifetime) and dropped on that window's own close (the `onClose` callback), so
@@ -422,7 +431,22 @@ final class ClassicSkinPresenter {
                 },
                 // Route a file drop onto this classic main window through the same
                 // app drop handler as the default scene.
-                onFileDrop: onFileDrop
+                onFileDrop: onFileDrop,
+                // HOST-ACTION buttons on the classic main window (EQ / PL / eject):
+                //   • EQ button   -> toggle the equalizer window (same as View>EQ).
+                //   • PL button   -> toggle the playlist window (same as View>Playlist).
+                //   • eject       -> open the AUDIO open-file panel (via the host hook,
+                //                    which reaches AudioSession.presentOpenPanel — the
+                //                    presenter itself owns only the SKIN panel).
+                // The minimize button is wired by SkinAppKit's default (miniaturize the
+                // window), so no callback is passed here.
+                onToggleEQ: { [weak self] in self?.toggleEQWindow() },
+                onTogglePlaylist: { [weak self] in self?.togglePlaylistWindow() },
+                onEject: { [weak self] in self?.onEject?() },
+                // ON-STATE feedback: the EQ / PL buttons light while their window is
+                // open. A non-nil handle is a faithful "open" signal.
+                isEQWindowOpen: { [weak self] in self?.eqHandle != nil },
+                isPlaylistWindowOpen: { [weak self] in self?.playlistHandle != nil }
             )
             // The classic MAIN window is now the active face: HIDE the default
             // SwiftUI window (the one-face-at-a-time rule). Only after a SUCCESSFUL

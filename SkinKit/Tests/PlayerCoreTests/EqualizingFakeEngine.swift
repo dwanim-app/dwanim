@@ -29,6 +29,7 @@ final class EqualizingFakeEngine: AudioPlaybackEngine, AudioEqualizing {
     var duration: TimeInterval = 0
     var isPlaying = false
     var volume: Float = 1.0
+    var pan: Float = 0.0
     var onPlaybackFinished: (@Sendable @MainActor () -> Void)?
 
     func load(_ url: URL) throws { loadedURLs.append(url) }

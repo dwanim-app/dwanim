@@ -59,6 +59,12 @@ public final class PlayerCore {
     public private(set) var currentIndex: Int?
     public private(set) var isPlaying: Bool = false
     public private(set) var volume: Float = 1.0
+    /// Stereo balance / pan, in `-1...1`: `-1` hard left, `0` centered (the
+    /// default), `+1` hard right. Mutated only through `setBalance`, which clamps
+    /// + finite-guards and writes through to `engine.pan`, exactly how `volume` /
+    /// `setVolume` flows. Re-applied to the engine on every track load (see
+    /// `playCurrent`) so the two cannot silently diverge across a track change.
+    public private(set) var balance: Float = 0.0
     public var repeatMode: RepeatMode = .off
     public var isShuffle: Bool = false
 
@@ -96,6 +102,7 @@ public final class PlayerCore {
         self.engine = engine
         self.shuffleStrategy = shuffleStrategy
         self.volume = engine.volume
+        self.balance = engine.pan
         self.engine.onPlaybackFinished = { [weak self] in
             self?.handlePlaybackFinished()
         }
@@ -249,6 +256,18 @@ public final class PlayerCore {
         engine.volume = clamped
     }
 
+    /// Set the stereo balance / pan, clamped to `-1...1`, on both the observable
+    /// state and the engine. A non-finite value (`NaN`/`±inf`) is ignored as a
+    /// no-op, since clamping cannot sanitize it (`min(max(NaN, -1), 1)` is `NaN`)
+    /// and a real engine receiving such a pan is undefined. Mirrors `setVolume`
+    /// exactly, but centered at `0` over the `-1...1` range.
+    public func setBalance(_ b: Float) {
+        guard b.isFinite else { return }
+        let clamped = min(max(b, -1), 1)
+        balance = clamped
+        engine.pan = clamped
+    }
+
     // MARK: - Equalizer
 
     /// Turn the equalizer on or off and mirror the change to the engine. When
@@ -336,6 +355,10 @@ public final class PlayerCore {
                 // two cannot silently diverge across a track change (a real
                 // engine may reset volume when it swaps the underlying file).
                 engine.volume = volume
+                // Likewise re-apply the balance/pan: the concrete engine re-wires
+                // its graph on load, so push the authoritative pan through again
+                // to keep stereo placement stable across a track change.
+                engine.pan = balance
                 // Likewise re-apply the equalizer: the concrete engine re-wires
                 // its graph on load, so push the authoritative EQ state through
                 // again to keep the DSP in sync across a track change.

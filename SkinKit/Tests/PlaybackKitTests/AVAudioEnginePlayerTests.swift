@@ -228,6 +228,64 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         XCTAssertEqual(player.volume, 0.0, accuracy: 1e-6)
     }
 
+    // MARK: - Pan / balance
+
+    func testPanDefaultsToCentered() {
+        let player = AVAudioEnginePlayer()
+        XCTAssertEqual(player.pan, 0, accuracy: 1e-6)
+    }
+
+    func testPanRoundTrips() {
+        let player = AVAudioEnginePlayer()
+        player.pan = -0.5
+        XCTAssertEqual(player.pan, -0.5, accuracy: 1e-6)
+        player.pan = 0.75
+        XCTAssertEqual(player.pan, 0.75, accuracy: 1e-6)
+    }
+
+    func testPanClampsAboveOne() {
+        let player = AVAudioEnginePlayer()
+        player.pan = 5
+        XCTAssertEqual(player.pan, 1.0, accuracy: 1e-6)
+    }
+
+    func testPanClampsBelowMinusOne() {
+        let player = AVAudioEnginePlayer()
+        player.pan = -5
+        XCTAssertEqual(player.pan, -1.0, accuracy: 1e-6)
+    }
+
+    /// The pan survives a track-change `reconnect` (it lives on the player node,
+    /// whose identity is stable), so a loaded file keeps the dialed-in balance.
+    func testPanPersistsAcrossLoad() throws {
+        let player = AVAudioEnginePlayer()
+        player.pan = -0.6
+        let url = try synthWAV(duration: 0.5, sampleRate: 44_100, channels: 2)
+        try player.load(url)
+        XCTAssertEqual(player.pan, -0.6, accuracy: 1e-6)
+    }
+
+    // MARK: - TrackFormatProviding (channel count)
+
+    func testChannelCountIsZeroBeforeLoad() {
+        let provider: TrackFormatProviding = AVAudioEnginePlayer()
+        XCTAssertEqual(provider.channelCount, 0)
+    }
+
+    func testChannelCountReportsMono() throws {
+        let url = try synthWAV(duration: 0.5, sampleRate: 44_100, channels: 1)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+        XCTAssertEqual(player.channelCount, 1)
+    }
+
+    func testChannelCountReportsStereo() throws {
+        let url = try synthWAV(duration: 0.5, sampleRate: 44_100, channels: 2)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+        XCTAssertEqual(player.channelCount, 2)
+    }
+
     // MARK: - Stop does not fire finished
 
     func testStopDoesNotInvokePlaybackFinished() throws {
