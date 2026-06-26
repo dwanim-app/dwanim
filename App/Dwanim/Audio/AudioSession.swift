@@ -235,6 +235,34 @@ final class AudioSession {
         defaultWindow = window
     }
 
+    /// Resize the default SwiftUI window's CONTENT HEIGHT to `height` (keeping its
+    /// width), reported by the scene's `onContentHeightChange` whenever its
+    /// rendered height changes — e.g. when the in-scene queue (PlaylistPanel)
+    /// expands or collapses (fix-5). A SwiftUI `Window` hosted in an `NSHostingView`
+    /// does not reliably grow/shrink itself when content height changes at runtime
+    /// (its fitting/intrinsic size is not exposed to AppKit), so the dynamic-height
+    /// behaviour is driven here from the App layer; the window uses
+    /// `.windowResizability(.contentMinSize)` so this resize is honoured rather than
+    /// snapped back to a stale fitting size. Width is left untouched (the content's
+    /// definite width drives it). No-ops until the window is captured, when the
+    /// window is hidden behind a classic skin (avoid fighting a hidden window), or
+    /// when the height already matches (avoids redundant resizes / feedback). The
+    /// top anchor is kept fixed so the window grows DOWNWARD, matching the queue
+    /// expanding below the now-playing row.
+    func setDefaultContentHeight(_ height: CGFloat) {
+        guard let window = defaultWindow, window.isVisible else { return }
+        let rounded = height.rounded()
+        guard rounded > 0 else { return }
+        let currentContentHeight = window.contentRect(forFrameRect: window.frame).height
+        guard abs(currentContentHeight - rounded) > 0.5 else { return }
+
+        let width = window.contentRect(forFrameRect: window.frame).width
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        window.setContentSize(NSSize(width: width, height: rounded))
+        // Keep the top edge fixed so the window grows/shrinks downward.
+        window.setFrameTopLeftPoint(topLeft)
+    }
+
     /// Hide the default SwiftUI face. Called by the classic-skin presenter when the
     /// classic MAIN window is shown (the one-face-at-a-time rule: showing a classic
     /// skin hides the default window). `orderOut(nil)` removes the window from the

@@ -66,14 +66,22 @@ struct DwanimApp: App {
                 // calls the File menu uses — one source of truth. Plumbed as
                 // closures so DwanimUI never imports AppKit.
                 onOpenAudio: { session.presentOpenPanel() },
-                onOpenSkin: { session.presentOpenSkinPanel() }
+                onOpenSkin: { session.presentOpenSkinPanel() },
+                // fix-5 dynamic height: the scene measures its own rendered height
+                // (pure SwiftUI) and reports it here whenever it changes (queue
+                // expand/collapse). The session resizes the captured default window
+                // to that height — a SwiftUI `Window` does not reliably grow/shrink
+                // itself on runtime content-height changes, so the App layer drives
+                // it. The window-poking stays App-side; DwanimUI stays pure.
+                onContentHeightChange: { height in session.setDefaultContentHeight(height) }
             )
-                // Compact resize floor only. Under `.windowResizability(.contentSize)`
-                // the definite width on `DefaultPlayerView` (`compactWidth` ~580, plus
-                // the scene's gradient margin) drives the opening width and the content
-                // height drives the opening height — this frame just sets how small the
-                // user can drag it. No max height: expanding the in-scene queue (P2-1)
-                // grows the window taller; collapsed it shrinks back to the compact
+                // Compact resize floor only. Under `.windowResizability(.contentMinSize)`
+                // the definite width on `DefaultPlayerView` (`compactWidth` ~580, with
+                // ZERO surrounding margin in fix-5) drives the opening width and the
+                // content height drives the opening height — this frame just sets how
+                // small the user can drag it. No max height: expanding the in-scene
+                // queue (P2-1) grows the window taller (App-layer resize via
+                // `onContentHeightChange`); collapsed it shrinks back to the compact
                 // dock-bar.
                 .frame(minWidth: 440, minHeight: 120)
                 // File-URL DROP onto the default scene window: hand the dropped URLs
@@ -120,15 +128,20 @@ struct DwanimApp: App {
         // close/minimise/zoom — `.hiddenTitleBar` hides the chrome, not the
         // window buttons.
         .windowStyle(.hiddenTitleBar)
-        // P2-5 (real fix): size the window to FIT the content exactly. With
-        // `.contentMinSize`, macOS would restore an old saved frame (or apply
-        // `.defaultSize`) and leave a big empty gradient around the compact bar.
-        // `.contentSize` makes the window == the content's ideal size: no empty
-        // background, it grows taller when the in-scene queue (P2-1) expands and
-        // shrinks back when it collapses, and the bounded width on
-        // `DefaultPlayerView` (idealWidth ~580) drives the opening width. No
-        // `.defaultSize` is needed — the content drives the size.
-        .windowResizability(.contentSize)
+        // P2-5 / fix-5: the content's fitting size drives the window's MINIMUM (and
+        // opening) size — the definite width on `DefaultPlayerView` (~580) plus the
+        // compact-bar height open the window hugging the panel. We use
+        // `.contentMinSize` rather than `.contentSize` ON PURPOSE: a SwiftUI `Window`
+        // hosted in an `NSHostingView` does NOT reliably grow itself when the content
+        // height changes at runtime (measured: `.contentSize` pinned the window to the
+        // collapsed 580×148 and SNAPPED BACK any App-layer resize). `.contentMinSize`
+        // keeps the compact opening size as a floor while letting the App layer GROW
+        // the window when the in-scene queue (P2-1) expands and SHRINK it back when it
+        // collapses, driven by the scene's `onContentHeightChange` ->
+        // `session.setDefaultContentHeight` (see those). Frame restoration to a stale
+        // large frame can't reappear: `WindowAccessor.forceCompact` disables the
+        // autosave on first capture.
+        .windowResizability(.contentMinSize)
         .commands {
             // Replace the standard "New" item with the app's open commands, so
             // File ▸ Open Audio… (⌘O) presents the audio NSOpenPanel and

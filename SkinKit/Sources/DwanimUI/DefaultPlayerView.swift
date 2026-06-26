@@ -56,6 +56,14 @@ public struct DefaultPlayerView: View {
     /// dock-bar (the progress bar + spectrum are well proportioned).
     static let compactWidth: CGFloat = 580
 
+    /// The glass panel's rounded-rect corner radius. Tuned to sit close to the
+    /// macOS hidden-title-bar window's own corner radius (~10–12pt) so that, with
+    /// the scene adding ZERO surrounding margin (fix-5), only a hairline of the
+    /// gradient backdrop shows in the four corner slivers — the glass + window read
+    /// as a single solid rounded window rather than a rounded panel floating inside
+    /// a square gradient frame.
+    static let panelCornerRadius: CGFloat = 12
+
     /// Whether the queue list is shown below the now-playing row. Collapsed by
     /// default so the bar opens as the compact dock-bar; expanding it grows the
     /// window taller (the scene does not hard-cap height).
@@ -124,18 +132,24 @@ public struct DefaultPlayerView: View {
             // The glass panel: a translucent material in a rounded rect with a
             // subtle white-ish stroke. The colourful backdrop lives behind the
             // hosting view (the harness window) so this material has something
-            // to blur.
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            // to blur. Corner radius `Self.panelCornerRadius` ≈ the macOS window
+            // corner so, with ZERO surrounding margin (fix-5), only a hairline of
+            // gradient peeks through the four corner slivers — the glass + window
+            // read as one solid rounded window, not a panel floating in a frame.
+            RoundedRectangle(cornerRadius: Self.panelCornerRadius, style: .continuous)
                 .fill(.regularMaterial)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    RoundedRectangle(cornerRadius: Self.panelCornerRadius, style: .continuous)
                         .stroke(DwanimTheme.glassStroke, lineWidth: 1)
                 }
         }
         // Clip the expanded queue to the panel's rounded-rect so a long list
         // never spills past the glass edge.
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .padding(12)
+        .clipShape(RoundedRectangle(cornerRadius: Self.panelCornerRadius, style: .continuous))
+        // fix-5: NO outer padding. The glass panel reaches the window edge so the
+        // window hugs the panel with no surrounding gradient strip (the scene adds
+        // zero margin). The gradient backdrop fills the whole window behind the
+        // glass; it shows only in the rounded-corner slivers.
     }
 
     // MARK: - Transport row

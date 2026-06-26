@@ -27,9 +27,38 @@ struct PlaylistPanel: View {
     /// sizes to its content under this ceiling).
     private let maxListHeight: CGFloat = 220
 
+    /// Estimated height of one queue row (the `PlaylistRow`'s ~16pt text line plus
+    /// its 12pt vertical padding). Used to give the panel a DEFINITE ideal height
+    /// so the window actually GROWS when the queue expands — see `listHeight`.
+    private static let rowHeight: CGFloat = 28
+    /// Vertical spacing between rows in the `LazyVStack`.
+    private static let rowSpacing: CGFloat = 2
+    /// The `LazyVStack`'s own top+bottom padding inside the scroll content.
+    private static let listVerticalPadding: CGFloat = 12
+
+    /// A DEFINITE height for the list: the content's natural height (rows + spacing
+    /// + padding), CLAMPED to `maxListHeight`. Part of the fix-5 dynamic-height fix.
+    ///
+    /// A bare `ScrollView` has NO intrinsic/ideal height — it is vertically greedy
+    /// but resolves to ~0 under the scene's `.fixedSize(vertical: true)`, so the
+    /// expanded VStack would NOT get taller and the scene's measured rendered height
+    /// (which `DwanimPlayerScene` reports up to drive the window resize) would not
+    /// change. Giving the panel a definite, content-derived height makes the
+    /// expanded scene measurably taller, so the window grows when the queue expands
+    /// and shrinks back when it collapses; once the content exceeds `maxListHeight`
+    /// the height pins at the cap and the `ScrollView` scrolls the overflow.
+    private var listHeight: CGFloat {
+        let count = CGFloat(core.playlist.count)
+        guard count > 0 else { return 0 }
+        let content = count * Self.rowHeight
+            + max(0, count - 1) * Self.rowSpacing
+            + Self.listVerticalPadding
+        return min(content, maxListHeight)
+    }
+
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 2) {
+            LazyVStack(spacing: Self.rowSpacing) {
                 ForEach(Array(core.playlist.enumerated()), id: \.offset) { index, track in
                     PlaylistRow(
                         index: index,
@@ -43,7 +72,8 @@ struct PlaylistPanel: View {
             .padding(.vertical, 6)
             .padding(.horizontal, 8)
         }
-        .frame(maxHeight: maxListHeight)
+        // DEFINITE height (clamped to the cap) so the window grows with the queue.
+        .frame(height: listHeight)
         .scrollContentBackground(.hidden)
     }
 
