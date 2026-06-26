@@ -7,12 +7,21 @@ import SwiftUI
 /// horizontal "dock-bar" music player.
 ///
 /// Layout (left -> right):
-///   [ Dwennimmen emblem tile ] [ title + thin progress + small spectrum ] [ transport ]
+///   [ Dwennimmen emblem tile ] [ title + seek bar + small spectrum ] [ transport ]
 ///
 /// It binds to two observable sources, by design:
-/// - `PlayerCore` for transport state (`isPlaying`, `currentTrack`) and actions.
-/// - `PlayerViewModel` for the live clock (`progress`) and spectrum `levels`,
-///   which `PlayerCore` does not publish as observable properties.
+/// - `PlayerCore` for transport state (`isPlaying`, `currentTrack`) and actions
+///   (including `seek(to:)`, which the seek bar drives).
+/// - `PlayerViewModel` for the live clock (`currentTime` / `duration`) and
+///   spectrum `levels`, which `PlayerCore` does not publish as observable
+///   properties.
+///
+/// The thin gold bar under the title is an interactive `ProgressTrack`: click
+/// anywhere to seek, drag the gold playhead to scrub. The live display fraction
+/// is mapped from `currentTime / duration` via the pure `SeekMath` helper, and
+/// drag-end maps the cursor fraction back to a seek time through the same helper,
+/// landing on `core.seek(to:)`. The bar is inert (no knob, no seek) until a
+/// seekable track is loaded (`duration` finite and `> 0`).
 ///
 /// Text rule: the title slot shows the LIVE track title; with nothing loaded it
 /// shows a quiet "Dwanim". The word "Dwennimmen" never appears — the heritage
@@ -96,7 +105,14 @@ public struct DefaultPlayerView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
 
-                    ProgressTrack(progress: model.progress)
+                    ProgressTrack(
+                        fraction: SeekMath.fraction(
+                            currentTime: model.currentTime,
+                            duration: model.duration
+                        ),
+                        duration: model.duration,
+                        onSeek: { time in core.seek(to: time) }
+                    )
 
                     SpectrumBars(levels: model.levels)
                         .frame(height: 18)
