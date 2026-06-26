@@ -152,4 +152,84 @@ public enum ControlHitTest {
 
         return (x: element.x, y: element.y, width: sprite.width, height: sprite.height)
     }
+
+    // MARK: - Position / seek bar (public)
+    //
+    // The posbar is a slider, not a button, so it is NOT a `SkinControl` case and
+    // has no entry in the `control(atX:y:)` button sweep. Its geometry is derived
+    // from the SAME single-source-of-truth tables — `MainWindowLayout`'s
+    // `posbar.bmp`/`track` draw origin plus the `track` sprite size from
+    // `SpriteCoordinates` — so a layout/sprite tune follows automatically, exactly
+    // like the button hit rects. The interactive controller checks this region on
+    // a press/drag and maps the cursor x to a seek fraction via `posbarFraction`.
+
+    /// The classic posbar track's rect (skin space, top-left origin, unscaled),
+    /// derived from the `posbar.bmp`/`track` layout element + sprite size. `nil`
+    /// when either the layout element or the sprite is absent.
+    public static func posbarRect() -> (x: Int, y: Int, width: Int, height: Int)? {
+        guard let element = MainWindowLayout.elements.first(where: {
+            $0.sheet == "posbar.bmp" && $0.sprite == "track"
+        }) else {
+            return nil
+        }
+        guard let sprite = SpriteCoordinates.mainWindow["posbar.bmp"]?.first(where: {
+            $0.name == "track"
+        }) else {
+            return nil
+        }
+        return (x: element.x, y: element.y, width: sprite.width, height: sprite.height)
+    }
+
+    /// The width of the posbar thumb (the draggable knob), from the
+    /// `posbar.bmp`/`thumb` sprite. Used to bound thumb travel so the thumb's left
+    /// edge never overruns the track's right edge. Falls back to the canonical 29
+    /// when the sprite is absent, so the bar still behaves on a sparse skin.
+    public static func posbarThumbWidth() -> Int {
+        SpriteCoordinates.mainWindow["posbar.bmp"]?.first { $0.name == "thumb" }?.width ?? 29
+    }
+
+    /// Whether a skin-space point lands on the posbar track region. `false` when
+    /// the region cannot be derived (missing layout/sprite). Half-open, like the
+    /// button rects.
+    public static func hitsPosbar(skinX: Int, skinY: Int) -> Bool {
+        guard let rect = posbarRect() else { return false }
+        return skinX >= rect.x && skinX < rect.x + rect.width
+            && skinY >= rect.y && skinY < rect.y + rect.height
+    }
+
+    /// Map a skin-space x (a press/drag on the posbar) to a seek fraction in
+    /// `0...1`, accounting for thumb width: a click positions the THUMB's left
+    /// edge under the cursor, so the usable travel is `trackWidth - thumbWidth`
+    /// (matching the classic slider, where dragging to the far right seats the
+    /// thumb flush at the track's right edge rather than off it). Clamps to the
+    /// endpoints so a drag past either edge maps to `0` / `1`.
+    ///
+    /// Returns `nil` when the posbar region cannot be derived or its usable travel
+    /// is non-positive (so the caller does not seek). The fraction is intended to
+    /// flow into the guarded `SeekMath.time(forFraction:duration:)`, which is the
+    /// finite/zero-duration trap; this stays a pure integer/Double mapping.
+    public static func posbarFraction(skinX: Int) -> Double? {
+        guard let rect = posbarRect() else { return nil }
+        let travel = rect.width - posbarThumbWidth()
+        guard travel > 0 else { return nil }
+        let offset = Double(skinX - rect.x)
+        let fraction = offset / Double(travel)
+        return min(max(fraction, 0), 1)
+    }
+
+    /// The thumb's draw origin (top-left, skin space) for a live seek `fraction`
+    /// (`0...1`). The thumb's left edge travels `trackWidth - thumbWidth` across
+    /// the track and shares the track's y. `nil` when the posbar region cannot be
+    /// derived. A non-finite `fraction` is treated as `0`.
+    ///
+    /// This is the INVERSE of `posbarFraction` and the position the live thumb
+    /// sprite is drawn at, so a press at fraction f draws the thumb where a press
+    /// there would seat it.
+    public static func posbarThumbOrigin(fraction: Double) -> (x: Int, y: Int)? {
+        guard let rect = posbarRect() else { return nil }
+        let travel = max(0, rect.width - posbarThumbWidth())
+        let safeFraction = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        let x = rect.x + Int((safeFraction * Double(travel)).rounded())
+        return (x: x, y: rect.y)
+    }
 }

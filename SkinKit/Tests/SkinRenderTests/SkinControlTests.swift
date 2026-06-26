@@ -76,4 +76,84 @@ final class SkinControlTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Toggle on/off state art (spriteName(pressed:active:))
+    //
+    // The live window reflects a toggle's on/off state through
+    // `spriteName(pressed:active:)`: a lit shuffle/repeat must select the `*On` /
+    // `*OnPressed` art, an unlit one the `*Off` / `*OffPressed` art, and a
+    // transport button must ignore `active` (no on/off state).
+
+    func testToggleActiveSelectsOnArt() {
+        XCTAssertEqual(
+            SkinControl.toggleShuffle.spriteName(pressed: false, active: true).name,
+            "shuffleOn", "active shuffle, released -> shuffleOn"
+        )
+        XCTAssertEqual(
+            SkinControl.toggleShuffle.spriteName(pressed: true, active: true).name,
+            "shuffleOnPressed", "active shuffle, pressed -> shuffleOnPressed"
+        )
+        XCTAssertEqual(
+            SkinControl.toggleRepeat.spriteName(pressed: false, active: true).name,
+            "repeatOn", "active repeat, released -> repeatOn"
+        )
+        XCTAssertEqual(
+            SkinControl.toggleRepeat.spriteName(pressed: true, active: true).name,
+            "repeatOnPressed", "active repeat, pressed -> repeatOnPressed"
+        )
+    }
+
+    func testToggleInactiveSelectsOffArt() {
+        XCTAssertEqual(
+            SkinControl.toggleShuffle.spriteName(pressed: false, active: false).name,
+            "shuffleOff", "inactive shuffle, released -> shuffleOff"
+        )
+        XCTAssertEqual(
+            SkinControl.toggleShuffle.spriteName(pressed: true, active: false).name,
+            "shuffleOffPressed", "inactive shuffle, pressed -> shuffleOffPressed"
+        )
+        XCTAssertEqual(
+            SkinControl.toggleRepeat.spriteName(pressed: false, active: false).name,
+            "repeatOff", "inactive repeat, released -> repeatOff"
+        )
+    }
+
+    /// `active` is irrelevant for the five transport buttons — they have no on/off
+    /// state, so `spriteName(pressed:active:)` must equal `spriteName(pressed:)`
+    /// for any `active`.
+    func testTransportButtonsIgnoreActive() {
+        let transport: [SkinControl] = [.previous, .play, .pause, .stop, .next]
+        for control in transport {
+            for pressed in [false, true] {
+                let plain = control.spriteName(pressed: pressed)
+                for active in [false, true] {
+                    let withActive = control.spriteName(pressed: pressed, active: active)
+                    XCTAssertEqual(withActive.sheet, plain.sheet, "\(control) sheet")
+                    XCTAssertEqual(
+                        withActive.name, plain.name,
+                        "\(control) (pressed \(pressed), active \(active)) ignores active"
+                    )
+                }
+            }
+        }
+    }
+
+    /// Every on/off, released/pressed toggle name must resolve to a real sprite —
+    /// otherwise the on-state overlay would silently draw nothing.
+    func testEveryToggleStateSpriteExists() {
+        for control in [SkinControl.toggleShuffle, .toggleRepeat] {
+            for active in [false, true] {
+                for pressed in [false, true] {
+                    let key = control.spriteName(pressed: pressed, active: active)
+                    let sheet = SpriteCoordinates.mainWindow[key.sheet]
+                    let exists = sheet?.contains { $0.name == key.name } ?? false
+                    XCTAssertTrue(
+                        exists,
+                        "toggle sprite \(key.name) (active \(active), pressed \(pressed)) "
+                            + "for \(control) not found in \(key.sheet)"
+                    )
+                }
+            }
+        }
+    }
 }

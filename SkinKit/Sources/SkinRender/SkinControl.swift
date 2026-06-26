@@ -33,14 +33,39 @@ public extension SkinControl {
     /// (`playPressed`, `shuffleOffPressed`) per the `SpriteCoordinates`
     /// convention.
     ///
-    /// - Note: the two toggles always use their OFF art here. Reflecting the live
-    ///   on/off state (so a lit toggle uses the on / on-pressed sprite) is a
-    ///   future refinement.
-    // TODO: toggles — reflect live on/off state so a lit shuffle/repeat uses the
-    //       `*On` / `*OnPressed` art instead of always the off variant.
+    /// - Note: this overload always uses the control's OFF/released art. It is the
+    ///   STATIC name used to derive the hit rect (`ControlHitTest`, where the OFF
+    ///   sprite size is the canonical footprint) and to draw a transport button's
+    ///   pressed state. To reflect a toggle's live on/off state in the live window,
+    ///   use `spriteName(pressed:active:)`.
     func spriteName(pressed: Bool) -> (sheet: String, name: String) {
         let key = releasedSpriteKey
         return (key.sheet, pressed ? key.name + "Pressed" : key.name)
+    }
+
+    /// The sprite that draws this control reflecting a toggle's live on/off state.
+    ///
+    /// For the two toggles (`.toggleShuffle`, `.toggleRepeat`) an `active` of
+    /// `true` selects the `*On` / `*OnPressed` art and `false` the
+    /// `*Off` / `*OffPressed` art, so a lit shuffle/repeat shows its on sprite
+    /// instead of always the off variant. For the five transport buttons `active`
+    /// is ignored (they have no on/off state) and this is identical to
+    /// `spriteName(pressed:)`.
+    ///
+    /// Pure naming only — no graphics framework, no live `PlayerCore` access. The
+    /// caller passes the live state (`core.isShuffle`, `core.repeatMode != .off`)
+    /// so this stays a unit-testable function of `(control, pressed, active)`.
+    func spriteName(pressed: Bool, active: Bool) -> (sheet: String, name: String) {
+        let base: (sheet: String, name: String)
+        switch self {
+        case .toggleShuffle:
+            base = ("shufrep.bmp", active ? "shuffleOn" : "shuffleOff")
+        case .toggleRepeat:
+            base = ("shufrep.bmp", active ? "repeatOn" : "repeatOff")
+        default:
+            base = releasedSpriteKey
+        }
+        return (base.sheet, pressed ? base.name + "Pressed" : base.name)
     }
 
     /// The `(sheet, released-sprite-name)` backing this control. The released

@@ -393,6 +393,153 @@ final class ControlHitTestTests: XCTestCase {
     /// order, so the shared column resolves to `.toggleShuffle`. If the layout is
     /// later tuned so the toggles no longer overlap, this test should be revisited
     /// (and `testTransportButtonsDoNotOverlap` extended to all controls).
+    // MARK: - Posbar (seek bar) region + fraction mapping
+    //
+    // The posbar is a slider, not a button: it is NOT in `control(atX:y:)`. Its
+    // geometry is derived from the SAME tables as the button rects (the
+    // `posbar.bmp`/`track` element + sprite), so these tests derive the expected
+    // rect rather than hardcoding it, and pin the pure x<->fraction mapping that
+    // feeds `SeekMath`.
+
+    /// The posbar track rect, derived from the layout element + `track` sprite —
+    /// the single source of truth the production code uses.
+    private func expectedPosbarRect() -> (x: Int, y: Int, width: Int, height: Int) {
+        let element = MainWindowLayout.elements.first {
+            $0.sheet == "posbar.bmp" && $0.sprite == "track"
+        }
+        guard let element else {
+            XCTFail("No posbar.bmp/track layout element")
+            return (0, 0, 0, 0)
+        }
+        let sprite = SpriteCoordinates.mainWindow["posbar.bmp"]?.first { $0.name == "track" }
+        guard let sprite else {
+            XCTFail("No posbar.bmp/track sprite")
+            return (0, 0, 0, 0)
+        }
+        return (element.x, element.y, sprite.width, sprite.height)
+    }
+
+    func testPosbarRectMatchesDerivedRect() {
+        let expected = expectedPosbarRect()
+        let actual = ControlHitTest.posbarRect()
+        XCTAssertNotNil(actual, "posbarRect should be non-nil")
+        guard let actual else { return }
+        XCTAssertEqual(actual.x, expected.x, "posbar x")
+        XCTAssertEqual(actual.y, expected.y, "posbar y")
+        XCTAssertEqual(actual.width, expected.width, "posbar width")
+        XCTAssertEqual(actual.height, expected.height, "posbar height")
+    }
+
+    func testPosbarRectHasPositiveSizeAndFitsWindow() {
+        guard let rect = ControlHitTest.posbarRect() else {
+            XCTFail("posbarRect should be non-nil")
+            return
+        }
+        XCTAssertGreaterThan(rect.width, 0)
+        XCTAssertGreaterThan(rect.height, 0)
+        XCTAssertGreaterThanOrEqual(rect.x, 0)
+        XCTAssertGreaterThanOrEqual(rect.y, 0)
+        XCTAssertLessThanOrEqual(rect.x + rect.width, MainWindowLayout.windowWidth)
+        XCTAssertLessThanOrEqual(rect.y + rect.height, MainWindowLayout.windowHeight)
+    }
+
+    /// The thumb width is the real `thumb` sprite width (29 canonical), and the
+    /// usable travel (`trackWidth - thumbWidth`) must be positive so a drag spans
+    /// a real range.
+    func testPosbarThumbWidthAndTravelArePositive() {
+        let rect = expectedPosbarRect()
+        let thumbW = ControlHitTest.posbarThumbWidth()
+        XCTAssertGreaterThan(thumbW, 0, "thumb width > 0")
+        XCTAssertGreaterThan(rect.width - thumbW, 0, "usable travel (track - thumb) > 0")
+    }
+
+    func testHitsPosbarInsideAndOutside() {
+        let rect = expectedPosbarRect()
+        // Inside: top-left corner and the center.
+        XCTAssertTrue(ControlHitTest.hitsPosbar(skinX: rect.x, skinY: rect.y),
+                      "top-left corner is inside the posbar")
+        XCTAssertTrue(
+            ControlHitTest.hitsPosbar(skinX: rect.x + rect.width / 2, skinY: rect.y + rect.height / 2),
+            "center is inside the posbar"
+        )
+        // Half-open: right and bottom edges are exclusive; a pixel left/above is out.
+        XCTAssertFalse(ControlHitTest.hitsPosbar(skinX: rect.x + rect.width, skinY: rect.y),
+                       "right edge x+width is exclusive")
+        XCTAssertFalse(ControlHitTest.hitsPosbar(skinX: rect.x, skinY: rect.y + rect.height),
+                       "bottom edge y+height is exclusive")
+        XCTAssertFalse(ControlHitTest.hitsPosbar(skinX: rect.x - 1, skinY: rect.y),
+                       "a pixel left of the track is outside")
+        // A transport button row (y=88) is well below the posbar (y=72), so the
+        // posbar and buttons do not collide.
+        XCTAssertFalse(ControlHitTest.hitsPosbar(skinX: 16, skinY: 88),
+                       "the play-button row is not the posbar")
+    }
+
+    /// `posbarFraction` clamps to `0...1` at the endpoints and is monotonic in x:
+    /// the left edge maps to 0, a full thumb-width past the right of travel maps to
+    /// 1, and a drag past either edge clamps rather than running off the track.
+    func testPosbarFractionEndpointsAndClamping() {
+        let rect = expectedPosbarRect()
+        let travel = rect.width - ControlHitTest.posbarThumbWidth()
+
+        // Left edge -> 0.
+        XCTAssertEqual(ControlHitTest.posbarFraction(skinX: rect.x)!, 0, accuracy: 1e-9)
+        // Far end of usable travel -> 1.
+        XCTAssertEqual(ControlHitTest.posbarFraction(skinX: rect.x + travel)!, 1, accuracy: 1e-9)
+        // Midpoint of travel -> ~0.5.
+        XCTAssertEqual(
+            ControlHitTest.posbarFraction(skinX: rect.x + travel / 2)!, 0.5, accuracy: 0.02,
+            "midpoint of travel is ~half"
+        )
+        // Past the left -> clamps to 0; past the right -> clamps to 1.
+        XCTAssertEqual(ControlHitTest.posbarFraction(skinX: rect.x - 100)!, 0, accuracy: 1e-9)
+        XCTAssertEqual(ControlHitTest.posbarFraction(skinX: rect.x + rect.width + 100)!, 1, accuracy: 1e-9)
+    }
+
+    /// `posbarThumbOrigin` is the inverse of `posbarFraction`: a fraction maps to a
+    /// thumb x within the track, 0 seats at the track left, 1 seats the thumb flush
+    /// at the track's right edge (its left edge at `trackRight - thumbWidth`), and
+    /// the y equals the track y. A non-finite fraction is treated as 0.
+    func testPosbarThumbOriginInverse() {
+        let rect = expectedPosbarRect()
+        let thumbW = ControlHitTest.posbarThumbWidth()
+
+        let atZero = ControlHitTest.posbarThumbOrigin(fraction: 0)
+        XCTAssertEqual(atZero?.x, rect.x, "fraction 0 seats the thumb at the track left")
+        XCTAssertEqual(atZero?.y, rect.y, "thumb shares the track y")
+
+        let atOne = ControlHitTest.posbarThumbOrigin(fraction: 1)
+        XCTAssertEqual(atOne?.x, rect.x + (rect.width - thumbW),
+                       "fraction 1 seats the thumb flush at the track right")
+        // The thumb's right edge never overruns the track's right edge.
+        XCTAssertLessThanOrEqual((atOne?.x ?? 0) + thumbW, rect.x + rect.width,
+                                 "thumb right edge stays within the track")
+
+        // Non-finite fraction is treated as 0 (no trap, sane default).
+        let nan = ControlHitTest.posbarThumbOrigin(fraction: .nan)
+        XCTAssertEqual(nan?.x, rect.x, "non-finite fraction -> thumb at left")
+
+        // Out-of-range fractions clamp.
+        XCTAssertEqual(ControlHitTest.posbarThumbOrigin(fraction: -5)?.x, rect.x)
+        XCTAssertEqual(ControlHitTest.posbarThumbOrigin(fraction: 5)?.x, rect.x + (rect.width - thumbW))
+    }
+
+    /// Round-trip: a thumb origin produced for a fraction, read back through
+    /// `posbarFraction` at that thumb-left x, returns approximately the same
+    /// fraction (within one travel pixel of rounding).
+    func testPosbarFractionThumbOriginRoundTrip() {
+        let rect = expectedPosbarRect()
+        let travel = Double(rect.width - ControlHitTest.posbarThumbWidth())
+        for f in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            guard let origin = ControlHitTest.posbarThumbOrigin(fraction: f),
+                  let back = ControlHitTest.posbarFraction(skinX: origin.x) else {
+                XCTFail("posbar round-trip nil for fraction \(f)")
+                continue
+            }
+            XCTAssertEqual(back, f, accuracy: 1.0 / travel + 1e-9, "round-trip fraction \(f)")
+        }
+    }
+
     func testToggleOverlapResolvesToFirstInOrder() {
         let shuffle = ControlHitTest.hitRect(for: .toggleShuffle)!
         let repeatRect = ControlHitTest.hitRect(for: .toggleRepeat)!
