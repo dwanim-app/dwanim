@@ -119,25 +119,29 @@ final class ClassicSkinPresenter {
     /// they do not (harmless, since it is set immediately after init).
     var onFileDrop: (([URL]) -> Void)?
 
-    /// ONE-FACE-AT-A-TIME (P2-6): the host's hooks to HIDE / RESTORE the default
-    /// SwiftUI face as the classic MAIN window opens / closes. Tied to the MAIN
-    /// window's presence ONLY (the playlist / EQ aux windows do NOT themselves
-    /// hide / show the default — the main window is the face). Set by the host
-    /// (`AudioSession`) after construction; the default `NSWindow` they poke is
+    /// ONE-FACE-AT-A-TIME (P2-6/P2-7): the host's hooks to HIDE / RESTORE the
+    /// default SwiftUI face and to QUIT the app, all tied to the classic MAIN
+    /// window (the playlist / EQ aux windows do NOT touch the default or quit — the
+    /// main window is the face). Set by the host (`AudioSession`) after
+    /// construction; the default `NSWindow` they poke and the terminate call are
     /// owned by the session. `nil` until set (harmless — the presenter simply does
-    /// not toggle the default), and each closure internally guards a not-yet-
-    /// captured default window.
+    /// not toggle the default / quit), and each default closure internally guards a
+    /// not-yet-captured default window.
     ///   - `hideDefaultWindow` fires when the classic main window is SHOWN
     ///     (`openMainWindow`), so opening / re-skinning a classic skin hides the
     ///     default face. A re-skin (close-then-reopen the main) hides it again, so
     ///     the default stays hidden across a re-skin.
-    ///   - `showDefaultWindow` fires when the classic main window CLOSES with no
-    ///     classic main remaining (the main `onClose` / `closeMainWindow` path), so
-    ///     dismissing the classic face restores the default — even while the
-    ///     playlist / EQ aux windows are still open (per the existing close-UX, the
-    ///     app stays alive on the cluster; the default is what the user sees again).
+    ///   - `showDefaultWindow` fires ONLY on the explicit "Default Skin"
+    ///     switch-back path (`switchToDefaultSkin`), which closes the classic
+    ///     cluster and restores the default face WITHOUT quitting. It does NOT fire
+    ///     on a plain user close of the classic main window — see `quitApp`.
+    ///   - `quitApp` fires when the user CLOSES the classic MAIN window directly
+    ///     (P2-7): closing the classic face quits the app rather than restoring the
+    ///     default. It is SUPPRESSED on the programmatic-close paths (re-skin,
+    ///     switch-to-default, and quit-teardown) so only a genuine user close quits.
     var hideDefaultWindow: (() -> Void)?
     var showDefaultWindow: (() -> Void)?
+    var quitApp: (() -> Void)?
 
     /// Per-window handles (controller + window) of the three-window cluster. Each is
     /// held while its window is open (so it is not deallocated for the window's
@@ -148,12 +152,27 @@ final class ClassicSkinPresenter {
     private var eqHandle: EQWindowHandle?
 
     /// True only while a re-skin is tearing the old cluster down to rebuild it with a
-    /// new skin (`openWindow`). It SUPPRESSES the default-window RESTORE that the main
+    /// new skin (`openWindow`). It SUPPRESSES the close-time QUIT that the main
     /// window's close would otherwise trigger, so a re-skin (close-then-reopen the
-    /// main) keeps the default face HIDDEN throughout — no flicker of the default
-    /// window between the old and new classic main. Reset once the rebuild has
+    /// main) keeps the default face HIDDEN throughout and does NOT quit the app — the
+    /// old main's close is programmatic, not a user close. Reset once the rebuild has
     /// (re-)opened the main window.
     private var isReskinning = false
+
+    /// True only while the explicit "Default Skin" command (`switchToDefaultSkin`)
+    /// is tearing the classic cluster down to RETURN to the default face. It
+    /// SUPPRESSES the close-time QUIT (the cluster close is programmatic, not a user
+    /// close) so switching back to the default does NOT quit the app; the switch
+    /// itself restores the default window. Reset once the switch has completed.
+    private var isSwitchingToDefault = false
+
+    /// True once genuine app TERMINATION has begun (the host's
+    /// `applicationWillTerminate` calls `prepareForTermination()`). It SUPPRESSES
+    /// both the close-time QUIT (so the quit-teardown `closeAllWindows()` does not
+    /// re-enter `terminate(_:)` — avoiding a double-terminate) AND any default
+    /// restore (so the default face does not flash back during teardown). Latched
+    /// true for the rest of the process lifetime — termination never reverses.
+    private var isTerminating = false
 
     /// Integer zoom for the hosted classic windows. Matches the harness's default
     /// `--scale 2` so the in-app windows read at the same size as the dev path.
@@ -368,17 +387,28 @@ final class ClassicSkinPresenter {
                 // classic windows survive). The controller is NOT installed as the
                 // app's NSApplicationDelegate.
                 terminatesAppOnClose: false,
-                // ONE-FACE-AT-A-TIME (P2-6): when the classic MAIN window CLOSES,
-                // drop its handle and — unless this is a re-skin teardown (the main is
-                // about to be rebuilt) — RESTORE the default face. This single funnel
-                // catches BOTH close paths: a user-driven window close AND a
-                // programmatic `closeMainWindow()` (which calls `window.close()`,
-                // routing through `windowWillClose` → here). `makeKeyAndOrderFront` is
-                // idempotent, so a doubled close is harmless.
+                // CLOSE-CLASSIC-MAIN → QUIT (P2-7): when the classic MAIN window
+                // CLOSES, drop its handle, then decide by WHO closed it. This single
+                // funnel catches every close path — a user-driven window close AND
+                // every programmatic `closeMainWindow()` (which calls `window.close()`,
+                // routing through `windowWillClose` → here):
+                //   • re-skin teardown (`isReskinning`): the main is about to be
+                //     rebuilt — do nothing (no quit, no restore; the default stays
+                //     hidden across the swap).
+                //   • switch-to-default (`isSwitchingToDefault`): the command itself
+                //     restores the default face — do nothing here (no quit).
+                //   • quit-teardown (`isTerminating`): the app is already terminating —
+                //     do nothing (no re-entrant `terminate`, no default flash).
+                //   • otherwise → a genuine USER close of the classic face: QUIT the
+                //     app (the user dislikes the default popping back; closing the
+                //     skin closes the app). The default is NOT restored.
                 onClose: { [weak self] in
                     guard let self else { return }
                     self.mainHandle = nil
-                    if !self.isReskinning { self.showDefaultWindow?() }
+                    guard !self.isReskinning,
+                          !self.isSwitchingToDefault,
+                          !self.isTerminating else { return }
+                    self.quitApp?()
                 },
                 // Route a file drop onto this classic main window through the same
                 // app drop handler as the default scene.
@@ -501,6 +531,39 @@ final class ClassicSkinPresenter {
         closeMainWindow()
         closePlaylistWindow()
         closeEQWindow()
+    }
+
+    // MARK: Return to the default skin (P2-7)
+
+    /// RETURN-TO-DEFAULT without quitting: close the whole classic cluster and
+    /// RESTORE the default SwiftUI face. This is the host's menu-bar "Default Skin"
+    /// command — the only way to leave a classic skin WITHOUT quitting (a plain
+    /// user close of the classic main window quits the app, per the close→quit
+    /// rule).
+    ///
+    /// The `isSwitchingToDefault` flag is raised around the cluster teardown so the
+    /// classic main window's `onClose` — fired by the programmatic
+    /// `closeAllWindows()` here — recognises this as a switch, NOT a user close, and
+    /// does NOT quit the app. The default is restored AFTER the cluster is torn down
+    /// so the swap is clean. The loaded skin is intentionally KEPT (a later
+    /// re-open / toggle can rebuild the cluster); only the windows go away. A no-op
+    /// (other than restoring the default) when no classic window is open.
+    func switchToDefaultSkin() {
+        isSwitchingToDefault = true
+        closeAllWindows()
+        isSwitchingToDefault = false
+        showDefaultWindow?()
+    }
+
+    // MARK: Termination (P2-7)
+
+    /// Mark genuine app TERMINATION as having begun (called from the host's
+    /// `applicationWillTerminate`). Latches `isTerminating` so the classic main
+    /// window's `onClose` — fired by the quit-teardown `closeAllWindows()` — neither
+    /// re-enters `terminate(_:)` (no double-terminate) NOR restores the default face
+    /// (no flash during teardown). One-way: termination never reverses.
+    func prepareForTermination() {
+        isTerminating = true
     }
 
     // MARK: Failure UI
