@@ -82,17 +82,18 @@ final class AudioSession {
     /// is a safe no-op (the default simply stays visible).
     private weak var defaultWindow: NSWindow?
 
-    /// The last content height the scene reported (fix-5), CACHED on EVERY report —
-    /// even while the default window is hidden behind a classic skin. The cache is
-    /// the source of truth for the restore-on-show path: a content-height change that
-    /// happens WHILE a classic skin is up (e.g. a different-length playlist replaces
-    /// the queue) cannot resize the hidden window then, and on a ⌘⇧D switch-back the
-    /// unchanged SwiftUI height preference does not re-fire — so without this cache the
-    /// restored window would keep its STALE height (clipped queue / empty gradient
+    /// The last panel content SIZE the scene reported (fix-5, extended to width for
+    /// the 3-up default), CACHED on EVERY report — even while the default window is
+    /// hidden behind a classic skin. The cache is the source of truth for the
+    /// restore-on-show path: a content-size change that happens WHILE a classic skin
+    /// is up (e.g. a different-length playlist replaces the queue, or the EQ is
+    /// toggled) cannot resize the hidden window then, and on a ⌘⇧D switch-back the
+    /// unchanged SwiftUI size preference does not re-fire — so without this cache the
+    /// restored window would keep its STALE size (clipped content / empty gradient
     /// strip). `showDefaultWindow()` re-applies this value after `makeKeyAndOrderFront`
-    /// so the default face restores at the correct height. `nil` until the scene first
-    /// reports a height. See `setDefaultContentHeight` / `showDefaultWindow`.
-    private var lastReportedContentHeight: CGFloat?
+    /// so the default face restores at the correct size. `nil` until the scene first
+    /// reports a size. See `setDefaultContentSize` / `showDefaultWindow`.
+    private var lastReportedContentSize: CGSize?
 
     /// The URLs whose security scopes are currently held open for the session
     /// (the loaded playlist — one element for a single-file open), each paired with
@@ -273,54 +274,66 @@ final class AudioSession {
     /// once) on the main actor as the accessor view settles into / re-reports its
     /// window; storing the same reference again is harmless. Held weak — this is
     /// only used to hide / restore the default face while a classic skin is active.
+    ///
+    /// Applies any already-cached content size here too: the scene's first size
+    /// report can fire BEFORE the window is captured/visible (so `setDefaultContentSize`
+    /// only cached it without resizing), and the unchanged SwiftUI size preference does
+    /// not re-fire once the window appears — so without this the window would open at
+    /// its large platform default. `applyContentSize`'s 0.5pt tolerance makes this a
+    /// no-op when the size already matches.
     func setDefaultWindow(_ window: NSWindow) {
         defaultWindow = window
+        if let cached = lastReportedContentSize, window.isVisible {
+            applyContentSize(cached, to: window)
+        }
     }
 
-    /// Resize the default SwiftUI window's CONTENT HEIGHT to `height` (keeping its
-    /// width), reported by the scene's `onContentHeightChange` whenever its
-    /// rendered height changes — e.g. when the in-scene queue (PlaylistPanel)
-    /// expands or collapses (fix-5). A SwiftUI `Window` hosted in an `NSHostingView`
-    /// does not reliably grow/shrink itself when content height changes at runtime
-    /// (its fitting/intrinsic size is not exposed to AppKit), so the dynamic-height
-    /// behaviour is driven here from the App layer; the window uses
+    /// Resize the default SwiftUI window's CONTENT SIZE to `size` (both width AND
+    /// height), reported by the scene's `onContentSizeChange` whenever the panel's
+    /// intrinsic size changes — at first layout, and when the in-scene EQ
+    /// (EqualizerPanel) or queue (PlaylistPanel) expands or collapses (fix-5,
+    /// extended to width for the 3-up default). A SwiftUI `Window` hosted in an
+    /// `NSHostingView` does not expose its fitting/intrinsic size to AppKit
+    /// (`fittingSize == 0`, measured), so it opens at a large platform default
+    /// (~900×450) with the panel floating inside and never shrinks itself — so the
+    /// sizing is driven here from the App layer. The window uses
     /// `.windowResizability(.contentMinSize)` so this resize is honoured rather than
-    /// snapped back to a stale fitting size. Width is left untouched (the content's
-    /// definite width drives it). No-ops until the window is captured, when the
-    /// window is hidden behind a classic skin (avoid fighting a hidden window), or
-    /// when the height already matches (avoids redundant resizes / feedback). The
-    /// top anchor is kept fixed so the window grows DOWNWARD, matching the queue
-    /// expanding below the now-playing row.
-    func setDefaultContentHeight(_ height: CGFloat) {
+    /// snapped back. No-ops until the window is captured, while it is hidden behind a
+    /// classic skin (avoid fighting a hidden window), or when the size already
+    /// matches (avoids redundant resizes / feedback). The top anchor is kept fixed so
+    /// the window grows/shrinks DOWNWARD, matching sections expanding below the
+    /// now-playing row.
+    func setDefaultContentSize(_ size: CGSize) {
         // CACHE FIRST, on every report (visible OR hidden): the cache is the source
         // of truth the restore-on-show path re-applies. A change reported while the
         // default is hidden behind a classic skin must not be dropped — it is
         // re-applied on the ⌘⇧D switch-back (see `showDefaultWindow`). Round here so
-        // the cache matches the value `applyContentHeight` compares against (keeps the
+        // the cache matches the value `applyContentSize` compares against (keeps the
         // re-apply from looping against its own rounding).
-        let rounded = height.rounded()
-        guard rounded > 0 else { return }
-        lastReportedContentHeight = rounded
+        let rounded = CGSize(width: size.width.rounded(), height: size.height.rounded())
+        guard rounded.width > 0, rounded.height > 0 else { return }
+        lastReportedContentSize = rounded
         // Only resize when the window is actually visible — fighting a hidden window
         // is pointless (and the restore-on-show re-applies the cached value anyway).
         guard let window = defaultWindow, window.isVisible else { return }
-        applyContentHeight(rounded, to: window)
+        applyContentSize(rounded, to: window)
     }
 
-    /// Resize `window`'s CONTENT HEIGHT to `rounded` (already rounded), keeping its
-    /// width and pinning the TOP-LEFT so it grows/shrinks DOWNWARD. No-ops when the
-    /// height already matches (within 0.5pt) so re-applying the cached value on a
-    /// switch-back does not loop against the SwiftUI preference re-report. Shared by
-    /// the live `setDefaultContentHeight` report path and the `showDefaultWindow`
-    /// restore path so both resize identically.
-    private func applyContentHeight(_ rounded: CGFloat, to window: NSWindow) {
-        let currentContentHeight = window.contentRect(forFrameRect: window.frame).height
-        guard abs(currentContentHeight - rounded) > 0.5 else { return }
+    /// Resize `window`'s CONTENT SIZE to `rounded` (already rounded), pinning the
+    /// TOP-LEFT so it grows/shrinks DOWNWARD (and from the right edge for width).
+    /// No-ops when the size already matches (within 0.5pt on both axes) so re-applying
+    /// the cached value on a switch-back does not loop against the SwiftUI preference
+    /// re-report. Shared by the live `setDefaultContentSize` report path and the
+    /// `showDefaultWindow` restore path so both resize identically.
+    private func applyContentSize(_ rounded: CGSize, to window: NSWindow) {
+        let currentContent = window.contentRect(forFrameRect: window.frame).size
+        guard abs(currentContent.width - rounded.width) > 0.5
+            || abs(currentContent.height - rounded.height) > 0.5 else { return }
 
-        let width = window.contentRect(forFrameRect: window.frame).width
         let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-        window.setContentSize(NSSize(width: width, height: rounded))
-        // Keep the top edge fixed so the window grows/shrinks downward.
+        window.setContentSize(rounded)
+        // Keep the top-left fixed so the window grows/shrinks downward (and to the
+        // right), keeping the title-bar corner anchored.
         window.setFrameTopLeftPoint(topLeft)
     }
 
@@ -354,15 +367,15 @@ final class AudioSession {
     private func showDefaultWindow() {
         guard !isTerminating, let window = defaultWindow else { return }
         window.makeKeyAndOrderFront(nil)
-        // fix-5 stale-height restore: a content-height change reported WHILE the
-        // window was hidden (e.g. a different-length playlist replaced the queue)
-        // could not resize the hidden window, and the unchanged SwiftUI height
-        // preference does not re-fire on this re-order — so re-apply the cached
-        // height now that the window is visible again. `applyContentHeight`'s 0.5pt
-        // tolerance makes this a no-op when the height already matches, so it does
-        // not loop.
-        if let cached = lastReportedContentHeight {
-            applyContentHeight(cached, to: window)
+        // fix-5 stale-size restore: a content-size change reported WHILE the window
+        // was hidden (e.g. a different-length playlist replaced the queue, or the EQ
+        // was toggled) could not resize the hidden window, and the unchanged SwiftUI
+        // size preference does not re-fire on this re-order — so re-apply the cached
+        // size now that the window is visible again. `applyContentSize`'s 0.5pt
+        // tolerance makes this a no-op when the size already matches, so it does not
+        // loop.
+        if let cached = lastReportedContentSize {
+            applyContentSize(cached, to: window)
         }
     }
 

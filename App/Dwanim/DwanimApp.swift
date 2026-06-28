@@ -67,22 +67,22 @@ struct DwanimApp: App {
                 // closures so DwanimUI never imports AppKit.
                 onOpenAudio: { session.presentOpenPanel() },
                 onOpenSkin: { session.presentOpenSkinPanel() },
-                // fix-5 dynamic height: the scene measures its own rendered height
-                // (pure SwiftUI) and reports it here whenever it changes (queue
-                // expand/collapse). The session resizes the captured default window
-                // to that height — a SwiftUI `Window` does not reliably grow/shrink
-                // itself on runtime content-height changes, so the App layer drives
-                // it. The window-poking stays App-side; DwanimUI stays pure.
-                onContentHeightChange: { height in session.setDefaultContentHeight(height) }
+                // fix-5 dynamic size: the scene measures its panel's intrinsic SIZE
+                // (pure SwiftUI) and reports it here whenever it changes (first
+                // layout + EQ/queue expand/collapse). The session resizes the
+                // captured default window to that size — a SwiftUI `Window` reports
+                // `fittingSize == 0`, so it opens at a large platform default and the
+                // App layer must size it (width AND height) to hug the panel. The
+                // window-poking stays App-side; DwanimUI stays pure.
+                onContentSizeChange: { size in session.setDefaultContentSize(size) }
             )
                 // Compact resize floor only. Under `.windowResizability(.contentMinSize)`
-                // the definite width on `DefaultPlayerView` (`compactWidth` ~580, with
-                // ZERO surrounding margin in fix-5) drives the opening width and the
-                // content height drives the opening height — this frame just sets how
-                // small the user can drag it. No max height: expanding the in-scene
-                // queue (P2-1) grows the window taller (App-layer resize via
-                // `onContentHeightChange`); collapsed it shrinks back to the compact
-                // dock-bar.
+                // the App-layer content-SIZE report (`onContentSizeChange` ->
+                // `session.setDefaultContentSize`) drives the opening size (the panel's
+                // intrinsic `compactWidth` ~580 × its content height) — this frame just
+                // sets how small the user can drag it. No max: expanding the in-scene
+                // EQ / queue grows the window (App-layer resize); collapsing shrinks it
+                // back.
                 .frame(minWidth: 440, minHeight: 120)
                 // File-URL DROP onto the default scene window: hand the dropped URLs
                 // to the session's one drop handler (the same one every hosted

@@ -3,11 +3,19 @@ import SwiftUI
 
 // MARK: - DefaultPlayerView
 
-/// The app's own face when no `.wsz` skin is loaded: a wide, short frosted-glass
-/// horizontal "dock-bar" music player.
+/// The app's own face when no `.wsz` skin is loaded: a frosted-glass music player
+/// that opens 3-UP — the now-playing dock-bar on top, the graphic EQUALIZER below
+/// it, and the PLAYLIST queue last — all visible by default.
 ///
-/// Layout (left -> right):
-///   [ Dwennimmen emblem tile ] [ title + seek bar + small spectrum ] [ transport ]
+/// Layout (top -> bottom, single 580-wide glass column):
+///   1. now-playing row: [ emblem tile ] [ title + seek bar + spectrum ] [ transport ]
+///   2. EQUALIZER (`EqualizerPanel`): ON/OFF + preamp + 10 vertical band sliders
+///   3. PLAYLIST (`PlaylistPanel`): the scrollable queue (mounts once non-empty)
+///
+/// Sections 2 and 3 each have a collapse affordance (a control-column icon plus a
+/// gear-menu item) but DEFAULT to shown; collapsing one shrinks the window back via
+/// the dynamic-height path (the scene measures its rendered height and the App layer
+/// resizes the window).
 ///
 /// It binds to two observable sources, by design:
 /// - `PlayerCore` for transport state (`isPlaying`, `currentTrack`) and actions
@@ -73,10 +81,19 @@ public struct DefaultPlayerView: View {
     /// a square gradient frame.
     static let panelCornerRadius: CGFloat = 12
 
-    /// Whether the queue list is shown below the now-playing row. Collapsed by
-    /// default so the bar opens as the compact dock-bar; expanding it grows the
-    /// window taller (the scene does not hard-cap height).
-    @State private var isQueueExpanded = false
+    /// Whether the queue list is shown below the now-playing row. EXPANDED by
+    /// default (the 3-up default face shows MAIN + EQUALIZER + PLAYLIST at once);
+    /// the disclosure chevron / gear item still collapse it, and collapsing
+    /// shrinks the window back. The `&& !core.playlist.isEmpty` mount guard means
+    /// an empty queue still shows nothing until tracks load.
+    @State private var isQueueExpanded = true
+
+    /// Whether the equalizer panel is shown below the now-playing row. EXPANDED by
+    /// default so the default face opens 3-up. Unlike the queue it has no
+    /// "non-empty" gate — the EQ always exists — so it is visible from launch; the
+    /// gear "Hide Equalizer" item (and the EQ disclosure) collapse it, shrinking
+    /// the window back via the same dynamic-height path.
+    @State private var isEQExpanded = true
 
     public init(
         core: PlayerCore,
@@ -122,8 +139,23 @@ public struct DefaultPlayerView: View {
                 transport
             }
 
-            // The expandable queue (P2-1): only when toggled open AND non-empty.
-            // It fills the formerly-empty space and lets the window grow taller.
+            // 3-up section 2: the EQUALIZER, shown by default (no non-empty gate —
+            // the EQ always exists). Binds to the SAME `core.equalizer` the classic
+            // EQ drives. Sits above the queue: closely tied to the now-playing
+            // controls above it, with the (potentially long) queue last.
+            if isEQExpanded {
+                Divider()
+                    .overlay(DwanimTheme.glassStroke)
+                    .padding(.top, 12)
+
+                EqualizerPanel(core: core)
+                    .padding(.top, 10)
+                    .transition(.opacity)
+            }
+
+            // 3-up section 3: the expandable queue (P2-1), now EXPANDED by default
+            // (mounts only once non-empty). It fills the lower area and lets the
+            // window grow taller.
             if isQueueExpanded && !core.playlist.isEmpty {
                 Divider()
                     .overlay(DwanimTheme.glassStroke)
@@ -210,9 +242,30 @@ public struct DefaultPlayerView: View {
     /// transport buttons stay centred-left as before.
     private var controlsColumn: some View {
         VStack(spacing: 8) {
+            eqDisclosure
             queueDisclosure
             gearMenu
         }
+    }
+
+    /// The slider-icon toggle for the equalizer section. Always enabled (the EQ
+    /// always exists, unlike the queue which gates on non-empty). Tints gold when
+    /// the EQ is open so its state reads at a glance.
+    private var eqDisclosure: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isEQExpanded.toggle()
+            }
+        } label: {
+            Image(systemName: "slider.vertical.3")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isEQExpanded ? AnyShapeStyle(DwanimTheme.goldGradient) : AnyShapeStyle(.white.opacity(0.7)))
+                .frame(width: 22, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isEQExpanded ? "Hide equalizer" : "Show equalizer")
+        .accessibilityLabel(Text(isEQExpanded ? "Hide equalizer" : "Show equalizer"))
     }
 
     /// The chevron that toggles the queue list. Disabled (dimmed) when the
@@ -252,6 +305,13 @@ public struct DefaultPlayerView: View {
             }
             if onOpenAudio != nil || onOpenSkin != nil {
                 Divider()
+            }
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isEQExpanded.toggle()
+                }
+            } label: {
+                Label(isEQExpanded ? "Hide Equalizer" : "Show Equalizer", systemImage: "slider.vertical.3")
             }
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) {
