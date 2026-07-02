@@ -63,8 +63,9 @@ public enum PlaylistWindowComposer {
     /// This is the resize hinge: as the user drags the window, the AppKit shell
     /// reads its content bounds and asks here for the skin-space dimensions to
     /// re-`compose` (and to feed `interiorRect` / `PlaylistLayout`). Skin pixels =
-    /// `floor(view / scale)` (the inverse of the integer nearest-neighbor upscale),
-    /// then clamped to the minimum. A non-positive `scale` is treated as 1 so the
+    /// `floor(view / scale)` (the inverse of the presentation upscale — `scale`
+    /// is points per skin pixel, possibly fractional like 1.5), then clamped to
+    /// the minimum. A non-positive or non-finite `scale` is treated as 1 so the
     /// arithmetic never traps; a tiny / negative view size clamps to the minimum.
     ///
     /// A non-finite view dimension (`NaN`/`±inf`, e.g. a degenerate bounds report)
@@ -75,9 +76,9 @@ public enum PlaylistWindowComposer {
     public static func skinSize(
         fromViewWidth viewWidth: Double,
         viewHeight: Double,
-        scale: Int
+        scale: Double
     ) -> (width: Int, height: Int) {
-        let s = Double(max(1, scale))
+        let s = (scale.isFinite && scale > 0) ? scale : 1
         let scaledW = viewWidth / s
         let scaledH = viewHeight / s
         // A non-finite raw value cannot be converted to Int; map it to the minimum

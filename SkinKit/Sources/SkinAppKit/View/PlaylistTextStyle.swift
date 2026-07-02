@@ -32,8 +32,8 @@ struct PlaylistTextStyle {
     let currentText: CGColor
     let selectedBackground: CGColor?
 
-    init(skin: Skin, scale: Int) {
-        let pointSize = CGFloat(PlaylistTextStyle.fontPointSize * scale)
+    init(skin: Skin, scale: Double) {
+        let pointSize = CGFloat(Double(PlaylistTextStyle.fontPointSize) * scale)
         self.font = PlaylistTextStyle.resolveFont(named: skin.playlist?.font, pointSize: pointSize)
 
         // Classic defaults: green-on-black list, brighter white for the current

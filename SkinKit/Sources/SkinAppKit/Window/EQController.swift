@@ -46,7 +46,13 @@ public final class EQController: SkinWindowController {
     private let skin: Skin
     private let core: PlayerCore
     private let view: ScaledImageView
-    private let scale: Int
+    /// PRESENTATION scale: points per skin pixel (possibly fractional — e.g. 1.5).
+    /// Used for the view-point <-> skin-point hit-test mapping.
+    private let scale: Double
+    /// INTEGER nearest-neighbor factor the composed bitmap is rendered at, derived
+    /// from `scale` by the pure `PresentationScale` (integer scale -> itself;
+    /// fractional 1.5 -> the 2x-backing device factor 3).
+    private let bitmapScale: Int
 
     /// The slider currently being dragged (set on a mouse-down that grabbed a
     /// slider), so a subsequent drag keeps adjusting THAT slider even if the
@@ -58,7 +64,7 @@ public final class EQController: SkinWindowController {
         skin: Skin,
         core: PlayerCore,
         view: ScaledImageView,
-        scale: Int,
+        scale: Double,
         terminatesAppOnClose: Bool = true,
         onClose: (() -> Void)? = nil
     ) {
@@ -66,6 +72,7 @@ public final class EQController: SkinWindowController {
         self.core = core
         self.view = view
         self.scale = scale
+        self.bitmapScale = PresentationScale.bitmapScale(forPresentationScale: scale)
         super.init(terminatesAppOnClose: terminatesAppOnClose, onClose: onClose)
 
         // Mouse-down is a fresh gesture (isDown: true); a drag continues it
@@ -196,7 +203,9 @@ public final class EQController: SkinWindowController {
         guard let image = CGImageConversion.makeImage(from: composed) else { return }
         let scaled: (image: CGImage, width: Int, height: Int)
         do {
-            scaled = try scaledImage(image, scale: scale)
+            // Integer nearest-neighbor bitmap; the view's point-sized bounds place
+            // it 1:1 in device pixels at a fractional presentation scale.
+            scaled = try scaledImage(image, scale: bitmapScale)
         } catch {
             return
         }

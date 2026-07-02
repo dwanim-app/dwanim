@@ -30,7 +30,9 @@ func openPlaylistWindow(skin: Skin, core: PlayerCore, scale: Int) -> Never {
 
     let handle: PlaylistWindowHandle
     do {
-        handle = try showPlaylistWindow(skin: skin, core: core, scale: scale, title: "Playlist")
+        // The integer CLI zoom is an integer PRESENTATION scale, so the bitmap
+        // factor equals it and the window path behaves exactly as before.
+        handle = try showPlaylistWindow(skin: skin, core: core, scale: Double(scale), title: "Playlist")
     } catch {
         FileHandle.standardError.write(Data("Failed to build the playlist window: \(error)\n".utf8))
         exit(1)

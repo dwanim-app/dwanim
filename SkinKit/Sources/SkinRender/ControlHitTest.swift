@@ -58,15 +58,17 @@ public enum ControlHitTest {
     // MARK: - View-space hit test (public)
     //
     // The interactive window draws the composed skin into a NON-flipped NSView
-    // (origin bottom-left, y increasing UPWARD) scaled by an integer zoom, while
+    // (origin bottom-left, y increasing UPWARD) scaled by the PRESENTATION scale
+    // (points per skin pixel — an integer like 1/2 or a fractional 1.5), while
     // the skin image is top-left origin (y down). These pure functions undo that
     // mapping so click routing can be unit-tested without a window: they are the
     // inverse of the forward draw map and carry NO graphics framework.
 
     /// Convert a view-space point (the NSView's non-flipped, bottom-left origin,
     /// scaled coordinates) to a skin-space point (top-left origin, unscaled
-    /// pixels). Undoes the integer `scale` and flips y from the view's
-    /// bottom-left origin to the skin's top-left origin:
+    /// pixels). Undoes the presentation `scale` (points per skin pixel, possibly
+    /// fractional — e.g. 1.5) and flips y from the view's bottom-left origin to
+    /// the skin's top-left origin:
     ///   `x = floor(viewX / scale)`
     ///   `y = floor((viewHeight - viewY) / scale)`
     /// The result may land outside the skin bounds; the caller decides.
@@ -81,11 +83,10 @@ public enum ControlHitTest {
         viewX: Double,
         viewY: Double,
         viewHeight: Double,
-        scale: Int
+        scale: Double
     ) -> (x: Int, y: Int) {
-        let s = Double(scale)
-        let rawX = viewX / s
-        let rawY = (viewHeight - viewY) / s
+        let rawX = viewX / scale
+        let rawY = (viewHeight - viewY) / scale
         let x = rawX.isFinite ? Int(rawX.rounded(.down)) : 0
         let y = rawY.isFinite ? Int(rawY.rounded(.down)) : 0
         return (x, y)
@@ -98,7 +99,7 @@ public enum ControlHitTest {
         atViewX viewX: Double,
         viewY: Double,
         viewHeight: Double,
-        scale: Int
+        scale: Double
     ) -> SkinControl? {
         let point = skinPoint(viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale)
         return control(atX: point.x, y: point.y)
@@ -122,10 +123,9 @@ public enum ControlHitTest {
         skinX: Int,
         skinY: Int,
         viewHeight: Double,
-        scale: Int
+        scale: Double
     ) -> (x: Double, y: Double) {
-        let s = Double(scale)
-        return (x: Double(skinX) * s, y: viewHeight - Double(skinY) * s)
+        (x: Double(skinX) * scale, y: viewHeight - Double(skinY) * scale)
     }
 
     // MARK: - Hit rect (public, for tests/debug)
