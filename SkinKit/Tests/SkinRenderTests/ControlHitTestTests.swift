@@ -590,7 +590,8 @@ final class ControlHitTestTests: XCTestCase {
         .eqButton:  (MainWindowLayout.eqButtonOrigin, "shufrep.bmp", "eqButtonOff"),
         .plButton:  (MainWindowLayout.plButtonOrigin, "shufrep.bmp", "plButtonOff"),
         .eject:     (MainWindowLayout.ejectOrigin,    "cbuttons.bmp", "eject"),
-        .minimize:  (MainWindowLayout.minimizeOrigin, "titlebar.bmp", "minimize")
+        .minimize:  (MainWindowLayout.minimizeOrigin, "titlebar.bmp", "minimize"),
+        .close:     (MainWindowLayout.closeOrigin,    "titlebar.bmp", "close")
     ]
 
     /// EQ / PL / eject are composited as static elements (their OFF art) because
@@ -685,6 +686,87 @@ final class ControlHitTestTests: XCTestCase {
                 if Set([all[i], all[j]]) == Set([.toggleShuffle, .toggleRepeat]) { continue }
                 XCTAssertFalse(rectsOverlap(a, b), "\(all[i]) \(a) overlaps \(all[j]) \(b)")
             }
+        }
+    }
+
+    // MARK: - Title-bar drag band (borderless window drag gate)
+    //
+    // The main window is borderless; the skin's title-bar strip is the window's
+    // drag handle. `hitsTitleBarDragArea` must claim exactly the top strip MINUS
+    // every control's hit rect (the minimize / close buttons win over drag). The
+    // band height derives from the `titlebar.bmp`/`titleBarActive` sprite, so
+    // these tests derive it too rather than hardcoding 14.
+
+    func testTitleBarHeightMatchesTitleBarSprite() {
+        let sprite = SpriteCoordinates.mainWindow["titlebar.bmp"]?
+            .first { $0.name == "titleBarActive" }
+        XCTAssertNotNil(sprite, "titleBarActive sprite must exist")
+        XCTAssertEqual(ControlHitTest.titleBarHeight(), sprite?.height,
+                       "band height derives from the titleBarActive sprite")
+        XCTAssertGreaterThan(ControlHitTest.titleBarHeight(), 0)
+    }
+
+    /// A plain point in the strip (no button there) is drag area; points below
+    /// the strip, off-window, or negative are not.
+    func testTitleBarDragAreaCoversTheStripAwayFromButtons() {
+        let band = ControlHitTest.titleBarHeight()
+        // The strip's left half carries no control — all drag area.
+        XCTAssertTrue(ControlHitTest.hitsTitleBarDragArea(skinX: 100, skinY: 0),
+                      "top row of the strip is drag area")
+        XCTAssertTrue(ControlHitTest.hitsTitleBarDragArea(skinX: 100, skinY: band - 1),
+                      "last row of the strip is drag area")
+        XCTAssertTrue(ControlHitTest.hitsTitleBarDragArea(skinX: 0, skinY: 5),
+                      "the strip's left edge is drag area")
+        // Half-open bottom edge: the first row BELOW the strip is not drag area.
+        XCTAssertFalse(ControlHitTest.hitsTitleBarDragArea(skinX: 100, skinY: band),
+                       "the row below the strip is not drag area")
+        // Off-window / negative points are not drag area.
+        XCTAssertFalse(ControlHitTest.hitsTitleBarDragArea(skinX: MainWindowLayout.windowWidth, skinY: 5))
+        XCTAssertFalse(ControlHitTest.hitsTitleBarDragArea(skinX: -1, skinY: 5))
+        XCTAssertFalse(ControlHitTest.hitsTitleBarDragArea(skinX: 100, skinY: -1))
+    }
+
+    /// Every pixel of the minimize AND close hit rects must be excluded from the
+    /// drag band — the title-bar buttons win over drag, or they would become
+    /// drag handles.
+    func testTitleBarButtonsAreExcludedFromTheDragArea() {
+        for control in [SkinControl.minimize, .close] {
+            guard let rect = ControlHitTest.hitRect(for: control) else {
+                XCTFail("no hitRect for \(control)")
+                continue
+            }
+            for x in rect.x..<(rect.x + rect.width) {
+                for y in rect.y..<(rect.y + rect.height) {
+                    XCTAssertFalse(
+                        ControlHitTest.hitsTitleBarDragArea(skinX: x, skinY: y),
+                        "(\(x),\(y)) inside \(control) must not be drag area"
+                    )
+                }
+            }
+            // The pixel just left of each button (still in the strip) IS drag
+            // area again, unless another control owns it.
+            let leftX = rect.x - 1
+            if ControlHitTest.control(atX: leftX, y: rect.y) == nil {
+                XCTAssertTrue(
+                    ControlHitTest.hitsTitleBarDragArea(skinX: leftX, skinY: rect.y),
+                    "the strip just left of \(control) is drag area"
+                )
+            }
+        }
+    }
+
+    /// The minimize / close buttons must actually sit INSIDE the title-bar strip
+    /// — otherwise the "buttons win over drag" carve-out would be moot.
+    func testTitleBarButtonsSitInsideTheStrip() {
+        let band = ControlHitTest.titleBarHeight()
+        for control in [SkinControl.minimize, .close] {
+            guard let rect = ControlHitTest.hitRect(for: control) else {
+                XCTFail("no hitRect for \(control)")
+                continue
+            }
+            XCTAssertGreaterThanOrEqual(rect.y, 0, "\(control) starts on-window")
+            XCTAssertLessThanOrEqual(rect.y + rect.height, band,
+                                     "\(control) fits inside the title-bar strip")
         }
     }
 

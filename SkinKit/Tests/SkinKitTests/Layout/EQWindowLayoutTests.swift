@@ -550,4 +550,83 @@ final class EQWindowLayoutTests: XCTestCase {
             EQWindowLayout.slider(atSkinX: -100, skinY: y),
             EQWindowLayout.slider(atSkinX: -100))
     }
+
+    // MARK: - Title bar (drag band + close button)
+    //
+    // The EQ window is borderless; its baked title-bar strip is the drag handle
+    // and the baked close glyph at (264, 3) the close affordance. The band height
+    // derives from the `titleBarActive` sprite; the close rect is the canonical
+    // 9x9 window-button slot. Buttons win over drag.
+
+    /// The band height equals the `titleBarActive` sprite height (14 canonical).
+    func testTitleBarHeightMatchesTitleBarSprite() {
+        guard let bar = eqSpriteSize("titleBarActive") else {
+            XCTFail("titleBarActive sprite missing from the EQ table")
+            return
+        }
+        XCTAssertEqual(EQWindowLayout.titleBarHeight, bar.height)
+        XCTAssertGreaterThan(EQWindowLayout.titleBarHeight, 0)
+    }
+
+    /// The close button rect sits entirely INSIDE the title-bar band and the
+    /// window, and matches the main window's canonical close slot (264, 3) 9x9.
+    func testCloseButtonSitsInsideTheTitleBarBand() {
+        let origin = EQWindowLayout.closeButtonOrigin
+        let size = EQWindowLayout.closeButtonSize
+        XCTAssertGreaterThan(size.width, 0)
+        XCTAssertGreaterThan(size.height, 0)
+        XCTAssertGreaterThanOrEqual(origin.x, 0)
+        XCTAssertGreaterThanOrEqual(origin.y, 0)
+        XCTAssertLessThanOrEqual(origin.x + size.width, width,
+                                 "close right edge fits the window")
+        XCTAssertLessThanOrEqual(origin.y + size.height, EQWindowLayout.titleBarHeight,
+                                 "close bottom edge fits inside the title-bar band")
+    }
+
+    /// `hitsCloseButton` is half-open over the close rect: corners in, right /
+    /// bottom edges out.
+    func testHitsCloseButtonIsHalfOpen() {
+        let o = EQWindowLayout.closeButtonOrigin
+        let s = EQWindowLayout.closeButtonSize
+        XCTAssertTrue(EQWindowLayout.hitsCloseButton(skinX: o.x, skinY: o.y), "top-left in")
+        XCTAssertTrue(EQWindowLayout.hitsCloseButton(
+            skinX: o.x + s.width - 1, skinY: o.y + s.height - 1), "last inside pixel in")
+        XCTAssertFalse(EQWindowLayout.hitsCloseButton(skinX: o.x + s.width, skinY: o.y),
+                       "right edge exclusive")
+        XCTAssertFalse(EQWindowLayout.hitsCloseButton(skinX: o.x, skinY: o.y + s.height),
+                       "bottom edge exclusive")
+        XCTAssertFalse(EQWindowLayout.hitsCloseButton(skinX: o.x - 1, skinY: o.y),
+                       "a pixel left is outside")
+    }
+
+    /// The drag band covers the strip away from the close button; the close rect
+    /// is carved out (the button wins over drag); rows below the strip and
+    /// off-window points are not drag area.
+    func testTitleBarDragAreaExcludesCloseAndTheBodyBelow() {
+        let band = EQWindowLayout.titleBarHeight
+        let o = EQWindowLayout.closeButtonOrigin
+        let s = EQWindowLayout.closeButtonSize
+        // Plain strip points are drag area (top row, last row, left edge).
+        XCTAssertTrue(EQWindowLayout.hitsTitleBarDragArea(skinX: 100, skinY: 0))
+        XCTAssertTrue(EQWindowLayout.hitsTitleBarDragArea(skinX: 100, skinY: band - 1))
+        XCTAssertTrue(EQWindowLayout.hitsTitleBarDragArea(skinX: 0, skinY: 5))
+        // Every close-button pixel is carved out.
+        for x in o.x..<(o.x + s.width) {
+            for y in o.y..<(o.y + s.height) {
+                XCTAssertFalse(
+                    EQWindowLayout.hitsTitleBarDragArea(skinX: x, skinY: y),
+                    "(\(x),\(y)) inside the close button must not be drag area")
+            }
+        }
+        // The strip just left of the close button IS drag area again.
+        XCTAssertTrue(EQWindowLayout.hitsTitleBarDragArea(skinX: o.x - 1, skinY: o.y))
+        // Below the band / off-window -> not drag area. The ON/AUTO buttons at
+        // y=18 sit below the band, so they can never collide with a drag.
+        XCTAssertFalse(EQWindowLayout.hitsTitleBarDragArea(skinX: 100, skinY: band))
+        XCTAssertFalse(EQWindowLayout.hitsTitleBarDragArea(
+            skinX: EQWindowLayout.onButtonOrigin.x, skinY: EQWindowLayout.onButtonOrigin.y))
+        XCTAssertFalse(EQWindowLayout.hitsTitleBarDragArea(skinX: -1, skinY: 5))
+        XCTAssertFalse(EQWindowLayout.hitsTitleBarDragArea(skinX: width, skinY: 5))
+        XCTAssertFalse(EQWindowLayout.hitsTitleBarDragArea(skinX: 100, skinY: -1))
+    }
 }

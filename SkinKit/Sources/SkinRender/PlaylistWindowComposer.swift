@@ -221,6 +221,57 @@ public enum PlaylistWindowComposer {
         return (x: x, y: y, w: w, h: h)
     }
 
+    // MARK: - Title-bar close button + drag band (public)
+    //
+    // The playlist window is BORDERLESS (no OS chrome), so its skin title bar is
+    // the window's drag handle and the close glyph baked into the RIGHT CORNER
+    // piece is the window's close affordance. The window is width-resizable, so
+    // the close rect is derived from the LIVE composed width, not a constant:
+    // the canonical 9x9 close button sits 14px into the 25px right-corner piece
+    // (11px in from the right edge), 3px down — the same title-bar button
+    // geometry as the fixed windows.
+
+    /// How far the close button's LEFT edge sits in from the window's right edge
+    /// (the canonical 9x9 button, 14px into the 25px `titleBarRightCorner`).
+    private static let closeButtonInsetFromRight = 11
+
+    /// The close button's y offset and size (canonical 9x9 window button at y=3).
+    private static let closeButtonOffsetY = 3
+    private static let closeButtonSide = 9
+
+    /// The close button's rect (skin space, top-left origin) for a composed
+    /// window `canvasWidth` — glued to the right corner, so it follows a resize.
+    public static func closeButtonRect(
+        canvasWidth: Int
+    ) -> (x: Int, y: Int, width: Int, height: Int) {
+        (
+            x: canvasWidth - closeButtonInsetFromRight,
+            y: closeButtonOffsetY,
+            width: closeButtonSide,
+            height: closeButtonSide
+        )
+    }
+
+    /// Whether a skin-space point lands on the close button for a window of
+    /// `canvasWidth`. Half-open bounds, like every other hit rect.
+    public static func hitsCloseButton(skinX: Int, skinY: Int, canvasWidth: Int) -> Bool {
+        let rect = closeButtonRect(canvasWidth: canvasWidth)
+        return skinX >= rect.x && skinX < rect.x + rect.width
+            && skinY >= rect.y && skinY < rect.y + rect.height
+    }
+
+    /// Whether a skin-space point lands in the title-bar DRAG band: inside the
+    /// top strip (y in `0..<titleBarHeight()`, x on-window) and NOT on the close
+    /// button (the button wins over drag). Uses the LIVE composed width so both
+    /// the band's right edge and the close carve-out follow a resize.
+    public static func hitsTitleBarDragArea(skinX: Int, skinY: Int, canvasWidth: Int) -> Bool {
+        guard skinY >= 0, skinY < titleBarHeight(),
+              skinX >= 0, skinX < canvasWidth else {
+            return false
+        }
+        return !hitsCloseButton(skinX: skinX, skinY: skinY, canvasWidth: canvasWidth)
+    }
+
     // MARK: - Title bar (corner | texture | centered title | texture | corner)
 
     /// Compose the title bar at row 0: the left corner at x=0, a CENTERED title
@@ -446,7 +497,12 @@ public enum PlaylistWindowComposer {
         SpriteCoordinates.playlistWindow[sheet]?.first { $0.name == name }
     }
 
-    private static func titleBarHeight() -> Int {
+    /// Height of the title-bar band, from the `titleBarLeftCorner` sprite (all
+    /// title-bar pieces share it). PUBLIC because the borderless playlist window
+    /// uses this band as its drag handle — the same single geometry source the
+    /// compose / interior math uses, so the drag gate can never drift from the
+    /// drawn chrome.
+    public static func titleBarHeight() -> Int {
         rect("titleBarLeftCorner")?.height ?? 20
     }
 

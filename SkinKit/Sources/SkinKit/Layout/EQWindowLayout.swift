@@ -33,6 +33,55 @@ public enum EQWindowLayout {
     public static let windowWidth = 275
     public static let windowHeight = 116
 
+    // MARK: - Title bar (drag band + close button)
+    //
+    // The EQ face bakes a 14px-tall title-bar strip across the top of the window
+    // (the `titleBarActive` sprite band). The window is BORDERLESS (no OS chrome),
+    // so this strip is the window's drag handle, and the baked close glyph at its
+    // far right is the window's close affordance. The strip height derives from
+    // the `titleBarActive` sprite so a sprite tune follows automatically; the
+    // close rect is the canonical 9x9 at (264, 3) — the same title-bar slot as
+    // the main window's close button (eqmain.bmp declares no standalone close
+    // sprite; the glyph is baked into the face art, so the rect is pinned here).
+
+    /// Height of the title-bar strip (the window-drag band), from the
+    /// `eqmain.bmp/titleBarActive` sprite. Falls back to the canonical 14 when
+    /// the sprite is absent so the band stays well-formed on a sparse table.
+    public static var titleBarHeight: Int {
+        SpriteCoordinates.equalizerWindow["eqmain.bmp"]?
+            .first { $0.name == "titleBarActive" }?
+            .height ?? 14
+    }
+
+    /// Top-left of the title-bar close button (canonical 9x9 window-button slot,
+    /// far upper-right — the same slot as the main window's close button).
+    public static let closeButtonOrigin = (x: 264, y: 3)
+
+    /// Size of the title-bar close button. The canonical classic window buttons
+    /// are all 9x9; eqmain.bmp bakes the glyph into the face, so the size is a
+    /// pinned constant rather than a sprite lookup.
+    public static let closeButtonSize = (width: 9, height: 9)
+
+    /// Whether a skin-space point lands on the close button. Half-open bounds,
+    /// like every other hit rect.
+    public static func hitsCloseButton(skinX: Int, skinY: Int) -> Bool {
+        skinX >= closeButtonOrigin.x
+            && skinX < closeButtonOrigin.x + closeButtonSize.width
+            && skinY >= closeButtonOrigin.y
+            && skinY < closeButtonOrigin.y + closeButtonSize.height
+    }
+
+    /// Whether a skin-space point lands in the title-bar DRAG band: inside the
+    /// 14px top strip but NOT on the close button (buttons win over drag). The
+    /// ON/AUTO toggles sit at y=18, below the band, so they never collide.
+    public static func hitsTitleBarDragArea(skinX: Int, skinY: Int) -> Bool {
+        guard skinY >= 0, skinY < titleBarHeight,
+              skinX >= 0, skinX < windowWidth else {
+            return false
+        }
+        return !hitsCloseButton(skinX: skinX, skinY: skinY)
+    }
+
     // MARK: - Equalizer slider geometry
     //
     // Eleven vertical sliders sit in a row across the lower half of the EQ face:

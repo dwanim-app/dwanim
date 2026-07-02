@@ -192,7 +192,8 @@ private func runPNGMode(bitmap: DecodedBitmap, region: SkinRegion?, output: Stri
 /// Live window. The displayed content image stays OPAQUE; a non-rectangular skin
 /// is shaped at the WINDOW/LAYER level via a `CAShapeLayer` mask derived from the
 /// region polygons (geometry kept separate from pixels). When the skin declares
-/// no region, the normal titled/opaque window is used.
+/// no region, a plain opaque borderless window is used (the classic windows are
+/// chromeless — the skin art is the chrome).
 ///
 /// `@MainActor` because it builds main-actor AppKit (`SkinImageView`, `NSWindow`
 /// via the now-`@MainActor` `RegionWindowBuilder.make`, `NSApplication`). The
@@ -228,9 +229,9 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
         )
     }
 
-    // The shared region-window builder applies the borderless/masked vs titled
-    // chrome decision: a shaped window stays opaque in content but is clipped by
-    // the CAShapeLayer mask; a no-region skin gets a plain titled window.
+    // The shared region-window builder: always a chromeless borderless window; a
+    // shaped window stays opaque in content but is clipped by the CAShapeLayer
+    // mask; a no-region skin is a plain opaque borderless rectangle.
     let window = RegionWindowBuilder.make(
         contentRect: contentRect,
         contentView: contentView,

@@ -37,6 +37,16 @@ open class ScaledImageView: NSView {
     /// click can route on it; windows that don't simply ignore it).
     public var onMouseDown: ((_ viewX: Double, _ viewY: Double, _ viewHeight: Double, _ clickCount: Int) -> Void)?
 
+    /// Asked FIRST on a mouse-down, with the same view-space point + height as
+    /// `onMouseDown`: return `true` when the press should MOVE THE WINDOW (the
+    /// skin's title-bar drag strip) instead of being routed as a click. The view
+    /// then hands the gesture to `NSWindow.performDrag(with:)` and forwards
+    /// NOTHING — the raw `NSEvent` never leaves the view, so controllers stay
+    /// NSEvent-free and unit-testable. The predicate must return `false` for
+    /// title-bar BUTTON rects (close / minimize) so buttons win over drag. `nil`
+    /// (the default) means the view never drags the window.
+    public var shouldDragWindow: ((_ viewX: Double, _ viewY: Double, _ viewHeight: Double) -> Bool)?
+
     /// Called on each mouse-DRAG with the same view-space point + height. Only the
     /// EQ window wires this (to drag a slider continuously); others leave it nil
     /// so a drag is inert, exactly as before.
@@ -111,6 +121,14 @@ open class ScaledImageView: NSView {
 
     public override func mouseDown(with event: NSEvent) {
         let viewPoint = convert(event.locationInWindow, from: nil)
+        // Title-bar drag gate: when the controller's predicate claims the point,
+        // the whole gesture becomes a window move — `performDrag` consumes it
+        // (no drag/up callbacks follow), and no controller state is touched
+        // before it runs, so nothing can be left latched.
+        if shouldDragWindow?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height)) == true {
+            window?.performDrag(with: event)
+            return
+        }
         onMouseDown?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height), event.clickCount)
     }
 

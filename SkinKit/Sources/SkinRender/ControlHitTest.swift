@@ -185,9 +185,40 @@ public enum ControlHitTest {
             case .plButton:  return MainWindowLayout.plButtonOrigin
             case .eject:     return MainWindowLayout.ejectOrigin
             case .minimize:  return MainWindowLayout.minimizeOrigin
+            case .close:     return MainWindowLayout.closeOrigin
             default:         return nil // unreachable: all host actions handled above
             }
         }
+    }
+
+    // MARK: - Title-bar drag band (public)
+    //
+    // The classic main window is BORDERLESS (no OS chrome), so the skin's own
+    // title-bar strip is the window's drag handle. The band's height derives from
+    // the `titlebar.bmp`/`titleBarActive` sprite (the strip `MainWindowLayout`
+    // composites at (0, 0)), so a sprite tune follows automatically. Buttons in
+    // the strip (minimize, close) win over drag: a point on ANY control's hit
+    // rect is NOT drag area — routing future title-bar controls out of the drag
+    // band automatically.
+
+    /// Height of the main window's title-bar strip, from the
+    /// `titlebar.bmp/titleBarActive` sprite. Falls back to the canonical 14 when
+    /// the sprite is absent so the band stays well-formed.
+    public static func titleBarHeight() -> Int {
+        SpriteCoordinates.mainWindow["titlebar.bmp"]?
+            .first { $0.name == "titleBarActive" }?
+            .height ?? 14
+    }
+
+    /// Whether a skin-space point lands in the title-bar DRAG band: inside the
+    /// top strip (y in `0..<titleBarHeight()`, x on-window) and NOT on any
+    /// control's hit rect (the minimize / close buttons win over drag).
+    public static func hitsTitleBarDragArea(skinX: Int, skinY: Int) -> Bool {
+        guard skinY >= 0, skinY < titleBarHeight(),
+              skinX >= 0, skinX < MainWindowLayout.windowWidth else {
+            return false
+        }
+        return control(atX: skinX, y: skinY) == nil
     }
 
     // MARK: - Position / seek bar (public)

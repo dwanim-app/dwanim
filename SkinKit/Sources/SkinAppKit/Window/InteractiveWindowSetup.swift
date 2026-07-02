@@ -36,8 +36,9 @@ public struct InteractiveWindowHandle {
 ///
 /// `region` is the skin's custom shape (already normalized to `nil` when empty by
 /// the caller). `tap` / `format` are the engine's opt-in PCM-tap and
-/// format-fact sources. `title` is the titled-fallback window's title-bar text
-/// (a host-supplied label; NO brand name is invented here).
+/// format-fact sources. `title` is the window's title — invisible on the
+/// borderless window but kept for accessibility / Mission Control labels (a
+/// host-supplied label; NO brand name is invented here).
 ///
 /// `terminatesAppOnClose` defaults to `true` — the original single-window CLI
 /// harness behavior (closing the window quits the process). A larger host (the
@@ -110,11 +111,12 @@ public func showInteractiveWindow(
         )
     }
 
-    // The shared region-window builder applies the same borderless/masked vs
-    // titled chrome the static window path uses. Built BEFORE the controller so the
-    // controller's default minimize action can miniaturize THIS window — important
-    // for the BORDERLESS region skin, which has no OS minimize button, so the
-    // in-window minimize sprite is the only way to miniaturize it.
+    // The shared region-window builder: ALWAYS a borderless (chromeless) window —
+    // the skin art is the chrome — plus the region mask treatment when the skin
+    // declares a shape. Built BEFORE the controller so the controller's default
+    // minimize / close actions can target THIS window — the borderless window has
+    // no OS window buttons, so the in-window minimize / close sprites are the
+    // window's own affordances.
     let window = RegionWindowBuilder.make(
         contentRect: contentRect,
         contentView: contentView,
@@ -128,6 +130,13 @@ public func showInteractiveWindow(
     // the window alive beyond its owner's hold.
     let minimizeAction: () -> Void = onMinimize ?? { [weak window] in window?.miniaturize(nil) }
 
+    // Close action for the skin's title-bar close button: a plain programmatic
+    // `window.close()`, which routes through `windowWillClose` → `tearDown()` →
+    // `onClose` — the SAME funnel as any other close of this window, so a host's
+    // close-time policy (e.g. the app's close-quits-with-guards behavior) is
+    // reached, never bypassed. Weak for the same ownership reason as minimize.
+    let closeAction: () -> Void = { [weak window] in window?.close() }
+
     // Build the controller so it can serve as the window delegate: closing the
     // window then routes through `windowWillClose` → `tearDown()` (timer + tap
     // teardown) → clean app termination.
@@ -139,13 +148,14 @@ public func showInteractiveWindow(
         onTogglePlaylist: onTogglePlaylist,
         onEject: onEject,
         onMinimize: minimizeAction,
+        onCloseWindow: closeAction,
         isEQWindowOpen: isEQWindowOpen,
         isPlaylistWindowOpen: isPlaylistWindowOpen
     )
 
-    // Both window paths get the delegate: the titled fallback so its close button
-    // tears down cleanly, and the borderless region window (no close button) so a
-    // programmatic close/terminate is still correct teardown.
+    // The controller is the window delegate: any close of this borderless window
+    // (the skin close button's `window.close()`, a programmatic close, terminate)
+    // routes through `windowWillClose` for correct teardown.
     window.delegate = controller
     // The caller owns the window for its lifetime (the harness via `liveController`,
     // the app via its `WindowHandle`). Defaulting `isReleasedWhenClosed` to `true`

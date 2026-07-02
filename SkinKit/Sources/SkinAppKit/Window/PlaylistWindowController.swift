@@ -30,7 +30,9 @@ import SkinRender
 ///     and emits a whole-row step only when it crosses one `rowHeight`, so a
 ///     trackpad / momentum stream does not over-scroll. The step is clamped by the
 ///     pure `PlaylistLayout.visibleRows`.
-///   * A click outside the interior / on chrome is a no-op.
+///   * A click on the title-bar CLOSE button closes just this window; the rest
+///     of the title bar is the window-drag band (the window is borderless).
+///   * Any other click outside the interior / on chrome is a no-op.
 ///
 /// All state changes happen on the main thread (this is `@MainActor`) and trigger
 /// a redraw.
@@ -91,6 +93,21 @@ public final class PlaylistWindowController: SkinWindowController {
             onSingleClick: { [weak self] x, y, h in self?.handleSingleClick(viewX: x, viewY: y, viewHeight: h) },
             onDoubleClick: { [weak self] x, y, h in self?.handleDoubleClick(viewX: x, viewY: y, viewHeight: h) }
         )
+        // Title-bar drag gate (the window is borderless, so the skin's title bar
+        // is the drag handle): a press in the title-bar band that is NOT on the
+        // close button moves the window. The pure
+        // `PlaylistWindowComposer.hitsTitleBarDragArea` carries the geometry; the
+        // LIVE `skinWidth` keeps both the band's right edge and the close
+        // carve-out glued to the corner across a resize.
+        view.shouldDragWindow = { [weak self] viewX, viewY, viewHeight in
+            guard let self else { return false }
+            let point = ControlHitTest.skinPoint(
+                viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: self.scale
+            )
+            return PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: point.x, skinY: point.y, canvasWidth: self.skinWidth
+            )
+        }
     }
 
     // MARK: - Interior height (for the layout helpers)
@@ -186,9 +203,22 @@ public final class PlaylistWindowController: SkinWindowController {
         )
     }
 
-    /// Single click: select the clicked row (no playback change). A click that
-    /// resolves to no row (chrome / gap below the list) is a no-op.
+    /// Single click: the title-bar CLOSE button closes just this window (the
+    /// window is borderless — the skin's baked close glyph is the close
+    /// affordance; `window.close()` routes through `windowWillClose` → `onClose`,
+    /// the same path as a programmatic host close). Otherwise select the clicked
+    /// row (no playback change). A click that resolves to no row (chrome / gap
+    /// below the list) is a no-op.
     private func handleSingleClick(viewX: Double, viewY: Double, viewHeight: Double) {
+        let point = ControlHitTest.skinPoint(
+            viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
+        )
+        if PlaylistWindowComposer.hitsCloseButton(
+            skinX: point.x, skinY: point.y, canvasWidth: skinWidth
+        ) {
+            view?.window?.close()
+            return
+        }
         guard let row = rowAtViewPoint(viewX: viewX, viewY: viewY, viewHeight: viewHeight) else {
             return
         }

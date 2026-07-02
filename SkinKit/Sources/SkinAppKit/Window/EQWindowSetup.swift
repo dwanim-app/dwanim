@@ -26,14 +26,16 @@ public struct EQWindowHandle {
     public let window: NSWindow
 }
 
-/// Build and show the EQ window (a plain titled window — the EQ face is a fixed
-/// 275x116 rectangle, so no region mask is needed), start the redraw, and return
-/// the controller + window. Throws a `RenderError` when the EQ face cannot be
-/// composed/scaled into an initial frame. The caller drives the run loop and
-/// holds the returned controller.
+/// Build and show the EQ window (a borderless chromeless window — the EQ face is
+/// a fixed 275x116 rectangle whose baked title-bar strip is the drag handle and
+/// whose baked close glyph is the close affordance; no region mask is needed),
+/// start the redraw, and return the controller + window. Throws a `RenderError`
+/// when the EQ face cannot be composed/scaled into an initial frame. The caller
+/// drives the run loop and holds the returned controller.
 ///
-/// `title` is the window's title-bar text (a host-supplied label; NO brand name
-/// is invented here).
+/// `title` is the window's title — invisible on the borderless window but kept
+/// for accessibility / Mission Control labels (a host-supplied label; NO brand
+/// name is invented here).
 ///
 /// `terminatesAppOnClose` defaults to `true` — the original single-window CLI
 /// harness behavior (closing the window quits the process). A larger host (the
@@ -82,12 +84,17 @@ public func showEQWindow(
         terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
     )
 
-    let window = NSWindow(
+    // Chromeless: the EQ face's own title-bar strip is the drag handle and its
+    // baked close glyph the close affordance (wired by `EQController`). The
+    // subclass keeps the borderless window key-capable; `.miniaturizable` adds no
+    // visible chrome but keeps `miniaturize(_:)` functional.
+    let window = ChromelessSkinWindow(
         contentRect: contentRect,
-        styleMask: [.titled, .closable, .miniaturizable],
+        styleMask: [.borderless, .miniaturizable],
         backing: .buffered,
         defer: false
     )
+    // Invisible on a borderless window; kept for accessibility / Mission Control.
     window.title = title
     window.delegate = controller
     // Host handle (harness `liveController` / app `WindowHandle`) is the sole owner;

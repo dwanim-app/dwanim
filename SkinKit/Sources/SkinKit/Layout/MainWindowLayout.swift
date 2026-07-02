@@ -94,14 +94,17 @@ public enum MainWindowLayout {
     //     (242+23=265) stays inside the 275px window.
     //   * eject: bottom transport row, right of the five transport buttons, at
     //     (136, 89) (22x16) — clear of the shuffle toggle (x>=164).
-    //   * minimize: the title-bar window button, upper-right at (244, 3) (9x9). The
-    //     close button sits to its right (handled by the OS chrome / a later wire);
-    //     minimize is the one we hit-test in-window so the borderless region skin
-    //     can be miniaturized.
+    //   * minimize: the title-bar window button, upper-right at (244, 3) (9x9).
+    //   * close: the title-bar window button at the far upper-right, (264, 3)
+    //     (9x9). The classic windows are now BORDERLESS (no OS chrome), so the
+    //     skin's own close button is the window's close affordance — it is
+    //     hit-tested in-window like minimize. The windowshade button between them
+    //     (254, 3) stays deferred (see `SkinControl`'s scope note).
     public static let eqButtonOrigin = (x: 219, y: 58)
     public static let plButtonOrigin = (x: 242, y: 58)
     public static let ejectOrigin = (x: 136, y: 89)
     public static let minimizeOrigin = (x: 244, y: 3)
+    public static let closeOrigin = (x: 264, y: 3)
 
     /// The classic main-window visualization (spectrum/oscilloscope) area: the
     /// rectangular region the player draws the live spectrum into, just below the

@@ -564,4 +564,102 @@ final class PlaylistWindowComposerTests: XCTestCase {
         XCTAssertEqual(composed.width, size.width)
         XCTAssertEqual(composed.height, size.height)
     }
+
+    // MARK: - Title-bar close button + drag band (borderless window)
+    //
+    // The playlist window is borderless; the skin title bar is the drag handle
+    // and the close glyph baked into the right-corner piece the close affordance.
+    // The close rect is derived from the LIVE composed width (the window is
+    // width-resizable), glued 11px in from the right edge at y=3, 9x9 canonical.
+
+    /// The band height equals the `titleBarLeftCorner` sprite height (20).
+    func testTitleBarHeightMatchesTheCornerSprite() {
+        let corner = SpriteCoordinates.playlistWindow["pledit.bmp"]?
+            .first { $0.name == "titleBarLeftCorner" }
+        XCTAssertNotNil(corner, "titleBarLeftCorner sprite must exist")
+        XCTAssertEqual(PlaylistWindowComposer.titleBarHeight(), corner?.height)
+        XCTAssertGreaterThan(PlaylistWindowComposer.titleBarHeight(), 0)
+    }
+
+    /// The close rect stays glued to the right corner across widths: its right
+    /// edge is 2px in from the window's right edge at any width, it sits inside
+    /// the title-bar band, and it never leaves the window.
+    func testCloseButtonRectFollowsTheWindowWidth() {
+        for width in [PlaylistWindowComposer.minimumWidth, 275, 400, 1000] {
+            let rect = PlaylistWindowComposer.closeButtonRect(canvasWidth: width)
+            XCTAssertEqual(rect.width, 9, "canonical 9x9 close button")
+            XCTAssertEqual(rect.height, 9, "canonical 9x9 close button")
+            XCTAssertEqual(rect.y, 3, "canonical y offset")
+            XCTAssertEqual(rect.x, width - 11, "glued 11px in from the right edge")
+            XCTAssertLessThanOrEqual(rect.x + rect.width, width,
+                                     "close stays inside the window at width \(width)")
+            XCTAssertGreaterThanOrEqual(rect.x, 0,
+                                        "close stays on-window at width \(width)")
+            XCTAssertLessThanOrEqual(rect.y + rect.height,
+                                     PlaylistWindowComposer.titleBarHeight(),
+                                     "close fits inside the title-bar band")
+        }
+    }
+
+    /// `hitsCloseButton` is half-open over the derived rect, at two widths (so
+    /// the width plumbing is exercised, not just the default).
+    func testHitsCloseButtonIsHalfOpenAndWidthAware() {
+        for width in [275, 400] {
+            let rect = PlaylistWindowComposer.closeButtonRect(canvasWidth: width)
+            XCTAssertTrue(PlaylistWindowComposer.hitsCloseButton(
+                skinX: rect.x, skinY: rect.y, canvasWidth: width), "top-left in")
+            XCTAssertTrue(PlaylistWindowComposer.hitsCloseButton(
+                skinX: rect.x + rect.width - 1, skinY: rect.y + rect.height - 1,
+                canvasWidth: width), "last inside pixel in")
+            XCTAssertFalse(PlaylistWindowComposer.hitsCloseButton(
+                skinX: rect.x + rect.width, skinY: rect.y, canvasWidth: width),
+                "right edge exclusive")
+            XCTAssertFalse(PlaylistWindowComposer.hitsCloseButton(
+                skinX: rect.x, skinY: rect.y + rect.height, canvasWidth: width),
+                "bottom edge exclusive")
+            XCTAssertFalse(PlaylistWindowComposer.hitsCloseButton(
+                skinX: rect.x - 1, skinY: rect.y, canvasWidth: width),
+                "a pixel left is outside")
+        }
+    }
+
+    /// The drag band covers the title bar away from the close button, carves the
+    /// close rect out (the button wins over drag), and excludes the body below
+    /// the band and off-window points — at two widths, so the band's right edge
+    /// follows a resize.
+    func testTitleBarDragAreaExcludesCloseAndFollowsWidth() {
+        let band = PlaylistWindowComposer.titleBarHeight()
+        for width in [275, 400] {
+            let rect = PlaylistWindowComposer.closeButtonRect(canvasWidth: width)
+            // Plain band points are drag area.
+            XCTAssertTrue(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: 50, skinY: 0, canvasWidth: width))
+            XCTAssertTrue(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: 50, skinY: band - 1, canvasWidth: width))
+            // Every close pixel is carved out.
+            for x in rect.x..<(rect.x + rect.width) {
+                for y in rect.y..<(rect.y + rect.height) {
+                    XCTAssertFalse(PlaylistWindowComposer.hitsTitleBarDragArea(
+                        skinX: x, skinY: y, canvasWidth: width),
+                        "(\(x),\(y)) inside the close button must not be drag area")
+                }
+            }
+            // Just left of the close button the band is drag area again.
+            XCTAssertTrue(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: rect.x - 1, skinY: rect.y, canvasWidth: width))
+            // Below the band / off-window -> not drag area; the band's right edge
+            // follows the width (x == width is out; width-1 is in).
+            XCTAssertFalse(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: 50, skinY: band, canvasWidth: width))
+            XCTAssertFalse(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: width, skinY: 0, canvasWidth: width))
+            XCTAssertTrue(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: width - 1, skinY: band - 1, canvasWidth: width),
+                "the band's bottom-right pixel (below the close rect) is drag area")
+            XCTAssertFalse(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: -1, skinY: 0, canvasWidth: width))
+            XCTAssertFalse(PlaylistWindowComposer.hitsTitleBarDragArea(
+                skinX: 50, skinY: -1, canvasWidth: width))
+        }
+    }
 }
