@@ -23,10 +23,11 @@ final class SkinControlTests: XCTestCase {
         .next:          ("cbuttons.bmp", "next"),
         .toggleShuffle: ("shufrep.bmp", "shuffleOff"),
         .toggleRepeat:  ("shufrep.bmp", "repeatOff"),
-        // Host-action buttons: EQ / PL default to their OFF art; eject / minimize
-        // have a single released state.
-        .eqButton:      ("titlebar.bmp", "eqButtonOff"),
-        .plButton:      ("titlebar.bmp", "plButtonOff"),
+        // Host-action buttons: EQ / PL default to their OFF art (packed in the
+        // bottom band of shufrep.bmp, NOT titlebar.bmp — measured against real
+        // sheets); eject / minimize have a single released state.
+        .eqButton:      ("shufrep.bmp", "eqButtonOff"),
+        .plButton:      ("shufrep.bmp", "plButtonOff"),
         .eject:         ("cbuttons.bmp", "eject"),
         .minimize:      ("titlebar.bmp", "minimize")
     ]

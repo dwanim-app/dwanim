@@ -136,12 +136,14 @@ public enum ControlHitTest {
     ///
     /// ORIGIN SOURCE: TRANSPORT controls (and the two toggles) draw a composited
     /// sprite, so their origin is read from `MainWindowLayout.elements` (the static
-    /// composite table). HOST-ACTION controls (EQ / PL / eject / minimize) are baked
-    /// into the `main.bmp` background art and are NOT composited as separate
-    /// sprites, so they have NO `elements` entry — their origin comes from the
-    /// standalone hit-only origins on `MainWindowLayout` (`eqButtonOrigin`, …). Both
-    /// flavors take the sprite SIZE from `SpriteCoordinates`, so the rect still
-    /// follows a sprite tune in one place.
+    /// composite table). HOST-ACTION controls (EQ / PL / eject / minimize) read
+    /// their origin from the standalone origins on `MainWindowLayout`
+    /// (`eqButtonOrigin`, …). EQ / PL / eject ALSO have `elements` entries now
+    /// (their OFF art is composited because real `main.bmp` faces are often blank
+    /// there) — the element origins match the standalone origins, so either source
+    /// yields the same rect; minimize stays hit-only (its art is part of the
+    /// title-bar strip). Both flavors take the sprite SIZE from
+    /// `SpriteCoordinates`, so the rect still follows a sprite tune in one place.
     public static func hitRect(
         for control: SkinControl
     ) -> (x: Int, y: Int, width: Int, height: Int)? {
@@ -162,9 +164,9 @@ public enum ControlHitTest {
 
     /// The draw origin for a control. Transport/toggle controls read their origin
     /// from `MainWindowLayout.elements` (they are composited); host-action controls
-    /// read it from the standalone hit-only origins (they are baked into the
-    /// background, not composited). `nil` when a transport control has no `elements`
-    /// entry (a sparse layout).
+    /// read it from the standalone origins on `MainWindowLayout` (kept equal to
+    /// their `elements` entries where those exist — EQ / PL / eject). `nil` when a
+    /// transport control has no `elements` entry (a sparse layout).
     private static func origin(
         for control: SkinControl,
         key: (sheet: String, sprite: String)
@@ -288,7 +290,7 @@ public enum ControlHitTest {
     /// derived from the `volume.bmp`/`level27` static layout element + that
     /// sprite's size. `nil` when either the element or the sprite is absent.
     /// `level27` is the frame `MainWindowLayout` pins as the static default, so it
-    /// is the canonical footprint (all 28 frames share the same 68x15 box).
+    /// is the canonical footprint (all 28 frames share the same 68x13 box).
     public static func volumeRect() -> (x: Int, y: Int, width: Int, height: Int)? {
         sliderRect(sheet: "volume.bmp", frame: "level27")
     }
@@ -325,7 +327,7 @@ public enum ControlHitTest {
     // 28 frames map across the range with the CENTER frame (`level13`/`level14`)
     // representing balanced; the left edge is full-left (`-1`), the right edge
     // full-right (`+1`). Geometry derives from the `balance.bmp`/`level13` static
-    // element + the `level13` sprite size (47 wide, 15 tall — narrower than volume).
+    // element + the `level13` sprite size (38 wide, 13 tall — narrower than volume).
 
     /// Number of balance level frames. Same 28-frame shape as volume.
     public static let balanceLevelCount = 28

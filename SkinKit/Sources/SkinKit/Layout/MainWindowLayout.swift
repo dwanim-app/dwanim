@@ -72,35 +72,34 @@ public enum MainWindowLayout {
     // provisional — tune at render
     public static let khzDisplayDigits = 2
 
-    // MARK: - Clutter / window-button origins (HIT-ONLY, not composited)
+    // MARK: - Clutter / window-button origins
     //
-    // The EQ / PL window-toggle buttons, the eject button, and the title-bar
-    // minimize button are drawn as part of the baked `main.bmp` background art (the
-    // classic format bakes these button graphics into the window face), so they are
-    // NOT in `elements` — the static composer must NOT overlay a separate sprite
-    // for them (doing so would change the composited output). They live here as
-    // standalone HIT origins: `ControlHitTest` reads each origin + the matching
-    // `SpriteCoordinates` sprite SIZE to derive a click rect, and the interactive
-    // controller overlays a PRESSED / ON sprite at the origin only while the button
-    // is held / lit. Clean-room from the public title-bar / transport layout.
+    // Standalone origins for the EQ / PL window-toggle buttons, the eject button,
+    // and the title-bar minimize button. `ControlHitTest` reads each origin + the
+    // matching `SpriteCoordinates` sprite SIZE to derive a click rect, and the
+    // interactive controller overlays a PRESSED / ON sprite at the origin while
+    // the button is held / lit.
     //
-    // Positions (top-left, window pixels) per the public classic layout:
-    //   * EQ / PL toggles: the clutter at the right of the slider row. The EQ
-    //     toggle sits at (225, 58); the PL toggle immediately right at (248, 58)
-    //     (23px wide each, 12px tall — see the titlebar.bmp sprites). These are
-    //     placed just RIGHT of the balance slider's right edge so their hit rects do
-    //     NOT overlap the balance scrub region (the balance frame is 47px wide,
-    //     ending at x=224, so EQ starts at 225). PL's right edge (248+23=271) stays
-    //     inside the 275px window.
+    // EQ / PL / eject are ALSO composited as static elements (their OFF art, see
+    // `elements`): real `main.bmp` faces are often BLANK where these controls sit,
+    // so without compositing the OFF art the buttons would be invisible on such
+    // skins. The element origins below must match these hit origins. Minimize
+    // stays hit-only — its art is part of the composited title-bar strip.
+    //
+    // Positions (top-left, window pixels), measured against real classic skins:
+    //   * EQ toggle at (219, 58); PL toggle immediately right at (242, 58)
+    //     (23px wide each, 12px tall — the shufrep.bmp EQ/PL sprites). The balance
+    //     display (38 wide at x=177) ends at x=215, so the EQ button's rect no
+    //     longer collides with the balance scrub region; PL's right edge
+    //     (242+23=265) stays inside the 275px window.
     //   * eject: bottom transport row, right of the five transport buttons, at
     //     (136, 89) (22x16) — clear of the shuffle toggle (x>=164).
     //   * minimize: the title-bar window button, upper-right at (244, 3) (9x9). The
     //     close button sits to its right (handled by the OS chrome / a later wire);
     //     minimize is the one we hit-test in-window so the borderless region skin
     //     can be miniaturized.
-    // provisional — tune at render.
-    public static let eqButtonOrigin = (x: 225, y: 58)
-    public static let plButtonOrigin = (x: 248, y: 58)
+    public static let eqButtonOrigin = (x: 219, y: 58)
+    public static let plButtonOrigin = (x: 242, y: 58)
     public static let ejectOrigin = (x: 136, y: 89)
     public static let minimizeOrigin = (x: 244, y: 3)
 
@@ -154,6 +153,13 @@ public enum MainWindowLayout {
         WindowElement(sheet: "cbuttons.bmp", sprite: "stop",     x: 85,  y: 88),
         WindowElement(sheet: "cbuttons.bmp", sprite: "next",     x: 108, y: 88),
 
+        // MARK: Eject (open-file) button
+        //
+        // Composited because real main.bmp faces are often BLANK where it sits
+        // (verified against real skins) — without this the button is invisible.
+        // Origin matches `ejectOrigin` (the hit rect).
+        WindowElement(sheet: "cbuttons.bmp", sprite: "eject", x: 136, y: 89),
+
         // MARK: Shuffle + repeat toggles (off state)
         //
         // The two toggles sit at the bottom-right. shuffle (47 wide) is left of
@@ -174,9 +180,20 @@ public enum MainWindowLayout {
         // MARK: Balance slider background (default frame ~ center)
         //
         // The balance slider sits just right of the volume slider. We pick a
-        // mid level frame (centered balance) as the static default.
-        // provisional — tune at render
-        WindowElement(sheet: "balance.bmp", sprite: "level13", x: 177, y: 57)
+        // mid level frame (centered balance) as the static default. The frame is
+        // the 38-wide groove slice (see the balance.bmp sprite table), so the
+        // display spans x=177..215 and stays clear of the EQ button at x=219.
+        WindowElement(sheet: "balance.bmp", sprite: "level13", x: 177, y: 57),
+
+        // MARK: EQ / PL window-toggle buttons (off state)
+        //
+        // Composited because real main.bmp faces are often BLANK where these
+        // controls sit — without compositing the OFF art the buttons are
+        // invisible on such skins. Origins match `eqButtonOrigin` /
+        // `plButtonOrigin` (the hit rects); the interactive controller overlays
+        // the ON art while the matching window is open.
+        WindowElement(sheet: "shufrep.bmp", sprite: "eqButtonOff", x: 219, y: 58),
+        WindowElement(sheet: "shufrep.bmp", sprite: "plButtonOff", x: 242, y: 58)
 
         // TODO: time / number display (numbers.bmp digits) and the scrolling
         // song title (text.bmp bitmap-font glyphs) are DEFERRED: they need

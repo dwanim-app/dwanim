@@ -281,20 +281,14 @@ public enum SpriteCoordinates {
 
     // MARK: - titlebar.bmp (title bar + window buttons)
     //
-    // Holds the active/inactive title bars, the small window-chrome buttons
-    // (close, minimize, shade/unshade) in their normal and pressed states, and the
-    // EQ / PL (playlist) window-toggle buttons (each off + on + their pressed
-    // variants).
+    // Holds the active/inactive title bars and the small window-chrome buttons
+    // (close, minimize, shade/unshade) in their normal and pressed states.
     //
-    // EQ / PL TOGGLE PACKING (clean-room from the public title-bar layout): the EQ
-    // and PL toggles live in the title-bar clutter, RIGHT of the title display.
-    // Each is ~23x12 with an off, on, off-pressed, and on-pressed state. The
-    // canonical title-bar sheet packs the title bars in the top rows (y 0..29) and
-    // the clutter/toggle art in the band below; we place the four EQ states and the
-    // four PL states in the y=42 band so they (a) clear the title bars and the
-    // close/min/shade buttons above, and (b) stay inside the real titlebar.bmp,
-    // which is wider/taller than the 275x14 face (it carries these very toggles).
-    // provisional — tune at render.
+    // The EQ / PL (playlist) window-toggle buttons do NOT live here: measured
+    // against real 344x87 titlebar.bmp sheets, the y=42/54 band this table once
+    // declared for them holds unrelated title-bar art (cutting it produced
+    // garbage pixels). The real format packs the EQ / PL toggles into the BOTTOM
+    // band of `shufrep.bmp` — see `shuffleRepeat` below.
 
     private static let titlebar: [SpriteRect] = [
         SpriteRect(name: "titleBarActive",   x: 27, y: 0,  width: 275, height: 14),
@@ -304,32 +298,43 @@ public enum SpriteCoordinates {
         SpriteRect(name: "minimize",         x: 9,  y: 0,  width: 9,   height: 9),
         SpriteRect(name: "minimizePressed",  x: 9,  y: 9,  width: 9,   height: 9),
         SpriteRect(name: "shade",            x: 0,  y: 18, width: 9,   height: 9),
-        SpriteRect(name: "shadePressed",     x: 9,  y: 18, width: 9,   height: 9),
-        // EQ toggle: off / on / off-pressed / on-pressed (each 23x12).
-        SpriteRect(name: "eqButtonOff",         x: 0,  y: 42, width: 23, height: 12),
-        SpriteRect(name: "eqButtonOn",          x: 0,  y: 54, width: 23, height: 12),
-        SpriteRect(name: "eqButtonOffPressed",  x: 46, y: 42, width: 23, height: 12),
-        SpriteRect(name: "eqButtonOnPressed",   x: 46, y: 54, width: 23, height: 12),
-        // PL (playlist) toggle: off / on / off-pressed / on-pressed (each 23x12).
-        SpriteRect(name: "plButtonOff",         x: 23, y: 42, width: 23, height: 12),
-        SpriteRect(name: "plButtonOn",          x: 23, y: 54, width: 23, height: 12),
-        SpriteRect(name: "plButtonOffPressed",  x: 69, y: 42, width: 23, height: 12),
-        SpriteRect(name: "plButtonOnPressed",   x: 69, y: 54, width: 23, height: 12)
+        SpriteRect(name: "shadePressed",     x: 9,  y: 18, width: 9,   height: 9)
     ]
 
-    // MARK: - shufrep.bmp (shuffle + repeat toggles)
+    // MARK: - shufrep.bmp (shuffle + repeat toggles, EQ / PL window toggles)
     //
-    // Two toggle buttons, each with off/on states and their pressed variants.
+    // MEASURED against real 92x85 shufrep.bmp sheets (not provisional). The sheet
+    // packs FOUR 15px-tall shuffle/repeat rows, then the EQ / PL toggle band:
+    //   * y = 0  : shuffle + repeat OFF, released
+    //   * y = 15 : shuffle + repeat OFF, pressed
+    //   * y = 30 : shuffle + repeat ON,  released   (lit LED row)
+    //   * y = 45 : shuffle + repeat ON,  pressed
+    // Repeat is the 28x15 button at x=0; shuffle the 47x15 button at x=28.
+    //
+    // Bottom band — EQ / PL window toggles, each 23x12:
+    //   * y = 61 : released row;  y = 73 : pressed row.
+    //   * UNLIT EQ at x=0, UNLIT PL at x=23, LIT EQ at x=46, LIT PL at x=69
+    //     (visually confirmed: the right pair carries the bright green LEDs).
 
     private static let shuffleRepeat: [SpriteRect] = [
         SpriteRect(name: "repeatOff",        x: 0,  y: 0,  width: 28, height: 15),
-        SpriteRect(name: "repeatOn",         x: 0,  y: 15, width: 28, height: 15),
-        SpriteRect(name: "repeatOffPressed", x: 0,  y: 30, width: 28, height: 15),
+        SpriteRect(name: "repeatOffPressed", x: 0,  y: 15, width: 28, height: 15),
+        SpriteRect(name: "repeatOn",         x: 0,  y: 30, width: 28, height: 15),
         SpriteRect(name: "repeatOnPressed",  x: 0,  y: 45, width: 28, height: 15),
         SpriteRect(name: "shuffleOff",        x: 28, y: 0,  width: 47, height: 15),
-        SpriteRect(name: "shuffleOn",         x: 28, y: 15, width: 47, height: 15),
-        SpriteRect(name: "shuffleOffPressed", x: 28, y: 30, width: 47, height: 15),
-        SpriteRect(name: "shuffleOnPressed",  x: 28, y: 45, width: 47, height: 15)
+        SpriteRect(name: "shuffleOffPressed", x: 28, y: 15, width: 47, height: 15),
+        SpriteRect(name: "shuffleOn",         x: 28, y: 30, width: 47, height: 15),
+        SpriteRect(name: "shuffleOnPressed",  x: 28, y: 45, width: 47, height: 15),
+        // EQ toggle: off / on (released row y=61), off-pressed / on-pressed (y=73).
+        SpriteRect(name: "eqButtonOff",         x: 0,  y: 61, width: 23, height: 12),
+        SpriteRect(name: "eqButtonOn",          x: 46, y: 61, width: 23, height: 12),
+        SpriteRect(name: "eqButtonOffPressed",  x: 0,  y: 73, width: 23, height: 12),
+        SpriteRect(name: "eqButtonOnPressed",   x: 46, y: 73, width: 23, height: 12),
+        // PL (playlist) toggle: same rows, PL columns.
+        SpriteRect(name: "plButtonOff",         x: 23, y: 61, width: 23, height: 12),
+        SpriteRect(name: "plButtonOn",          x: 69, y: 61, width: 23, height: 12),
+        SpriteRect(name: "plButtonOffPressed",  x: 23, y: 73, width: 23, height: 12),
+        SpriteRect(name: "plButtonOnPressed",   x: 69, y: 73, width: 23, height: 12)
     ]
 
     // MARK: - posbar.bmp (seek/position bar)
@@ -360,39 +365,42 @@ public enum SpriteCoordinates {
 
     // MARK: - volume.bmp (volume slider)
     //
-    // 28 stacked position frames (one per level), each 68 wide and 15 tall,
-    // stacked from y=0. The slider thumb is baked into each frame, so there is no
-    // separate thumb sprite. 28 * 15 = 420 is the nominal content height, and the
-    // most common real sheet is taller still (433px). But a meaningful share of
-    // real skins ship the sheet TRIMMED a pixel or two short (418/419px), and
-    // there a 420-bottom last frame (level27, y=405..420) overruns the sheet —
-    // `SpriteCutter` then drops it, and because it drops only the offending rect
-    // the whole 28-frame set is left incomplete. To keep every level present on
-    // those trimmed sheets, the last frame's bottom is capped at 418 (so
-    // declaredMaxBottom = 418, in-bounds on the 418/419px sheets); level27 is the
-    // highest-volume frame, so cropping its last rows is the least-visible trim.
+    // 28 stacked position frames (one per level), each 68 wide, stacked every
+    // 15px from y=0. MEASURED against real 68x433 sheets: the VISIBLE slider
+    // strip of each 15px band is only 13px tall — the band's last rows are
+    // padding/separator art (real sheets carry a bright separator line there), so
+    // cutting 15-tall frames overdraws 2px of garbage below the on-window slider
+    // slot. Frames are therefore declared 13 tall on a 15px stride.
+    //
+    // The last frame's bottom is 27 * 15 + 13 = 418, which also keeps every level
+    // in-bounds on the real skins that ship the sheet TRIMMED to 418/419px
+    // (`SpriteCutter` drops any out-of-bounds rect, which would leave the
+    // 28-frame set incomplete there).
+    //
+    // The separate slider THUMB art near y=422 is not yet modelled (the level
+    // frames carry the filled track; thumb overlay is a later refinement).
 
     private static let volume: [SpriteRect] =
-        sliderBackgrounds(count: 28, width: 68, height: 15, maxBottom: 418)
+        sliderBackgrounds(count: 28, x: 0, width: 68, frameHeight: 13, stride: 15)
 
     // MARK: - balance.bmp (balance slider)
     //
-    // Same vertical shape as the volume sheet — 28 stacked position frames from
-    // y=0, each 15 tall, with the thumb baked in (no separate thumb sprite) —
-    // but the balance frame is NARROWER than volume's: 47 wide, not 68. The
-    // balance knob graphic only occupies the left portion of the strip, so the
-    // canonical sheet is authored 47 wide. A 47-wide frame is in-bounds on both
-    // 47-wide and 68-wide balance sheets; a 68-wide frame would overrun the many
-    // skins that ship balance at 47px.
+    // Same vertical shape as the volume sheet — 28 frames on a 15px stride from
+    // y=0, visible strip 13 tall — but the balance DISPLAY is only 38 wide (the
+    // on-window slot at (177,57) is 38px), and the groove art sits INSET in the
+    // sheet: MEASURED against real 68x433 balance sheets, the centered groove
+    // occupies x=9..46 (the x=0..8 columns are filler), so each frame is the
+    // 38-wide slice at x=9. Verified visually by cropping both slice hypotheses
+    // (x=0 vs x=9) from a real sheet: the x=9 slice contains the complete groove
+    // with both end caps; the x=0 slice has 9px of dead filler and truncates the
+    // groove's right end.
     //
-    // The vertical extent shares volume's exposure: 28 * 15 = 420 is nominal, but
-    // a share of real skins ship balance TRIMMED to 418/419px, where a 420-bottom
-    // last frame overruns and `SpriteCutter` drops it (leaving the set
-    // incomplete). The last frame's bottom is therefore capped at 418 (so
-    // declaredMaxBottom = 418), matching the volume fix.
+    // A 38-wide frame at x=9 (right edge 47) is in-bounds on both 47-wide and
+    // 68-wide real balance sheets. The last frame's bottom is 418, matching
+    // volume's trimmed-sheet fit.
 
     private static let balance: [SpriteRect] =
-        sliderBackgrounds(count: 28, width: 47, height: 15, maxBottom: 418)
+        sliderBackgrounds(count: 28, x: 9, width: 38, frameHeight: 13, stride: 15)
 
     // MARK: - monoster.bmp (mono / stereo indicators)
     //
@@ -448,23 +456,22 @@ public enum SpriteCoordinates {
     /// Builds `count` vertically stacked slider background frames named
     /// `level0 ... level(count-1)`, top to bottom.
     ///
-    /// `maxBottom`, when supplied, caps the bottom edge of the LAST frame so the
-    /// stack never overruns a sheet of that pixel height. The earlier frames are
-    /// unaffected (they end well above the cap); only the final frame is cropped
-    /// to `maxBottom - lastFrameTop` rows. This keeps all `count` frames present
-    /// on real sheets that ship a few pixels short of the nominal `count*height`,
-    /// where dropping the overrunning last frame would otherwise make
-    /// `SpriteCutter` reject it (the dependent control would lose that level).
+    /// Each frame is the `width` x `frameHeight` slice at horizontal offset `x`
+    /// of its band; bands repeat every `stride` pixels from y=0. `frameHeight`
+    /// is declared separately from `stride` because the real volume/balance
+    /// sheets pack a 13px-tall visible strip into each 15px band — cutting the
+    /// full band would include the padding/separator rows below the art.
     private static func sliderBackgrounds(
-        count: Int, width: Int, height: Int, maxBottom: Int? = nil
+        count: Int, x: Int, width: Int, frameHeight: Int, stride: Int
     ) -> [SpriteRect] {
         (0..<count).map { level in
-            let top = level * height
-            var frameHeight = height
-            if let maxBottom, level == count - 1, top + height > maxBottom {
-                frameHeight = maxBottom - top
-            }
-            return SpriteRect(name: "level\(level)", x: 0, y: top, width: width, height: frameHeight)
+            SpriteRect(
+                name: "level\(level)",
+                x: x,
+                y: level * stride,
+                width: width,
+                height: frameHeight
+            )
         }
     }
 

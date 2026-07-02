@@ -107,10 +107,10 @@ public extension SkinControl {
         case .eqButton:
             // The EQ button lights (`eqButtonOn`) while the equalizer window is
             // open; otherwise it shows the off art.
-            base = ("titlebar.bmp", active ? "eqButtonOn" : "eqButtonOff")
+            base = ("shufrep.bmp", active ? "eqButtonOn" : "eqButtonOff")
         case .plButton:
             // The PL button lights (`plButtonOn`) while the playlist window is open.
-            base = ("titlebar.bmp", active ? "plButtonOn" : "plButtonOff")
+            base = ("shufrep.bmp", active ? "plButtonOn" : "plButtonOff")
         default:
             base = releasedSpriteKey
         }
@@ -131,9 +131,10 @@ public extension SkinControl {
         case .toggleRepeat:  return ("shufrep.bmp", "repeatOff")
         // The EQ / PL toggles' default (released) state is OFF; the hit rect
         // derives from the OFF sprite's footprint, exactly like the shuffle/repeat
-        // toggles derive from their `*Off` sprite.
-        case .eqButton:      return ("titlebar.bmp", "eqButtonOff")
-        case .plButton:      return ("titlebar.bmp", "plButtonOff")
+        // toggles derive from their `*Off` sprite. Their art lives in the bottom
+        // band of shufrep.bmp (measured; NOT in titlebar.bmp).
+        case .eqButton:      return ("shufrep.bmp", "eqButtonOff")
+        case .plButton:      return ("shufrep.bmp", "plButtonOff")
         case .eject:         return ("cbuttons.bmp", "eject")
         case .minimize:      return ("titlebar.bmp", "minimize")
         }
