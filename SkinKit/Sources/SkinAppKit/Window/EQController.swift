@@ -170,13 +170,15 @@ public final class EQController: SkinWindowController {
     }
 
     /// Convert a cursor skin-space y to a gain and push it to the engine for the
-    /// given slider. The cursor sits at the thumb's VERTICAL CENTRE (matching how
-    /// `thumbTopY` places the body), so the thumb top-left y is `skinY -
-    /// thumbHeight/2`; `thumbGain(forThumbTopY:)` clamps that into ±12 dB. The
-    /// resulting gain drives the real `AVAudioUnitEQ` through `PlayerCore`.
+    /// given slider. The cursor→gain mapping (cursor sits at the thumb's VERTICAL
+    /// CENTRE, so the thumb top-left is `skinY - thumbHeight/2`, inverted+clamped
+    /// into ±12 dB) is the pure, unit-tested `EQWindowLayout.gain(forCursorSkinY:)`
+    /// — the same transform the composer's thumb placement inverts, so a downward
+    /// drag follows the cursor across the whole travel to −12 dB (never sticking at
+    /// centre). The resulting gain drives the real `AVAudioUnitEQ` through
+    /// `PlayerCore`.
     private func applyGain(to slider: EQWindowLayout.EQSlider, fromSkinY skinY: Int) {
-        let thumbTopY = skinY - EQWindowLayout.thumbHeight / 2
-        let gain = EQWindowLayout.thumbGain(forThumbTopY: thumbTopY)
+        let gain = EQWindowLayout.gain(forCursorSkinY: skinY)
         switch slider {
         case .preamp:
             core.setEQPreamp(gain)
