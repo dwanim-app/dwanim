@@ -196,6 +196,63 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         player.stop()
     }
 
+    // MARK: - Pause position freeze
+
+    /// Reported bug: pressing pause made the time display show 00:00 instead of
+    /// freezing where playback was. `AVAudioPlayerNode.playerTime(forNodeTime:)`
+    /// returns nil while the node is paused, so `currentTime` fell back to the
+    /// seek base (0 for a from-the-start track). The fix caches the live position
+    /// at `pause()`. This needs REAL playback to advance the clock, so it skips
+    /// gracefully when there is no audio output device (e.g. headless CI).
+    func testPauseFreezesAtPlayedPositionNotZero() throws {
+        let url = try synthWAV(duration: 5.0, sampleRate: 44_100)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        player.play()
+        // Spin the run loop until real playback crosses a small threshold.
+        let deadline = Date().addingTimeInterval(2.0)
+        while player.currentTime < 0.05, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        let played = player.currentTime
+        try XCTSkipUnless(
+            played >= 0.05,
+            "engine did not advance the render clock (no audio output device); the pause-freeze path needs real playback"
+        )
+
+        player.pause()
+        let paused = player.currentTime
+        XCTAssertGreaterThan(
+            paused, 0.0,
+            "paused time collapsed to 0 — the reported bug"
+        )
+        XCTAssertEqual(
+            paused, played, accuracy: 0.20,
+            "paused time should freeze at (roughly) the play position, not reset"
+        )
+        player.stop()
+    }
+
+    /// Seeking WHILE paused must clear the paused-position freeze and report the
+    /// seek target (not the frozen time). Deterministic — no real playback needed:
+    /// a pause from a stopped node caches 0, and the seek must override it.
+    func testSeekWhilePausedReportsSeekTargetNotFrozenTime() throws {
+        let url = try synthWAV(duration: 5.0)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        player.pause()  // caches pausedTime = currentTime = 0
+        XCTAssertEqual(player.currentTime, 0, accuracy: 1e-6)
+
+        player.seek(to: 2.5)
+        XCTAssertEqual(
+            player.currentTime, 2.5, accuracy: 0.05,
+            "a seek while paused must report the target, not the frozen 0"
+        )
+        player.stop()
+    }
+
     /// With nothing loaded the engine cannot be running, so `isPlaying` must be
     /// `false` even though `play()` was called — the engine-running guard (Bug
     /// 2) prevents a no-device/empty engine from masquerading as playing.
