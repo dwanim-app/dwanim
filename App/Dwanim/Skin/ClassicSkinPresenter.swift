@@ -516,6 +516,17 @@ final class ClassicSkinPresenter {
             // (instead of the setup's center(), which landed it ON TOP of the main
             // face — the stacking the user reported).
             dock(eqHandle?.window, below: mainHandle?.window)
+            // The EQ takes the slot right under the main face. If the PLAYLIST is
+            // currently docked in that same slot (opened first), the EQ would cover
+            // it — push the playlist down under the EQ, keeping the classic column
+            // order main → EQ → playlist. A playlist the user parked anywhere else
+            // is left where they put it.
+            if let playlist = playlistHandle?.window,
+               let main = mainHandle?.window,
+               abs(playlist.frame.minX - main.frame.minX) < 1,
+               abs(playlist.frame.maxY - main.frame.minY) < 1 {
+                dock(playlist, below: eqHandle?.window)
+            }
         } catch {
             presentLoadFailure(error)
         }
