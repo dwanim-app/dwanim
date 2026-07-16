@@ -203,6 +203,29 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         // display reflects the seek target (a seek while paused reads the target
         // via the seek base in the fallback below).
         pausedTime = nil
+
+        // Seeking AT/PAST the last frame leaves nothing to schedule: no segment
+        // means no completion callback would EVER fire, so playback used to die
+        // silently at the end — display frozen at the duration, no auto-advance,
+        // no repeat (live-reproduced: seek posbar to ~100%, 20+s of dead air).
+        // Treat it as an immediate NATURAL FINISH instead, through the same
+        // async, generation-gated end path a real drain uses, so repeat/advance
+        // semantics apply. (A PAUSED seek-to-end just parks at the end — the
+        // finish fires only when the seek happened while playing.)
+        let startFrame = PlaybackMath.frame(forTime: clamped, sampleRate: sampleRate)
+        if wasPlaying, startFrame >= totalFrames {
+            reachedEnd = true
+            wantsToPlay = false
+            let token = generation
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, token == self.generation else { return }
+                    self.onPlaybackFinished?()
+                }
+            }
+            return
+        }
+
         scheduleSegment(fromTime: clamped)
 
         if wasPlaying {

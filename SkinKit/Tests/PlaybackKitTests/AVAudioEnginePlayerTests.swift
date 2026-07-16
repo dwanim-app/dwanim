@@ -234,6 +234,50 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         player.stop()
     }
 
+    /// Seeking AT/PAST the end WHILE PLAYING must fire `onPlaybackFinished` (the
+    /// natural-finish path), not die silently. Before the fix, a seek to ~100%
+    /// scheduled nothing (`remaining == 0`), so no completion ever fired: the
+    /// display froze at the duration and auto-advance/repeat never ran.
+    /// Deterministic — the finish is synthesized, no real audio drain needed.
+    func testSeekToEndWhilePlayingFiresPlaybackFinished() throws {
+        let url = try synthWAV(duration: 1.0)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        let finished = expectation(description: "onPlaybackFinished on seek-to-end")
+        player.onPlaybackFinished = { finished.fulfill() }
+
+        player.play()
+        player.seek(to: player.duration)  // at/past the last frame
+
+        wait(for: [finished], timeout: 2.0)
+        XCTAssertFalse(player.isPlaying, "the synthesized finish must stop playback")
+        XCTAssertEqual(
+            player.currentTime, player.duration, accuracy: 0.01,
+            "the position must report the end after the synthesized finish"
+        )
+    }
+
+    /// A PAUSED seek-to-end must NOT fire the finish (it just parks at the end),
+    /// so pausing near the end and scrubbing to 100% does not steal an advance.
+    func testSeekToEndWhilePausedDoesNotFireFinished() throws {
+        let url = try synthWAV(duration: 1.0)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        var fired = false
+        player.onPlaybackFinished = { fired = true }
+
+        player.pause()
+        player.seek(to: player.duration)
+
+        // Drain the main queue so a (wrong) async finish would have run.
+        let drain = expectation(description: "drain")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { drain.fulfill() }
+        wait(for: [drain], timeout: 1.0)
+        XCTAssertFalse(fired, "a paused seek-to-end must not synthesize a finish")
+    }
+
     /// Seeking WHILE paused must clear the paused-position freeze and report the
     /// seek target (not the frozen time). Deterministic — no real playback needed:
     /// a pause from a stopped node caches 0, and the seek must override it.
