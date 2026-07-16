@@ -39,7 +39,7 @@ public final class PlaylistContentView: ScaledImageView {
     /// Pulled fresh each redraw so the list reflects the live core.
     public var tracksProvider: () -> [Track] = { [] }
     public var currentIndexProvider: () -> Int? = { nil }
-    public var selectedIndexProvider: () -> Int? = { nil }
+    public var selectedIndicesProvider: () -> Set<Int> = { [] }
     public var scrollRowProvider: () -> Int = { 0 }
 
     public init(frameImage: CGImage, skin: Skin, scale: Double, skinWidth: Int, skinHeight: Int, frame: NSRect) {
@@ -59,7 +59,7 @@ public final class PlaylistContentView: ScaledImageView {
                 skin: self.skin,
                 tracks: self.tracksProvider(),
                 currentIndex: self.currentIndexProvider(),
-                selectedIndex: self.selectedIndexProvider(),
+                selectedIndices: self.selectedIndicesProvider(),
                 scrollRow: self.scrollRowProvider(),
                 skinWidth: self.skinWidth,
                 skinHeight: self.skinHeight,
@@ -76,16 +76,17 @@ public final class PlaylistContentView: ScaledImageView {
     /// Wire the mouse routing once the controller has set its click/scroll hooks.
     /// A double click selects on the first down and PLAYS on the second; both
     /// points are forwarded so the controller can map each to a row via the pure
-    /// helper. The view carries no coordinate math.
+    /// helper. The click MODIFIERS ride along so the controller can route
+    /// cmd-click as a selection toggle. The view carries no coordinate math.
     public func routeClicks(
-        onSingleClick: @escaping (Double, Double, Double) -> Void,
+        onSingleClick: @escaping (Double, Double, Double, ClickModifiers) -> Void,
         onDoubleClick: @escaping (Double, Double, Double) -> Void
     ) {
-        onMouseDown = { x, y, h, clickCount in
+        onMouseDown = { x, y, h, clickCount, modifiers in
             if clickCount >= 2 {
                 onDoubleClick(x, y, h)
             } else {
-                onSingleClick(x, y, h)
+                onSingleClick(x, y, h, modifiers)
             }
         }
     }

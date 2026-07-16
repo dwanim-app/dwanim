@@ -32,10 +32,16 @@ open class ScaledImageView: NSView {
     // MARK: Event hooks
 
     /// Called on mouse-DOWN with the click point in this view's coordinate space
-    /// (non-flipped, bottom-left origin, scaled points), the view's height, and
-    /// the event's `clickCount` (so a window that distinguishes single vs double
-    /// click can route on it; windows that don't simply ignore it).
-    public var onMouseDown: ((_ viewX: Double, _ viewY: Double, _ viewHeight: Double, _ clickCount: Int) -> Void)?
+    /// (non-flipped, bottom-left origin, scaled points), the view's height, the
+    /// event's `clickCount` (so a window that distinguishes single vs double
+    /// click can route on it; windows that don't simply ignore it), and the
+    /// modifier keys held (extracted into the plain `ClickModifiers` value here
+    /// so controllers stay `NSEvent`-free; the playlist window's cmd-click
+    /// multi-select reads it, other windows ignore it).
+    public var onMouseDown: ((
+        _ viewX: Double, _ viewY: Double, _ viewHeight: Double,
+        _ clickCount: Int, _ modifiers: ClickModifiers
+    ) -> Void)?
 
     /// Asked FIRST on a mouse-down, with the same view-space point + height as
     /// `onMouseDown`: return `true` when the press should MOVE THE WINDOW (the
@@ -148,7 +154,11 @@ open class ScaledImageView: NSView {
             window?.performDrag(with: event)
             return
         }
-        onMouseDown?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height), event.clickCount)
+        let modifiers = ClickModifiers(
+            command: event.modifierFlags.contains(.command),
+            shift: event.modifierFlags.contains(.shift)
+        )
+        onMouseDown?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height), event.clickCount, modifiers)
     }
 
     public override func mouseDragged(with event: NSEvent) {

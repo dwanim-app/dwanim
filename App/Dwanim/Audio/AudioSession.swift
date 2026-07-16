@@ -208,6 +208,28 @@ final class AudioSession {
         classicSkin.onEject = { [weak self] in
             self?.presentOpenPanel()
         }
+
+        // PLAYLIST BOTTOM BAR: the classic playlist window's ADD / LIST OPTS
+        // menus (and its mini-transport eject) need the audio panels + `.m3u`
+        // file panels + bookmark persistence, all owned HERE — the same seam
+        // shape as `onEject`. Add-file(s)/folder APPEND to the queue (additive
+        // session scopes, merged persistence); Open List REPLACES it; the edit
+        // hook re-persists after an in-window remove / crop / clear / reorder.
+        classicSkin.onPlaylistAddFiles = { [weak self] in
+            self?.presentAddFilesPanel()
+        }
+        classicSkin.onPlaylistAddFolder = { [weak self] in
+            self?.presentAddFolderPanel()
+        }
+        classicSkin.onPlaylistOpenList = { [weak self] in
+            self?.presentOpenListPanel()
+        }
+        classicSkin.onPlaylistSaveList = { [weak self] in
+            self?.presentSaveListPanel()
+        }
+        classicSkin.onPlaylistEdited = { [weak self] in
+            self?.persistCurrentPlaylist()
+        }
     }
 
     // MARK: Lifecycle
@@ -558,6 +580,142 @@ final class AudioSession {
             }) ?? current
         }
         store.save(current)
+    }
+
+    // MARK: Append (the playlist window's ADD menu + mini eject)
+
+    /// Show an NSOpenPanel filtered to audio files (multi-select) and APPEND the
+    /// pick to the queue — the playlist bar's "Add File(s)…" / mini eject flow,
+    /// vs `presentOpenPanel`'s replace-everything.
+    private func presentAddFilesPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = AudioSession.audioContentTypes
+        panel.prompt = "Add"
+        panel.message = "Choose one or more audio files to add to the playlist."
+
+        guard panel.runModal() == .OK else { return }
+        appendToPlaylist(urls: panel.urls)
+    }
+
+    /// Show an NSOpenPanel picking ONE directory and APPEND its audio files
+    /// (recursive scan, path-sorted for a stable order) to the queue — the
+    /// playlist bar's "Add Directory…" flow. The directory pick grants sandbox
+    /// access to everything under it for this launch.
+    private func presentAddFolderPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Add"
+        panel.message = "Choose a folder whose audio files to add to the playlist."
+
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        appendToPlaylist(urls: AudioSession.audioFiles(under: folder))
+    }
+
+    /// APPEND `urls` to the live queue: persist the MERGED playlist's bookmarks,
+    /// open ADDITIVE session scopes for just the new URLs (no `endSession` —
+    /// the already-loaded tracks keep their scopes; each `start…` gets its
+    /// balancing stop at the next `endSession`, and a duplicate URL is safe
+    /// because the brackets are counted), then `core.append` (which never
+    /// auto-plays and never moves the selection).
+    private func appendToPlaylist(urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        sessionScopes += urls.map { url in
+            (url: url, didStart: url.startAccessingSecurityScopedResource())
+        }
+        core.append(urls.map(trackForURL))
+        // Persist the WHOLE merged queue (the append above included) so the
+        // next launch reopens exactly what is loaded now. The pre-existing
+        // tracks' scopes are open, so re-minting their bookmarks succeeds.
+        persistCurrentPlaylist()
+    }
+
+    /// Re-persist the LIVE queue's bookmarks — after an append here or any edit
+    /// made inside the playlist window (remove / crop / clear / sort / reverse /
+    /// randomize), so the persisted playlist follows the visible one. The loaded
+    /// tracks' session scopes are open, so minting succeeds; removed URLs simply
+    /// drop out of the store (their scopes stay open until the next
+    /// `beginSession`/`endSession` — bounded and balanced).
+    private func persistCurrentPlaylist() {
+        recordPlaylist(core.playlist.map(\.url))
+    }
+
+    /// The audio files under `folder`, recursively, path-sorted for a stable,
+    /// user-predictable order. Hidden files are skipped; a file counts as audio
+    /// when its content type conforms to `.audio` (falling back to the panel's
+    /// concrete extension list for files with no type metadata).
+    private static func audioFiles(under folder: URL) -> [URL] {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .contentTypeKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        var found: [URL] = []
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true else { continue }
+            if let type = values.contentType, type.conforms(to: .audio) {
+                found.append(url)
+            }
+        }
+        return found.sorted { $0.path < $1.path }
+    }
+
+    // MARK: Playlist files (.m3u — the LIST OPTS menu)
+
+    /// The `.m3u` playlist types the open/save panels accept. Derived from the
+    /// filename extension (like `.wsz`); `.m3u8` is accepted on open for
+    /// convenience. Falls back to `.plainText` if the platform cannot
+    /// synthesize the type, so the panel is never unfiltered.
+    private static let playlistContentTypes: [UTType] = {
+        let m3u = [UTType(filenameExtension: "m3u"), UTType(filenameExtension: "m3u8")]
+            .compactMap { $0 }
+        return m3u.isEmpty ? [.plainText] : m3u
+    }()
+
+    /// LIST OPTS > "Open List…": pick a `.m3u`, parse it (pure `M3UPlaylist`),
+    /// and REPLACE the queue with its entries — the classic Open-list behavior
+    /// (`core.load` stops playback; nothing auto-plays). The panel grants access
+    /// to the `.m3u` itself; each listed FILE plays only where the sandbox
+    /// already reaches it (a previously granted location) — an unreachable entry
+    /// is skipped by the engine's unplayable-track policy at play time.
+    private func presentOpenListPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = AudioSession.playlistContentTypes
+        panel.prompt = "Open"
+        panel.message = "Choose a playlist file (.m3u) to open."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let urls = M3UPlaylist.parse(text)
+        guard !urls.isEmpty else { return }
+        recordPlaylist(urls)
+        beginSession(for: urls)
+        core.load(urls.map(trackForURL))
+    }
+
+    /// LIST OPTS > "Save List…": write the live queue as `.m3u` (pure
+    /// `M3UPlaylist.serialize` — absolute paths, `#EXTM3U` header) wherever the
+    /// save panel granted. A write failure is silently dropped (the queue
+    /// itself is unaffected).
+    private func presentSaveListPanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = AudioSession.playlistContentTypes
+        panel.nameFieldStringValue = "Playlist.m3u"
+        panel.prompt = "Save"
+        panel.message = "Save the current playlist as a .m3u file."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let text = M3UPlaylist.serialize(core.playlist.map(\.url))
+        try? text.write(to: url, atomically: true, encoding: .utf8)
     }
 
     // MARK: Launch resolve

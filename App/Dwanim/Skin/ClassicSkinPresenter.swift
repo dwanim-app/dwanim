@@ -152,6 +152,25 @@ final class ClassicSkinPresenter {
     /// since it is set immediately after init.
     var onEject: (() -> Void)?
 
+    /// PLAYLIST BOTTOM-BAR host hooks, mirroring `onEject`: the playlist
+    /// window's ADD / LIST OPTS menus (and its mini-transport eject) need the
+    /// AUDIO panels + `.m3u` file panels + bookmark persistence, all of which
+    /// live in `AudioSession` — the presenter owns only the SKIN panel. Set by
+    /// the host after construction; `nil` until then (the matching menu items
+    /// are disabled), which is harmless since they are set immediately after
+    /// init. Threaded into `showPlaylistWindow` per open/re-skin.
+    ///   - `onPlaylistAddFiles`: append picked audio files to the queue.
+    ///   - `onPlaylistAddFolder`: append a picked folder's audio files.
+    ///   - `onPlaylistOpenList`: open a `.m3u` (replaces the queue).
+    ///   - `onPlaylistSaveList`: save the queue as `.m3u`.
+    ///   - `onPlaylistEdited`: re-persist the playlist bookmarks after an
+    ///     in-window edit (remove / crop / clear / sort / reverse / randomize).
+    var onPlaylistAddFiles: (() -> Void)?
+    var onPlaylistAddFolder: (() -> Void)?
+    var onPlaylistOpenList: (() -> Void)?
+    var onPlaylistSaveList: (() -> Void)?
+    var onPlaylistEdited: (() -> Void)?
+
     /// Per-window handles (controller + window) of the three-window cluster. Each is
     /// held while its window is open (so it is not deallocated for the window's
     /// lifetime) and dropped on that window's own close (the `onClose` callback), so
@@ -475,7 +494,16 @@ final class ClassicSkinPresenter {
                 title: ClassicSkinPresenter.playlistWindowTitle,
                 terminatesAppOnClose: false,
                 onClose: { [weak self] in self?.playlistHandle = nil },
-                onFileDrop: onFileDrop
+                onFileDrop: onFileDrop,
+                // Bottom-bar host hooks (ADD / LIST OPTS menus + mini eject +
+                // edit persistence) — pass-throughs to the AudioSession-owned
+                // panels/persistence, mirroring how eject reaches the audio
+                // panel on the main window.
+                onAddFiles: { [weak self] in self?.onPlaylistAddFiles?() },
+                onAddFolder: { [weak self] in self?.onPlaylistAddFolder?() },
+                onOpenList: { [weak self] in self?.onPlaylistOpenList?() },
+                onSaveList: { [weak self] in self?.onPlaylistSaveList?() },
+                onPlaylistEdited: { [weak self] in self?.onPlaylistEdited?() }
             )
             // Classic column layout: the playlist docks directly UNDER the EQ
             // window when it is open, else under the main window (the user-noted
