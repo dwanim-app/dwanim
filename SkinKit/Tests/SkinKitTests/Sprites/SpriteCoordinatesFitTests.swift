@@ -29,15 +29,20 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         "numbers.bmp":  (99, 13),
         "monoster.bmp": (58, 24),
         "playpaus.bmp": (42, 9),
-        // volume's nominal content height is 420 (28 frames x 15), but a share of
-        // real skins ship it TRIMMED to 418/419px. The last frame's bottom is
-        // capped at 418 so rects must fit 418 (not 420) to stay in-bounds there.
-        "volume.bmp":   (68, 418),
-        // balance is NARROWER than volume: canonical frame is 47 wide, and a
-        // large share of real skins ship balance.bmp at exactly 47px wide, so
-        // rects must fit 47 (not 68). Its bottom is likewise capped at 418 to fit
-        // the trimmed 418/419px sheets, so rects must fit 418 (not 420).
-        "balance.bmp":  (47, 418),
+        // volume: the CANONICAL sheet is 68x433 — the 28 level frames occupy the top
+        // (last frame bottom 418) and the draggable THUMB pair lives at y=422..433.
+        // Like the EQ sheet, the canonical size is the fit floor here (NOT the trimmed
+        // 418/419px minority): the level frames are SEPARATELY pinned to <=418 (see
+        // testVolumeFramesArePinnedToTheMeasuredStrips), and on a trimmed sheet the
+        // thumb rows fall out of bounds so SpriteCutter drops them — the slider then
+        // renders its coloured track with no handle (the overlay tolerates a missing
+        // thumb), a graceful degrade.
+        "volume.bmp":   (68, 433),
+        // balance is NARROWER than volume: canonical frame is 47 wide, and a large
+        // share of real skins ship balance.bmp at exactly 47px wide, so rects must fit
+        // 47 (not 68). Height is the canonical 433 (thumb at y=422..433), same
+        // trimmed-sheet degrade as volume; level frames pinned <=418 separately.
+        "balance.bmp":  (47, 433),
         // text.bmp is 155 wide; height varies (18 / 73 / 74). Use the SMALLEST
         // observed height so any rect fitting here fits every real sheet.
         "text.bmp":     (155, 18),
@@ -118,8 +123,9 @@ final class SpriteCoordinatesFitTests: XCTestCase {
             XCTFail("balance.bmp missing from the coordinate table")
             return
         }
-        XCTAssertEqual(balance.count, 28, "balance must have 28 stacked frames")
-        for (index, rect) in balance.enumerated() {
+        let levels = balance.filter { $0.name.hasPrefix("level") }
+        XCTAssertEqual(levels.count, 28, "balance must have 28 stacked level frames")
+        for (index, rect) in levels.enumerated() {
             XCTAssertEqual(
                 rect.x, 9,
                 "\(rect.name): balance frame x must be 9 (the measured groove inset)")
@@ -150,8 +156,9 @@ final class SpriteCoordinatesFitTests: XCTestCase {
             XCTFail("volume.bmp missing from the coordinate table")
             return
         }
-        XCTAssertEqual(volume.count, 28, "volume must have 28 stacked frames")
-        for (index, rect) in volume.enumerated() {
+        let levels = volume.filter { $0.name.hasPrefix("level") }
+        XCTAssertEqual(levels.count, 28, "volume must have 28 stacked level frames")
+        for (index, rect) in levels.enumerated() {
             XCTAssertEqual(rect.x, 0, "\(rect.name): volume frame x must be 0")
             XCTAssertEqual(rect.width, 68, "\(rect.name): volume frame width must be 68")
             XCTAssertEqual(
@@ -162,11 +169,18 @@ final class SpriteCoordinatesFitTests: XCTestCase {
                 rect.y, index * 15,
                 "\(rect.name): volume frames stack on a 15px stride")
         }
-        let maxBottom = volume.map { $0.y + $0.height }.max()
+        let maxBottom = levels.map { $0.y + $0.height }.max()
         XCTAssertEqual(
             maxBottom, 418,
             "volume max bottom edge must be 418 — anything deeper overruns the "
                 + "418/419px-tall trimmed real sheets")
+        // The thumb pair sits below the level frames at the measured y=422 (11 tall,
+        // bottom 433 = the full sheet), so it is present but never counted as a level.
+        let thumb = try! XCTUnwrap(volume.first { $0.name == "thumb" })
+        let thumbPressed = try! XCTUnwrap(volume.first { $0.name == "thumbPressed" })
+        XCTAssertEqual([thumb.width, thumb.height], [14, 11], "volume thumb is 14x11")
+        XCTAssertEqual(thumb.y, 422)
+        XCTAssertEqual([thumbPressed.width, thumbPressed.height], [14, 11])
     }
 
     /// Pins the balance slider's maximum bottom edge to 418px, the same trim the
@@ -177,7 +191,8 @@ final class SpriteCoordinatesFitTests: XCTestCase {
             XCTFail("balance.bmp missing from the coordinate table")
             return
         }
-        let maxBottom = balance.map { $0.y + $0.height }.max()
+        let maxBottom = balance.filter { $0.name.hasPrefix("level") }
+            .map { $0.y + $0.height }.max()
         XCTAssertEqual(
             maxBottom, 418,
             "balance max bottom edge must be 418 — anything deeper overruns the "

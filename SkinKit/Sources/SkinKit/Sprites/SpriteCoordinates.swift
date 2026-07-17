@@ -377,11 +377,18 @@ public enum SpriteCoordinates {
     // (`SpriteCutter` drops any out-of-bounds rect, which would leave the
     // 28-frame set incomplete there).
     //
-    // The separate slider THUMB art near y=422 is not yet modelled (the level
-    // frames carry the filled track; thumb overlay is a later refinement).
+    // The 28 level frames are the coloured TRACK only (green->red by level); they do
+    // NOT bake in the knob. The draggable THUMB is a separate 14x11 sprite pair at
+    // the bottom of the sheet (measured on real 68x433 sheets: normal at x=0,y=422,
+    // pressed at x=15,y=422). It is overlaid on the track at the level-derived x by
+    // the live redraw — without it the slider shows a coloured bar but no handle.
 
     private static let volume: [SpriteRect] =
         sliderBackgrounds(count: 28, x: 0, width: 68, frameHeight: 13, stride: 15)
+        + [
+            SpriteRect(name: "thumb",        x: 0,  y: 422, width: 14, height: 11),
+            SpriteRect(name: "thumbPressed", x: 15, y: 422, width: 14, height: 11),
+        ]
 
     // MARK: - balance.bmp (balance slider)
     //
@@ -401,6 +408,10 @@ public enum SpriteCoordinates {
 
     private static let balance: [SpriteRect] =
         sliderBackgrounds(count: 28, x: 9, width: 38, frameHeight: 13, stride: 15)
+        + [
+            SpriteRect(name: "thumb",        x: 0,  y: 422, width: 14, height: 11),
+            SpriteRect(name: "thumbPressed", x: 15, y: 422, width: 14, height: 11),
+        ]
 
     // MARK: - monoster.bmp (mono / stereo indicators)
     //

@@ -683,8 +683,18 @@ public final class InteractiveController: SkinWindowController {
     private func overlayVolumeFrame(onto base: inout DecodedBitmap) {
         guard let rect = ControlHitTest.volumeRect() else { return }
         let name = ControlHitTest.volumeLevelFrame(forVolume: Double(core.volume))
-        guard let sprite = skin.sprite(sheet: "volume.bmp", name: name) else { return }
-        SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+        if let sprite = skin.sprite(sheet: "volume.bmp", name: name) {
+            SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+        }
+        // Overlay the draggable THUMB at the live volume position (pressed art while
+        // scrubbing this slider). The level frame above is the coloured track only;
+        // without this the slider shows a bar but no handle.
+        if let origin = ControlHitTest.volumeThumbOrigin(forVolume: Double(core.volume)) {
+            let thumbName = draggingSlider == .volume ? "thumbPressed" : "thumb"
+            if let thumb = skin.sprite(sheet: "volume.bmp", name: thumbName) {
+                SkinCanvas.overlay(thumb, onto: &base, x: origin.x, y: origin.y)
+            }
+        }
     }
 
     /// Overlay the balance slider frame chosen from the live `core.balance` pan
@@ -695,8 +705,17 @@ public final class InteractiveController: SkinWindowController {
     private func overlayBalanceFrame(onto base: inout DecodedBitmap) {
         guard let rect = ControlHitTest.balanceRect() else { return }
         let name = ControlHitTest.balanceLevelFrame(forBalance: Double(core.balance))
-        guard let sprite = skin.sprite(sheet: "balance.bmp", name: name) else { return }
-        SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+        if let sprite = skin.sprite(sheet: "balance.bmp", name: name) {
+            SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+        }
+        // Overlay the draggable THUMB at the live pan position (pressed art while
+        // scrubbing this slider), centred at pan 0.
+        if let origin = ControlHitTest.balanceThumbOrigin(forBalance: Double(core.balance)) {
+            let thumbName = draggingSlider == .balance ? "thumbPressed" : "thumb"
+            if let thumb = skin.sprite(sheet: "balance.bmp", name: thumbName) {
+                SkinCanvas.overlay(thumb, onto: &base, x: origin.x, y: origin.y)
+            }
+        }
     }
 
     /// Overlay the correct mono / stereo indicator pair from the live track's

@@ -960,6 +960,37 @@ final class ControlHitTestTests: XCTestCase {
         XCTAssertEqual(ControlHitTest.volumeFraction(skinX: rect.x + rect.width + 50)!, 1, accuracy: 1e-9)
     }
 
+    func testVolumeThumbOriginSeatsFlushAndCentres() {
+        let rect = expectedSliderRect(sheet: "volume.bmp", frame: "level27")
+        let travel = rect.width - ControlHitTest.sliderThumbWidth
+        let yCentered = rect.y + (rect.height - ControlHitTest.sliderThumbHeight) / 2
+        // 0 -> hard left (flush), 1 -> flush right (left edge at width - thumbWidth),
+        // 0.5 -> mid-travel; y is centred; the thumb never spills past the track.
+        XCTAssertEqual(ControlHitTest.volumeThumbOrigin(forVolume: 0)!.x, rect.x)
+        XCTAssertEqual(ControlHitTest.volumeThumbOrigin(forVolume: 1)!.x, rect.x + travel)
+        XCTAssertEqual(ControlHitTest.volumeThumbOrigin(forVolume: 0.5)!.x,
+                       rect.x + Int((0.5 * Double(travel)).rounded()))
+        XCTAssertEqual(ControlHitTest.volumeThumbOrigin(forVolume: 0.5)!.y, yCentered)
+        XCTAssertLessThanOrEqual(
+            ControlHitTest.volumeThumbOrigin(forVolume: 1)!.x + ControlHitTest.sliderThumbWidth,
+            rect.x + rect.width, "thumb right edge stays within the track")
+        // Clamp + non-finite are safe.
+        XCTAssertEqual(ControlHitTest.volumeThumbOrigin(forVolume: 5)!.x, rect.x + travel)
+        XCTAssertEqual(ControlHitTest.volumeThumbOrigin(forVolume: .nan)!.x, rect.x)
+    }
+
+    func testBalanceThumbOriginCentresAtPanZero() {
+        let rect = expectedSliderRect(sheet: "balance.bmp", frame: "level13")
+        let travel = rect.width - ControlHitTest.sliderThumbWidth
+        // pan 0 -> mid-travel (centred), -1 -> flush left, +1 -> flush right.
+        XCTAssertEqual(ControlHitTest.balanceThumbOrigin(forBalance: -1)!.x, rect.x)
+        XCTAssertEqual(ControlHitTest.balanceThumbOrigin(forBalance: 1)!.x, rect.x + travel)
+        XCTAssertEqual(ControlHitTest.balanceThumbOrigin(forBalance: 0)!.x,
+                       rect.x + Int((0.5 * Double(travel)).rounded()))
+        XCTAssertEqual(ControlHitTest.balanceThumbOrigin(forBalance: .nan)!.x,
+                       rect.x + Int((0.5 * Double(travel)).rounded()), "non-finite pan centres")
+    }
+
     func testVolumeLevelFrameMapping() {
         // 0 -> level0, 1 -> level(count-1), 0.5 -> a middle frame.
         XCTAssertEqual(ControlHitTest.volumeLevelFrame(forVolume: 0), "level0")
