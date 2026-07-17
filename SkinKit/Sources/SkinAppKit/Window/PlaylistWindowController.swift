@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Observation
 import PlayerCore
 import SkinKit
 import SkinRender
@@ -115,6 +116,34 @@ public final class PlaylistWindowController: SkinWindowController {
             return PlaylistWindowComposer.hitsTitleBarDragArea(
                 skinX: point.x, skinY: point.y, canvasWidth: self.skinWidth
             )
+        }
+        // Follow the now-playing track: redraw when core.currentIndex changes so
+        // the highlight moves on an AUTOMATIC advance too, not only on a click here.
+        observeNowPlaying()
+    }
+
+    /// Redraw the list whenever the now-playing track changes, so the highlighted
+    /// row follows an AUTOMATIC advance (end-of-track auto-advance, or next/previous
+    /// pressed on the MAIN window) — not just the playlist window's own gestures.
+    /// The list owns no redraw timer, so without this the highlight stays on the
+    /// old row until the user scrolls/clicks the playlist. Uses `@Observable`
+    /// tracking (one-shot; re-armed after each change) and self-cancels when the
+    /// controller deallocs — the `weak self` simply stops re-arming.
+    private func observeNowPlaying() {
+        withObservationTracking {
+            _ = core.currentIndex
+        } onChange: { [weak self] in
+            // onChange is delivered synchronously as the value is about to change;
+            // hop to the main actor so we read the SETTLED index (at draw time),
+            // touch AppKit safely, and re-arm tracking. Re-capture `self` weakly in
+            // the hop so it is not a cross-closure captured var (Swift-6 clean).
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.view?.needsDisplay = true
+                    self.observeNowPlaying()
+                }
+            }
         }
     }
 

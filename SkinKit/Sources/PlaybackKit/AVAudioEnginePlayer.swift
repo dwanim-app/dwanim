@@ -72,6 +72,13 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
     /// Time (seconds) the most recent schedule started from. `currentTime`
     /// adds the node's elapsed render time to this base.
     private var seekBaseTime: TimeInterval = 0
+    /// The live position captured at the moment of `pause()`, or `nil` when not
+    /// paused. `AVAudioPlayerNode.playerTime(forNodeTime:)` returns `nil` while the
+    /// node is paused, so without this cache `currentTime` would fall back to the
+    /// seek base (0 for a track played from the start) and the display would blip to
+    /// 00:00. While paused we report this frozen position instead; it is cleared the
+    /// moment a new position is armed (play/seek/stop/load).
+    private var pausedTime: TimeInterval?
     /// Whether the user intends playback to be running. Survives engine
     /// pauses and is used to decide whether a seek should resume.
     private var wantsToPlay = false
@@ -145,6 +152,9 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         // its end. Resume of a paused node is also handled here (the flag was
         // already false in that case).
         reachedEnd = false
+        // Resuming (or starting) hands the clock back to the render timeline, so
+        // drop the paused-position freeze.
+        pausedTime = nil
 
         // Schedule from the current seek base if nothing is pending; if a
         // segment is already scheduled (e.g. after pause) just resume the node.
@@ -155,6 +165,10 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
     }
 
     public func pause() {
+        // Capture the live position BEFORE pausing: once the node is paused,
+        // `playerTime(forNodeTime:)` returns nil and `currentTime` can no longer
+        // read the render clock, so freeze the display at where we are now.
+        pausedTime = currentTime
         playerNode.pause()
         wantsToPlay = false
     }
@@ -166,6 +180,7 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         hasPendingSegment = false
         playerNode.stop()
         seekBaseTime = 0
+        pausedTime = nil
     }
 
     public func seek(to time: TimeInterval) {
@@ -184,6 +199,33 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         playerNode.stop()
 
         seekBaseTime = clamped
+        // A seek arms a new position: drop any paused-position freeze so the
+        // display reflects the seek target (a seek while paused reads the target
+        // via the seek base in the fallback below).
+        pausedTime = nil
+
+        // Seeking AT/PAST the last frame leaves nothing to schedule: no segment
+        // means no completion callback would EVER fire, so playback used to die
+        // silently at the end — display frozen at the duration, no auto-advance,
+        // no repeat (live-reproduced: seek posbar to ~100%, 20+s of dead air).
+        // Treat it as an immediate NATURAL FINISH instead, through the same
+        // async, generation-gated end path a real drain uses, so repeat/advance
+        // semantics apply. (A PAUSED seek-to-end just parks at the end — the
+        // finish fires only when the seek happened while playing.)
+        let startFrame = PlaybackMath.frame(forTime: clamped, sampleRate: sampleRate)
+        if wasPlaying, startFrame >= totalFrames {
+            reachedEnd = true
+            wantsToPlay = false
+            let token = generation
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, token == self.generation else { return }
+                    self.onPlaybackFinished?()
+                }
+            }
+            return
+        }
+
         scheduleSegment(fromTime: clamped)
 
         if wasPlaying {
@@ -212,6 +254,11 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
             // the position never blips backward on the finishing poll.
             if reachedEnd {
                 return PlaybackMath.clamp(duration, to: duration)
+            }
+            // Paused: the render clock is unreadable, so report the position frozen
+            // at `pause()` (not the seek base, which would blip to 00:00).
+            if let pausedTime {
+                return PlaybackMath.clamp(pausedTime, to: duration)
             }
             return PlaybackMath.clamp(base, to: duration)
         }
@@ -372,6 +419,7 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         wantsToPlay = false
         hasPendingSegment = false
         reachedEnd = false
+        pausedTime = nil
         playerNode.stop()
     }
 }

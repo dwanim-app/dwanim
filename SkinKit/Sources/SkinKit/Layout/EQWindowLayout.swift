@@ -95,12 +95,22 @@ public enum EQWindowLayout {
     // provisional — tune at render
     public static let sliderTrackTop = 38
 
-    /// Bottom of the slider track travel (the y of the thumb's top-left when the
-    /// thumb is at the BOTTOM / minimum-gain end). The thumb's full vertical
-    /// travel is `sliderTrackTop ... sliderTrackBottom`; the centre (0 dB)
-    /// position is their midpoint.
-    // provisional — tune at render
-    public static let sliderTrackBottom = 75
+    /// Bottom of the slider track travel (one past the last row the thumb body
+    /// may occupy; the thumb's top-left at the BOTTOM / minimum-gain end is
+    /// `sliderTrackBottom - thumbHeight`). The centre (0 dB) position is the
+    /// midpoint of the travel.
+    ///
+    /// TUNED AT RENDER (2026-07-16, live measurement against the real classic
+    /// face — the user caught this one): the face's dashed gain rails sit at
+    /// skin y ≈ 38 ("+20db"), ≈ 68 ("+0db"), ≈ 97 ("-20db"), i.e. the REAL track
+    /// is the classic 63px-tall run 38...101. The provisional value here was 75 —
+    /// a HALF-height track — which compressed the whole thumb travel into the
+    /// upper half of the visible track: a flat 0 dB thumb drew ABOVE the "+0db"
+    /// rail and a full −12 dB cut drew ON it, so dragging DOWN looked like it
+    /// stuck at the centre line (the gain itself was correct; drag, draw, and
+    /// hit-gate were all self-consistently wrong together). With 101, 0 dB
+    /// centres on the "+0db" rail and −12 dB rests on the "-20db" rail.
+    public static let sliderTrackBottom = 101
 
     /// The x column (thumb top-left x) of the PREAMP slider, left of the band
     /// sliders.

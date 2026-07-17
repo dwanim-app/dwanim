@@ -566,6 +566,14 @@ public final class InteractiveController: SkinWindowController {
         // button still reads its pressed art on top.
         overlayActiveToggles(onto: &composed)
 
+        // REPEAT-ONE badge: `.all` and `.one` share the same lit `repeatOn` art
+        // (classic skins ship no distinct repeat-1 glyph), so the mode was
+        // invisible — the user-reported "repeat does nothing" confusion. Mirror
+        // real players: stamp a small "1" from the skin's OWN text.bmp font on
+        // the lit repeat button while the mode is repeat-one. Skin-authentic
+        // (no invented art) and overlay-only (the static composer is untouched).
+        overlayRepeatOneBadge(onto: &composed)
+
         // Pressed-button feedback: while a transport/toggle button is held, draw
         // its pressed sprite over the released one at the control's draw origin.
         overlayPressedSprite(onto: &composed)
@@ -614,6 +622,24 @@ public final class InteractiveController: SkinWindowController {
             guard let sprite = skin.sprite(sheet: key.sheet, name: key.name) else { continue }
             SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
         }
+    }
+
+    /// Stamp a small "1" (the skin's own `text.bmp` glyph) on the repeat button
+    /// while `repeatMode == .one`, so repeat-one is visually distinct from
+    /// repeat-all (both light the same `repeatOn` LED sprite). The badge sits in
+    /// the button's right portion, vertically centred (button 28x15, glyph cell
+    /// 5x6). Missing glyph/sprite degrades to no badge — never traps.
+    private func overlayRepeatOneBadge(onto base: inout DecodedBitmap) {
+        guard core.repeatMode == .one,
+              let rect = ControlHitTest.hitRect(for: .toggleRepeat) else { return }
+        BitmapText.draw(
+            "1",
+            from: skin,
+            onto: &base,
+            x: rect.x + rect.width - 9,
+            y: rect.y + 5,
+            maxWidth: 9
+        )
     }
 
     /// Whether a control's live toggle state is "on": shuffle reflects

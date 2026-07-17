@@ -128,6 +128,16 @@ open class ScaledImageView: NSView {
 
     // MARK: Events
 
+    /// CLICK-THROUGH: act on the first click even when this window is not key.
+    /// NSView defaults to `false`, which made the first press on a background
+    /// classic window be swallowed by window activation — e.g. with the EQ window
+    /// just opened (and key), the main window's EQ button needed TWO presses to
+    /// toggle the window closed (user-reported). The real classic player acts
+    /// immediately, and every control here is a safe, single-shot media action.
+    open override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
     public override func mouseDown(with event: NSEvent) {
         let viewPoint = convert(event.locationInWindow, from: nil)
         // Title-bar drag gate: when the controller's predicate claims the point,

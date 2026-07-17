@@ -477,9 +477,24 @@ final class ClassicSkinPresenter {
                 onClose: { [weak self] in self?.playlistHandle = nil },
                 onFileDrop: onFileDrop
             )
+            // Classic column layout: the playlist docks directly UNDER the EQ
+            // window when it is open, else under the main window (the user-noted
+            // real-player feel: main + EQ + playlist stack as one tall unit).
+            dock(playlistHandle?.window, below: eqHandle?.window ?? mainHandle?.window)
         } catch {
             presentLoadFailure(error)
         }
+    }
+
+    /// Place `window`'s top-left at `anchor`'s bottom-left, so the two read as one
+    /// vertically-docked column (AppKit y grows UP, so the anchor's bottom edge is
+    /// `frame.minY`). A no-op when either window is missing — the setup's default
+    /// `center()` placement then stands.
+    private func dock(_ window: NSWindow?, below anchor: NSWindow?) {
+        guard let window, let anchor else { return }
+        window.setFrameTopLeftPoint(
+            NSPoint(x: anchor.frame.minX, y: anchor.frame.minY)
+        )
     }
 
     /// Build the classic EQ window from `skin`, driven by the shared core, and hold
@@ -497,6 +512,21 @@ final class ClassicSkinPresenter {
                 onClose: { [weak self] in self?.eqHandle = nil },
                 onFileDrop: onFileDrop
             )
+            // Classic column layout: the EQ docks directly UNDER the main window
+            // (instead of the setup's center(), which landed it ON TOP of the main
+            // face — the stacking the user reported).
+            dock(eqHandle?.window, below: mainHandle?.window)
+            // The EQ takes the slot right under the main face. If the PLAYLIST is
+            // currently docked in that same slot (opened first), the EQ would cover
+            // it — push the playlist down under the EQ, keeping the classic column
+            // order main → EQ → playlist. A playlist the user parked anywhere else
+            // is left where they put it.
+            if let playlist = playlistHandle?.window,
+               let main = mainHandle?.window,
+               abs(playlist.frame.minX - main.frame.minX) < 1,
+               abs(playlist.frame.maxY - main.frame.minY) < 1 {
+                dock(playlist, below: eqHandle?.window)
+            }
         } catch {
             presentLoadFailure(error)
         }
