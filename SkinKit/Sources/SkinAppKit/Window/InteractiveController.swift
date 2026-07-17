@@ -533,10 +533,10 @@ public final class InteractiveController: SkinWindowController {
         overlayPosbarThumb(onto: &composed)
 
         // Toggle / button on-state: shuffle/repeat and the EQ/PL window-toggle
-        // buttons are composited in their OFF art (or baked off into main.bmp); when
-        // one is live (shuffle on, repeat != off, the EQ / playlist window open)
-        // overlay its ON sprite so the button visibly lights up. Drawn before the
-        // pressed overlay so a held button still reads its pressed art on top.
+        // buttons are composited in their OFF art; when one is live (shuffle on,
+        // repeat != off, the EQ / playlist window open) overlay its ON sprite so
+        // the button visibly lights up. Drawn before the pressed overlay so a held
+        // button still reads its pressed art on top.
         overlayActiveToggles(onto: &composed)
 
         // Pressed-button feedback: while a transport/toggle button is held, draw
@@ -573,11 +573,10 @@ public final class InteractiveController: SkinWindowController {
 
     /// Overlay the ON sprite for each toggle/button that is live — shuffle on,
     /// repeat != off, the EQ window open, or the playlist window open — at its
-    /// hit-rect origin, so an active control visibly lights up over the static OFF
-    /// art (composited for shuffle/repeat, baked into `main.bmp` for EQ/PL). The
-    /// released (not pressed) on sprite is used here; a press is layered on top by
-    /// `overlayPressedSprite`. A control that is off, or whose on sprite is missing,
-    /// is left as the composed/baked off art.
+    /// hit-rect origin, so an active control visibly lights up over the static
+    /// composited OFF art. The released (not pressed) on sprite is used here; a
+    /// press is layered on top by `overlayPressedSprite`. A control that is off,
+    /// or whose on sprite is missing, is left as the composed off art.
     private func overlayActiveToggles(onto base: inout DecodedBitmap) {
         let toggles: [SkinControl] = [.toggleShuffle, .toggleRepeat, .eqButton, .plButton]
         for control in toggles where isToggleActive(control) {

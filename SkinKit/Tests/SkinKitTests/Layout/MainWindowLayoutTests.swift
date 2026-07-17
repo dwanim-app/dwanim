@@ -56,8 +56,10 @@ final class MainWindowLayoutTests: XCTestCase {
     }
 
     /// The table should cover the standard static controls named in the brief:
-    /// title bar, the five transport buttons, shuffle + repeat, the position
-    /// track, the volume and balance backgrounds, and a mono/stereo indicator.
+    /// title bar, the five transport buttons, eject, shuffle + repeat, the EQ /
+    /// PL window toggles (off art — real main.bmp faces are often blank where
+    /// they sit, so they must be composited to be visible), the position track,
+    /// the volume and balance backgrounds, and a mono/stereo indicator.
     func testTableCoversTheStandardStaticControls() {
         let pairs = Set(MainWindowLayout.elements.map { "\($0.sheet)/\($0.sprite)" })
         let expected = [
@@ -67,8 +69,11 @@ final class MainWindowLayoutTests: XCTestCase {
             "cbuttons.bmp/pause",
             "cbuttons.bmp/stop",
             "cbuttons.bmp/next",
+            "cbuttons.bmp/eject",
             "shufrep.bmp/shuffleOff",
             "shufrep.bmp/repeatOff",
+            "shufrep.bmp/eqButtonOff",
+            "shufrep.bmp/plButtonOff",
             "posbar.bmp/track",
             "monoster.bmp/stereoActive"
         ]

@@ -104,13 +104,16 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         }
     }
 
-    /// Pins the balance slider frame width to its canonical 47px. The balance
-    /// sheet is narrower than volume (68px); a regression back to 68 would
-    /// silently read past the right edge of the many real skins that ship
-    /// balance.bmp at 47px wide, making the control invisible there. Asserts
-    /// directly against the coordinate table so it does not rely on the fit
-    /// fixtures above.
-    func testBalanceFrameWidthIsPinnedTo47() {
+    /// Pins the balance slider frames to the MEASURED real-sheet geometry: 28
+    /// frames on a 15px stride, each the 38-wide groove slice at x=9 (the groove
+    /// art sits inset at x=9..46 of the sheet; x=0..8 is filler), 13px tall (the
+    /// visible strip of each 15px band — the band's last rows are separator
+    /// padding that would overdraw below the slider slot). A regression back to a
+    /// 47-wide x=0 frame would show 9px of filler and truncate the groove; a
+    /// 15-tall frame would draw 2px of separator garbage. The right edge (9+38=47)
+    /// stays in-bounds on 47px-wide real balance sheets. Asserts directly against
+    /// the coordinate table so it does not rely on the fit fixtures above.
+    func testBalanceFramesArePinnedToTheMeasuredGrooveSlice() {
         guard let balance = SpriteCoordinates.mainWindow["balance.bmp"] else {
             XCTFail("balance.bmp missing from the coordinate table")
             return
@@ -118,52 +121,57 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         XCTAssertEqual(balance.count, 28, "balance must have 28 stacked frames")
         for (index, rect) in balance.enumerated() {
             XCTAssertEqual(
-                rect.width, 47,
-                "\(rect.name): balance frame width must be 47 (canonical), not "
-                    + "68 — a 68-wide frame overruns 47px-wide balance sheets")
-            // Every frame is 15 tall except the LAST, whose bottom is capped at
-            // 418 to fit the trimmed 418/419px sheets (see
-            // testBalanceMaxBottomIsPinnedTo418). That final frame is therefore
-            // 13 tall (418 - 27*15); all earlier frames remain 15.
-            if index == balance.count - 1 {
-                XCTAssertEqual(
-                    rect.height, 13,
-                    "\(rect.name): last balance frame is capped at 13 (bottom 418)")
-            } else {
-                XCTAssertEqual(
-                    rect.height, 15, "\(rect.name): balance frame height must be 15")
-            }
+                rect.x, 9,
+                "\(rect.name): balance frame x must be 9 (the measured groove inset)")
+            XCTAssertEqual(
+                rect.width, 38,
+                "\(rect.name): balance frame width must be 38 (the measured groove "
+                    + "slice / on-window display width), not 47")
+            XCTAssertEqual(
+                rect.height, 13,
+                "\(rect.name): balance frame height must be 13 (visible strip of "
+                    + "the 15px band)")
+            XCTAssertEqual(
+                rect.y, index * 15,
+                "\(rect.name): balance frames stack on a 15px stride")
         }
     }
 
-    /// Pins the volume slider's maximum bottom edge to 418px. Volume's nominal
-    /// content height is 28 * 15 = 420, but a meaningful share of real skins ship
-    /// volume.bmp trimmed to 418/419px; a 420-bottom last frame (level27) overruns
-    /// those sheets, and `SpriteCutter` then drops it, leaving the 28-frame set
-    /// incomplete and the slider blank at that level. Capping the last frame's
-    /// bottom at 418 keeps every level in-bounds. Asserts directly against the
-    /// coordinate table so it does not rely on the fit fixtures above.
-    func testVolumeMaxBottomIsPinnedTo418() {
+    /// Pins the volume slider frames to the MEASURED real-sheet geometry: 28
+    /// full-width (68px) frames on a 15px stride, each 13px tall — the visible
+    /// strip of each band; the band's last rows carry separator padding that a
+    /// 15-tall frame would overdraw 2px below the on-window slider slot. The last
+    /// frame's bottom (27*15 + 13 = 418) also keeps every level in-bounds on the
+    /// real skins that ship the sheet trimmed to 418/419px (`SpriteCutter` drops
+    /// out-of-bounds rects, which would leave the set incomplete). Asserts
+    /// directly against the coordinate table.
+    func testVolumeFramesArePinnedToTheMeasuredStrips() {
         guard let volume = SpriteCoordinates.mainWindow["volume.bmp"] else {
             XCTFail("volume.bmp missing from the coordinate table")
             return
         }
         XCTAssertEqual(volume.count, 28, "volume must have 28 stacked frames")
+        for (index, rect) in volume.enumerated() {
+            XCTAssertEqual(rect.x, 0, "\(rect.name): volume frame x must be 0")
+            XCTAssertEqual(rect.width, 68, "\(rect.name): volume frame width must be 68")
+            XCTAssertEqual(
+                rect.height, 13,
+                "\(rect.name): volume frame height must be 13 (visible strip of "
+                    + "the 15px band)")
+            XCTAssertEqual(
+                rect.y, index * 15,
+                "\(rect.name): volume frames stack on a 15px stride")
+        }
         let maxBottom = volume.map { $0.y + $0.height }.max()
         XCTAssertEqual(
             maxBottom, 418,
-            "volume max bottom edge must be 418, not 420 — a 420 bottom overruns "
-                + "the 418/419px-tall volume sheets and drops the whole sheet")
-        for rect in volume {
-            XCTAssertEqual(rect.width, 68, "\(rect.name): volume frame width must be 68")
-        }
+            "volume max bottom edge must be 418 — anything deeper overruns the "
+                + "418/419px-tall trimmed real sheets")
     }
 
     /// Pins the balance slider's maximum bottom edge to 418px, the same trim the
-    /// volume sheet needs (balance shares the 28 * 15 = 420 nominal height and the
-    /// same 418/419px real-sheet exposure). A 420 bottom overruns those sheets and
-    /// `SpriteCutter` drops the whole balance control. Asserts directly against
-    /// the coordinate table.
+    /// volume sheet needs (balance shares the 15px stride and the 418/419px
+    /// real-sheet exposure). Asserts directly against the coordinate table.
     func testBalanceMaxBottomIsPinnedTo418() {
         guard let balance = SpriteCoordinates.mainWindow["balance.bmp"] else {
             XCTFail("balance.bmp missing from the coordinate table")
@@ -172,8 +180,62 @@ final class SpriteCoordinatesFitTests: XCTestCase {
         let maxBottom = balance.map { $0.y + $0.height }.max()
         XCTAssertEqual(
             maxBottom, 418,
-            "balance max bottom edge must be 418, not 420 — a 420 bottom overruns "
-                + "the 418/419px-tall balance sheets and drops the whole sheet")
+            "balance max bottom edge must be 418 — anything deeper overruns the "
+                + "418/419px-tall trimmed real sheets")
+    }
+
+    // MARK: - shufrep.bmp — measured 4-row + EQ/PL-band pin
+
+    /// Pins the MEASURED shufrep.bmp packing (92x85 real sheets):
+    ///   * four 15px shuffle/repeat rows — y=0 OFF-released, y=15 OFF-pressed,
+    ///     y=30 ON-released, y=45 ON-pressed (repeat 28x15 at x=0, shuffle 47x15
+    ///     at x=28). A regression to the old guess (ON at y=15) would light the
+    ///     toggles with the pressed-OFF art.
+    ///   * the EQ / PL toggle band at the bottom, each 23x12 — released row at
+    ///     y=61, pressed row at y=73; UNLIT EQ x=0, UNLIT PL x=23, LIT EQ x=46,
+    ///     LIT PL x=69 (the right pair carries the lit LEDs). These sprites live
+    ///     HERE, not in titlebar.bmp (the old y=42/54 titlebar rects cut garbage).
+    func testShufrepRowsAndEQPLBandAreVerifiedAgainstTheRealSheet() {
+        guard let shufrep = SpriteCoordinates.mainWindow["shufrep.bmp"] else {
+            XCTFail("shufrep.bmp missing from the coordinate table")
+            return
+        }
+        let byName = Dictionary(uniqueKeysWithValues: shufrep.map { ($0.name, $0) })
+
+        func check(_ name: String, x: Int, y: Int, w: Int, h: Int) {
+            guard let r = byName[name] else { XCTFail("\(name) missing"); return }
+            XCTAssertEqual(r.x, x, "\(name) x"); XCTAssertEqual(r.y, y, "\(name) y")
+            XCTAssertEqual(r.width, w, "\(name) width"); XCTAssertEqual(r.height, h, "\(name) height")
+        }
+
+        // Shuffle / repeat: OFF-released, OFF-pressed, ON-released, ON-pressed.
+        check("repeatOff",         x: 0,  y: 0,  w: 28, h: 15)
+        check("repeatOffPressed",  x: 0,  y: 15, w: 28, h: 15)
+        check("repeatOn",          x: 0,  y: 30, w: 28, h: 15)
+        check("repeatOnPressed",   x: 0,  y: 45, w: 28, h: 15)
+        check("shuffleOff",        x: 28, y: 0,  w: 47, h: 15)
+        check("shuffleOffPressed", x: 28, y: 15, w: 47, h: 15)
+        check("shuffleOn",         x: 28, y: 30, w: 47, h: 15)
+        check("shuffleOnPressed",  x: 28, y: 45, w: 47, h: 15)
+
+        // EQ / PL toggles (bottom band).
+        check("eqButtonOff",        x: 0,  y: 61, w: 23, h: 12)
+        check("plButtonOff",        x: 23, y: 61, w: 23, h: 12)
+        check("eqButtonOn",         x: 46, y: 61, w: 23, h: 12)
+        check("plButtonOn",         x: 69, y: 61, w: 23, h: 12)
+        check("eqButtonOffPressed", x: 0,  y: 73, w: 23, h: 12)
+        check("plButtonOffPressed", x: 23, y: 73, w: 23, h: 12)
+        check("eqButtonOnPressed",  x: 46, y: 73, w: 23, h: 12)
+        check("plButtonOnPressed",  x: 69, y: 73, w: 23, h: 12)
+
+        // The EQ / PL sprites must NOT be declared in titlebar.bmp (the old wrong
+        // home, where the y=42/54 band holds unrelated title-bar art).
+        let titlebarNames = Set((SpriteCoordinates.mainWindow["titlebar.bmp"] ?? []).map(\.name))
+        for name in ["eqButtonOff", "eqButtonOn", "plButtonOff", "plButtonOn"] {
+            XCTAssertFalse(
+                titlebarNames.contains(name),
+                "\(name) must live in shufrep.bmp, not titlebar.bmp")
+        }
     }
 
     /// Pins the canonical posbar geometry to 307x10. The seek track is 248 wide

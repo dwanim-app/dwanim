@@ -577,20 +577,49 @@ final class ControlHitTestTests: XCTestCase {
 
     // MARK: - Host-action button hit rects (EQ / PL / eject / minimize)
     //
-    // These buttons are baked into `main.bmp` (not composited as separate
-    // sprites), so their origin comes from the standalone hit-only origins on
+    // These buttons' origins come from the standalone origins on
     // `MainWindowLayout`, while the SIZE still comes from the matching
     // `SpriteCoordinates` sprite — the same single-source-of-truth pattern. The
     // tests derive the expected rect from those two sources rather than hardcoding.
+    // (EQ / PL / eject also have static `elements` entries compositing their OFF
+    // art — see `testCompositedHostActionElementsMatchTheHitOrigins`.)
 
     /// The (origin, sheet, sprite) backing each host-action control, mirrored from
     /// `ControlHitTest`'s mapping, used only to DERIVE expected rects.
     private static let hostActionMapping: [SkinControl: (origin: (x: Int, y: Int), sheet: String, sprite: String)] = [
-        .eqButton:  (MainWindowLayout.eqButtonOrigin, "titlebar.bmp", "eqButtonOff"),
-        .plButton:  (MainWindowLayout.plButtonOrigin, "titlebar.bmp", "plButtonOff"),
+        .eqButton:  (MainWindowLayout.eqButtonOrigin, "shufrep.bmp", "eqButtonOff"),
+        .plButton:  (MainWindowLayout.plButtonOrigin, "shufrep.bmp", "plButtonOff"),
         .eject:     (MainWindowLayout.ejectOrigin,    "cbuttons.bmp", "eject"),
         .minimize:  (MainWindowLayout.minimizeOrigin, "titlebar.bmp", "minimize")
     ]
+
+    /// EQ / PL / eject are composited as static elements (their OFF art) because
+    /// real `main.bmp` faces are often blank where they sit. The element origin
+    /// MUST equal the standalone hit origin, or the drawn button and its click
+    /// rect would drift apart.
+    func testCompositedHostActionElementsMatchTheHitOrigins() {
+        let composited: [(control: SkinControl, sheet: String, sprite: String)] = [
+            (.eqButton, "shufrep.bmp", "eqButtonOff"),
+            (.plButton, "shufrep.bmp", "plButtonOff"),
+            (.eject,    "cbuttons.bmp", "eject")
+        ]
+        for entry in composited {
+            let element = MainWindowLayout.elements.first {
+                $0.sheet == entry.sheet && $0.sprite == entry.sprite
+            }
+            guard let element else {
+                XCTFail("\(entry.control) OFF art (\(entry.sheet)/\(entry.sprite)) "
+                    + "must be composited as a static element")
+                continue
+            }
+            guard let origin = Self.hostActionMapping[entry.control]?.origin else {
+                XCTFail("no hit origin for \(entry.control)")
+                continue
+            }
+            XCTAssertEqual(element.x, origin.x, "\(entry.control) element x == hit origin x")
+            XCTAssertEqual(element.y, origin.y, "\(entry.control) element y == hit origin y")
+        }
+    }
 
     func testHostActionHitRectsDeriveFromOriginAndSpriteSize() {
         for (control, m) in Self.hostActionMapping {
