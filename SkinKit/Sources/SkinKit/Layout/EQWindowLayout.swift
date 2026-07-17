@@ -309,6 +309,33 @@ public enum EQWindowLayout {
         return gainMaxDB - fraction * (gainMaxDB - gainMinDB)
     }
 
+    // MARK: - Cursor skin y -> gain (the interactive drag's whole mapping)
+    //
+    // The COMPLETE cursor→gain step the interactive EQ drag applies, factored out
+    // of the AppKit controller so it is pure and unit-testable end-to-end. The
+    // controller maps a raw view-space point to a skin-space `skinY` (via the
+    // shared `ControlHitTest.skinPoint` flip + presentation-scale divide) and then
+    // asks THIS routine for the gain — so a test that drives a view-space y sweep
+    // through `ControlHitTest.skinPoint` and then `gain(forCursorSkinY:)` exercises
+    // the exact classic down-drag pipeline the bug report implicated, with no
+    // AppKit / window in the loop.
+
+    /// The band/preamp `gain` in dB for a cursor at skin-space **y** `skinY` (the
+    /// point the user is pressing/dragging, in top-left-origin skin pixels).
+    ///
+    /// The cursor sits at the thumb's VERTICAL CENTRE — matching how the composer
+    /// draws the thumb, whose 11px body's centre row is `thumbTopY + thumbHeight/2`
+    /// — so the thumb's top-left y is `skinY - thumbHeight/2`, which
+    /// `thumbGain(forThumbTopY:)` inverts and clamps into ±12 dB. Consequently the
+    /// gain follows the cursor across the WHOLE travel in both directions: a cursor
+    /// at the track centre reads 0 dB, above it boosts toward +12, and below it
+    /// cuts toward −12 (never sticking at centre on a downward drag). This is the
+    /// single source of truth the controller's `applyGain` calls, so the drawn
+    /// thumb and the applied gain cannot drift.
+    public static func gain(forCursorSkinY skinY: Int) -> Double {
+        thumbGain(forThumbTopY: skinY - thumbHeight / 2)
+    }
+
     /// The classic graphic-equalizer per-gain dB range the slider travel maps,
     /// mirrored from `EQState.gainRange` (kept as plain literals here so the pure
     /// layout table needs no `PlayerCore` dependency).

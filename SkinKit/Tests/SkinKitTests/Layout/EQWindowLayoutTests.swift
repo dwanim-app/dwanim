@@ -301,6 +301,105 @@ final class EQWindowLayoutTests: XCTestCase {
         }
     }
 
+    // MARK: - gain(forCursorSkinY:) — the interactive drag's cursor y -> gain
+    //
+    // The complete cursor→gain step the EQ drag applies, factored out of the AppKit
+    // controller. A cursor at skin y `skinY` places the thumb's top-left at
+    // `skinY - thumbHeight/2` (the cursor is the thumb's centre row) and inverts it
+    // to a gain. This is `EQController.applyGain`'s whole body, so these tests cover
+    // the exact classic down-drag math the "stuck at 0 on a downward drag" report
+    // implicated — WITHOUT a window.
+
+    /// The skin y of the thumb's CENTRE when a band is flat (0 dB): the composer
+    /// draws the thumb top at `thumbTopY(0)`, so the visible centre row is
+    /// `thumbTopY(0) + thumbHeight/2`. Pressing there is the "release the slider at
+    /// its default" gesture.
+    private var flatThumbCentreSkinY: Int {
+        EQWindowLayout.thumbTopY(forGain: 0) + thumbHeight / 2
+    }
+
+    /// A cursor at the flat thumb's centre reads 0 dB (the drag does not shift the
+    /// value when you press without moving).
+    func testGainForCursorAtFlatCentreIsZero() {
+        XCTAssertEqual(
+            EQWindowLayout.gain(forCursorSkinY: flatThumbCentreSkinY), 0, accuracy: 0.5,
+            "pressing the flat thumb's centre must read ~0 dB")
+    }
+
+    /// The whole point of the fix: dragging the cursor DOWN from the centre
+    /// produces STRICTLY more-negative gains through the whole lower half of the
+    /// track — it never sticks at 0. Each row below the centre cuts further than
+    /// the row above it, and the bottom of the track bottoms out at exactly −12 dB.
+    func testGainForCursorBelowCentreCutsMonotonicallyToMinus12() {
+        let centre = flatThumbCentreSkinY
+        var previous = EQWindowLayout.gain(forCursorSkinY: centre)
+        XCTAssertEqual(previous, 0, accuracy: 0.5)
+        // Every grabbable row below the centre (down to the exclusive track bottom).
+        for skinY in (centre + 1)..<EQWindowLayout.sliderTrackBottom {
+            let gain = EQWindowLayout.gain(forCursorSkinY: skinY)
+            XCTAssertLessThan(
+                gain, previous + 1e-9,
+                "cursor at skinY \(skinY) (below centre) must cut below the row above it, not stick at 0")
+            XCTAssertLessThan(
+                gain, 0.0001,
+                "every row below the centre is a cut (< 0 dB); skinY \(skinY) gave \(gain)")
+            previous = gain
+        }
+        // The last row before the exclusive track bottom is max cut.
+        XCTAssertEqual(
+            EQWindowLayout.gain(forCursorSkinY: EQWindowLayout.sliderTrackBottom - 1),
+            -12, accuracy: 1e-6,
+            "the bottom of the track reads −12 dB (max cut)")
+    }
+
+    /// Symmetry: dragging UP from the centre boosts monotonically to +12 dB (the
+    /// direction the bug report said already worked).
+    func testGainForCursorAboveCentreBoostsMonotonicallyToPlus12() {
+        let centre = flatThumbCentreSkinY
+        var previous = EQWindowLayout.gain(forCursorSkinY: centre)
+        for skinY in stride(from: centre - 1, through: EQWindowLayout.sliderTrackTop, by: -1) {
+            let gain = EQWindowLayout.gain(forCursorSkinY: skinY)
+            XCTAssertGreaterThan(
+                gain, previous - 1e-9,
+                "cursor at skinY \(skinY) (above centre) must boost above the row below it")
+            previous = gain
+        }
+        XCTAssertEqual(
+            EQWindowLayout.gain(forCursorSkinY: EQWindowLayout.sliderTrackTop), 12, accuracy: 1e-6,
+            "the top of the track reads +12 dB (max boost)")
+    }
+
+    /// A full cursor sweep top→bottom of the track spans the whole +12..−12 dB
+    /// range monotonically, and passes THROUGH ~0 dB rather than jumping rail to
+    /// rail. This is the pure-tier analogue of the end-to-end view-space sweep.
+    func testGainForCursorFullSweepSpansPlusMinus12() {
+        var gains: [Double] = []
+        var previous = Double.infinity
+        for skinY in EQWindowLayout.sliderTrackTop..<EQWindowLayout.sliderTrackBottom {
+            let gain = EQWindowLayout.gain(forCursorSkinY: skinY)
+            gains.append(gain)
+            XCTAssertLessThanOrEqual(gain, previous + 1e-9, "monotonic non-increasing (skinY \(skinY))")
+            previous = gain
+        }
+        XCTAssertEqual(gains.max() ?? .nan, 12, accuracy: 1e-6, "sweep reaches +12")
+        XCTAssertEqual(gains.min() ?? .nan, -12, accuracy: 1e-6, "sweep reaches −12")
+        XCTAssertTrue(gains.contains { abs($0) < 1.0 }, "sweep passes through ~0 dB")
+    }
+
+    /// `gain(forCursorSkinY:)` agrees with its manual expansion
+    /// (`thumbGain(forThumbTopY: skinY - thumbHeight/2)`) for every skin row across
+    /// (and beyond) the track — the helper is exactly the controller's old inline
+    /// math, so no behaviour changed when it was factored out.
+    func testGainForCursorMatchesManualThumbGainExpansion() {
+        for skinY in (EQWindowLayout.sliderTrackTop - 10)...(EQWindowLayout.sliderTrackBottom + 10) {
+            XCTAssertEqual(
+                EQWindowLayout.gain(forCursorSkinY: skinY),
+                EQWindowLayout.thumbGain(forThumbTopY: skinY - thumbHeight / 2),
+                accuracy: 1e-12,
+                "gain(forCursorSkinY: \(skinY)) must equal the manual expansion")
+        }
+    }
+
     // MARK: - slider(atSkinX:) — column -> which slider (preamp or band index)
 
     /// A click on the exact preamp column resolves to the preamp slider.

@@ -133,4 +133,64 @@ final class EQSliderMathTests: XCTestCase {
                            "fraction(forGain:) and gain(forFraction:) round-trip for \(dB) dB")
         }
     }
+
+    // MARK: - Full-travel DOWNWARD sweep (the default-skin analogue of the
+    // classic EQ down-drag regression)
+    //
+    // The default (Dwennimmen) skin's `EqualizerPanel` is shown by default, so its
+    // vertical band columns must ALSO follow the cursor across the whole travel on
+    // a downward drag — top = +12, centre = 0, bottom = −12 — never plateauing at 0
+    // dB. These sweep the cursor y down a track of the ACTUAL default-column height
+    // (`EqualizerPanel` uses a 96 pt track) and assert the gains descend
+    // monotonically through 0 to −12, plus the specific centre-and-below values the
+    // "stuck at default" symptom describes.
+
+    /// The default-skin band column's track height (points), matching
+    /// `EqualizerPanel.trackHeight`.
+    private let defaultTrackHeight = 96.0
+
+    /// A cursor sweep DOWN a full-height track produces gains that decrease
+    /// monotonically from +12 (top, y == 0) through 0 (centre) to −12 (bottom,
+    /// y == height), passing through ~0 dB — never sticking at the centre on the way
+    /// down.
+    func testDefaultColumnDownwardSweepSpansPlusMinus12() {
+        let h = defaultTrackHeight
+        var gains: [Double] = []
+        var previous = Double.infinity
+        // y grows downward, so stepping y up is a physical DOWNWARD drag.
+        for step in 0...96 {
+            let y = Double(step) / 96.0 * h
+            let gain = EQSliderMath.gain(forY: y, height: h)
+            gains.append(gain)
+            XCTAssertLessThanOrEqual(
+                gain, previous + 1e-9,
+                "gain must not increase on a downward drag (y \(y): \(gain) > \(previous))")
+            previous = gain
+        }
+        XCTAssertEqual(gains.first ?? .nan, hi, accuracy: 1e-9, "top of the track is +12")
+        XCTAssertEqual(gains.last ?? .nan, lo, accuracy: 1e-9,
+                       "BOTTOM of the track is −12 (the down-drag reaches max cut)")
+        XCTAssertTrue(gains.contains { abs($0) < 1e-6 }, "the sweep passes through 0 dB")
+    }
+
+    /// Every cursor y BELOW the centre of the default column is a CUT (< 0 dB) and
+    /// each step down cuts further — the default skin's slider does not stick at 0
+    /// on a downward drag.
+    func testDefaultColumnBelowCentreCutsMonotonically() {
+        let h = defaultTrackHeight
+        let centreY = h / 2
+        XCTAssertEqual(EQSliderMath.gain(forY: centreY, height: h), 0, accuracy: 1e-9,
+                       "the track centre reads 0 dB")
+        var previous = 0.0
+        for step in 1...48 {
+            let y = centreY + Double(step)   // below centre (larger y == lower on screen)
+            let gain = EQSliderMath.gain(forY: y, height: h)
+            XCTAssertLessThan(gain, previous + 1e-9,
+                              "y \(y) below centre must cut below the row above it")
+            XCTAssertLessThan(gain, 1e-9, "every y below centre is a cut (< 0 dB); y \(y) gave \(gain)")
+            previous = gain
+        }
+        XCTAssertEqual(EQSliderMath.gain(forY: h, height: h), lo, accuracy: 1e-9,
+                       "the bottom of the track reaches −12 dB")
+    }
 }
