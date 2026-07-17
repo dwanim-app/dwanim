@@ -49,3 +49,6 @@ md_files/
 
 # Local third-party skin samples for dev/testing only — never committed (PRD §8.3)
 local_skins/
+
+# Local dev convenience launcher (build + run) — machine-specific, not shipped
+run.sh
