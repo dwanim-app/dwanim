@@ -16,10 +16,12 @@ import PlayerCore
 @MainActor
 final class AVAudioEnginePlayerTests: XCTestCase {
 
-    // Temp-file bookkeeping: appended in `synthWAV` and drained in
-    // `tearDownWithError`. Both run on the main actor (the class is `@MainActor`
-    // and the teardown override is too), so the property needs no isolation
-    // exemption.
+    // Temp-file bookkeeping: appended in `synthWAV` (main actor, like every
+    // test method here) and drained in `tearDown()`. XCTest declares its
+    // teardown overrides nonisolated — an override in a `@MainActor` class does
+    // NOT become isolated — so the drain uses the async `tearDown()` and hops
+    // onto the main actor explicitly (see below); the property itself needs no
+    // isolation exemption.
     private var tempURLs: [URL] = []
 
     /// Count of natural-finish callbacks for the stop/seek "must not finish" tests.
@@ -28,13 +30,17 @@ final class AVAudioEnginePlayerTests: XCTestCase {
     /// data-race diagnostic. Reset at the start of each test that uses it.
     private var finishedCount = 0
 
-    // `tearDownWithError()` is overridden `@MainActor` (matching the class) so its
-    // access to the main-isolated `tempURLs` needs no actor hop or exemption.
-    override func tearDownWithError() throws {
-        for url in tempURLs {
-            try? FileManager.default.removeItem(at: url)
+    // XCTest's teardown overrides stay nonisolated even in a `@MainActor` class,
+    // so the synchronous `tearDownWithError()` cannot touch the main-isolated
+    // `tempURLs` without a strict-concurrency diagnostic. The async variant can
+    // hop actors properly: `MainActor.run` puts the drain on the main actor.
+    override func tearDown() async throws {
+        await MainActor.run {
+            for url in tempURLs {
+                try? FileManager.default.removeItem(at: url)
+            }
+            tempURLs.removeAll()
         }
-        tempURLs.removeAll()
     }
 
     private func synthWAV(
