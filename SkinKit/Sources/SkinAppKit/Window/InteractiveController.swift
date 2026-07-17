@@ -63,12 +63,12 @@ public final class InteractiveController: SkinWindowController {
 
     // MARK: Host-action callbacks (injected)
     //
-    // The EQ / PL / eject / minimize buttons are HOST/window actions, not
+    // The EQ / PL / eject / minimize / close buttons are HOST/window actions, not
     // `PlayerCore` transport, so the controller routes their clicks to these
     // injected closures rather than `PlayerControl.apply`. Each defaults to `nil`
-    // (the harness path, where these buttons are inert), and the app supplies them
-    // via `showInteractiveWindow` (toggle the EQ / playlist window, open a file,
-    // miniaturize the window).
+    // (the harness path, where these buttons are inert), and the setup / app
+    // supplies them via `showInteractiveWindow` (toggle the EQ / playlist window,
+    // open a file, miniaturize the window, close the window).
 
     /// Toggle the equalizer window (the EQ button). `nil` -> the button is inert.
     private let onToggleEQ: (() -> Void)?
@@ -78,6 +78,12 @@ public final class InteractiveController: SkinWindowController {
     private let onEject: (() -> Void)?
     /// Miniaturize the window (the title-bar minimize button). `nil` -> inert.
     private let onMinimize: (() -> Void)?
+    /// Close the window (the title-bar close button). `showInteractiveWindow`
+    /// defaults it to `window.close()` — which routes through `windowWillClose`
+    /// → `tearDown()` → `onClose`, the SAME funnel as any other window close, so
+    /// a host's close-time policy (e.g. the app's close-quits guards) is never
+    /// bypassed. `nil` -> inert.
+    private let onCloseWindow: (() -> Void)?
 
     /// Live "is the EQ window open?" / "is the playlist window open?" queries, so
     /// the EQ / PL buttons can light their ON sprite while their window is open.
@@ -167,6 +173,7 @@ public final class InteractiveController: SkinWindowController {
         onTogglePlaylist: (() -> Void)? = nil,
         onEject: (() -> Void)? = nil,
         onMinimize: (() -> Void)? = nil,
+        onCloseWindow: (() -> Void)? = nil,
         isEQWindowOpen: @escaping () -> Bool = { false },
         isPlaylistWindowOpen: @escaping () -> Bool = { false }
     ) {
@@ -179,6 +186,7 @@ public final class InteractiveController: SkinWindowController {
         self.onTogglePlaylist = onTogglePlaylist
         self.onEject = onEject
         self.onMinimize = onMinimize
+        self.onCloseWindow = onCloseWindow
         self.isEQWindowOpen = isEQWindowOpen
         self.isPlaylistWindowOpen = isPlaylistWindowOpen
         // SHARED mode reads the injected feed; OWNED mode makes its own.
@@ -204,6 +212,18 @@ public final class InteractiveController: SkinWindowController {
         // ignored here.
         view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _ in
             self?.handleMouseDown(viewX: viewX, viewY: viewY, viewHeight: viewHeight)
+        }
+        // Title-bar drag gate (the window is borderless, so the skin's own
+        // title-bar strip is the drag handle): a press in the top strip that is
+        // NOT on a control (minimize / close win over drag) moves the window.
+        // The pure `ControlHitTest.hitsTitleBarDragArea` carries the geometry;
+        // this closure only maps the view point to skin space at our scale.
+        view.shouldDragWindow = { [weak self] viewX, viewY, viewHeight in
+            guard let self else { return false }
+            let point = ControlHitTest.skinPoint(
+                viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: self.scale
+            )
+            return ControlHitTest.hitsTitleBarDragArea(skinX: point.x, skinY: point.y)
         }
         // Dragging the posbar scrubs continuously: wire the drag callback (the EQ
         // sliders are the only other draggable surface). A drag only acts when a
@@ -248,12 +268,11 @@ public final class InteractiveController: SkinWindowController {
     // MARK: Teardown
 
     /// The window is closing — stop the redraw loop (invalidate the timer + remove
-    /// the tap) before the process exits. Without this, closing the titled
-    /// fallback window would leave the ~25 Hz `redraw()` timer firing against a
-    /// dead view and the audio tap still installed. The base then terminates the
-    /// app so the run loop exits cleanly. (The borderless region window has no
-    /// close button, but wiring the delegate there too keeps teardown correct if
-    /// it is ever closed.)
+    /// the tap) before the process exits. Without this, closing the window (the
+    /// skin's title-bar close button or a programmatic close) would leave the
+    /// ~25 Hz `redraw()` timer firing against a dead view and the audio tap still
+    /// installed. The base then terminates the app (harness mode) so the run loop
+    /// exits cleanly.
     ///
     /// A plain `@MainActor override`: the base `SkinWindowController` is now
     /// `@MainActor`, so `tearDown()` is main-isolated and can touch the main-actor
@@ -268,7 +287,7 @@ public final class InteractiveController: SkinWindowController {
     /// A press routes to a button, a slider, or the posbar. A button hit either
     /// applies its transport action via the pure `PlayerControl` (transport
     /// buttons + toggles) or fires its injected host callback (EQ / PL / eject /
-    /// minimize), and records the pressed control for feedback; a press on a slider
+    /// minimize / close), and records the pressed control for feedback; a press on a slider
     /// (volume / balance) latches a scrub drag and applies the pressed value; a
     /// press on the posbar latches a seek drag and seeks. Buttons take precedence
     /// (the control rects do not overlap the sliders / posbar). The view-space
@@ -329,6 +348,7 @@ public final class InteractiveController: SkinWindowController {
         case .plButton:  onTogglePlaylist?()
         case .eject:     onEject?()
         case .minimize:  onMinimize?()
+        case .close:     onCloseWindow?()
         default:         break // transport controls never reach here
         }
     }

@@ -25,11 +25,12 @@ final class SkinControlTests: XCTestCase {
         .toggleRepeat:  ("shufrep.bmp", "repeatOff"),
         // Host-action buttons: EQ / PL default to their OFF art (packed in the
         // bottom band of shufrep.bmp, NOT titlebar.bmp — measured against real
-        // sheets); eject / minimize have a single released state.
+        // sheets); eject / minimize / close have a single released state.
         .eqButton:      ("shufrep.bmp", "eqButtonOff"),
         .plButton:      ("shufrep.bmp", "plButtonOff"),
         .eject:         ("cbuttons.bmp", "eject"),
-        .minimize:      ("titlebar.bmp", "minimize")
+        .minimize:      ("titlebar.bmp", "minimize"),
+        .close:         ("titlebar.bmp", "close")
     ]
 
     func testReleasedSpriteNamesMatchExpected() {
@@ -168,12 +169,12 @@ final class SkinControlTests: XCTestCase {
     // MARK: - Control kind (transport vs host-action)
 
     /// Each control reports the right kind: the five transport buttons + two
-    /// toggles are `.transport`; the EQ / PL / eject / minimize buttons are
-    /// `.hostAction`. This is what the controller uses to decide whether a click
-    /// drives `PlayerControl.apply` or an injected host callback.
+    /// toggles are `.transport`; the EQ / PL / eject / minimize / close buttons
+    /// are `.hostAction`. This is what the controller uses to decide whether a
+    /// click drives `PlayerControl.apply` or an injected host callback.
     func testControlKindClassification() {
         let transport: Set<SkinControl> = [.previous, .play, .pause, .stop, .next, .toggleShuffle, .toggleRepeat]
-        let hostAction: Set<SkinControl> = [.eqButton, .plButton, .eject, .minimize]
+        let hostAction: Set<SkinControl> = [.eqButton, .plButton, .eject, .minimize, .close]
         // The two sets partition allCases (no control is unclassified or in both).
         XCTAssertEqual(transport.union(hostAction), Set(SkinControl.allCases))
         XCTAssertTrue(transport.isDisjoint(with: hostAction))

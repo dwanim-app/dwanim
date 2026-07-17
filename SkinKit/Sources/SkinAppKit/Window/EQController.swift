@@ -80,6 +80,18 @@ public final class EQController: SkinWindowController {
         view.onMouseUp = { [weak self] in
             self?.endDrag()
         }
+        // Title-bar drag gate (the window is borderless, so the EQ face's baked
+        // title-bar strip is the drag handle): a press in the top strip that is
+        // NOT on the close button moves the window. The pure
+        // `EQWindowLayout.hitsTitleBarDragArea` carries the geometry; this
+        // closure only maps the view point to skin space at our scale.
+        view.shouldDragWindow = { [weak self] viewX, viewY, viewHeight in
+            guard let self else { return false }
+            let point = ControlHitTest.skinPoint(
+                viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: self.scale
+            )
+            return EQWindowLayout.hitsTitleBarDragArea(skinX: point.x, skinY: point.y)
+        }
     }
 
     /// Draw the first frame from the current state. (The EQ face only changes in
@@ -101,6 +113,15 @@ public final class EQController: SkinWindowController {
         )
 
         if isDown {
+            // Title-bar close button (the window is borderless — this glyph IS
+            // the window's close affordance): close ONLY this window.
+            // `window.close()` routes through `windowWillClose` → `onClose`, the
+            // same path as a programmatic host close, so teardown is identical.
+            if EQWindowLayout.hitsCloseButton(skinX: point.x, skinY: point.y) {
+                draggingSlider = nil
+                view.window?.close()
+                return
+            }
             // A fresh gesture: first check the ON button, then a slider column.
             if hitsOnButton(skinX: point.x, skinY: point.y) {
                 core.setEQEnabled(!core.equalizer.enabled)

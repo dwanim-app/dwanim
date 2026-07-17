@@ -197,10 +197,10 @@ final class ClassicSkinPresenter {
     /// so the package snapshot tests are unaffected by this app-side constant.
     private static let scale = 1
 
-    /// The hosted classic windows' title-bar text used on the titled-fallback path
-    /// (and for the playlist / EQ windows, which are always titled). Neutral,
-    /// brand-free labels — the skin filename is NOT used (filenames may carry
-    /// third-party brand names).
+    /// The hosted classic windows' titles. The classic windows are borderless
+    /// (chromeless), so these are invisible — they are kept set for accessibility
+    /// / Mission Control labels. Neutral, brand-free labels — the skin filename
+    /// is NOT used (filenames may carry third-party brand names).
     private static let mainWindowTitle = "Skin"
     private static let playlistWindowTitle = "Playlist"
     private static let eqWindowTitle = "Equalizer"
@@ -408,9 +408,10 @@ final class ClassicSkinPresenter {
                 terminatesAppOnClose: false,
                 // CLOSE-CLASSIC-MAIN → QUIT (P2-7): when the classic MAIN window
                 // CLOSES, drop its handle, then decide by WHO closed it. This single
-                // funnel catches every close path — a user-driven window close AND
-                // every programmatic `closeMainWindow()` (which calls `window.close()`,
-                // routing through `windowWillClose` → here):
+                // funnel catches every close path — the skin's own title-bar close
+                // button (SkinAppKit routes it through `window.close()`) AND every
+                // programmatic `closeMainWindow()` (also `window.close()`, routing
+                // through `windowWillClose` → here):
                 //   • re-skin teardown (`isReskinning`): the main is about to be
                 //     rebuilt — do nothing (no quit, no restore; the default stays
                 //     hidden across the swap).
@@ -520,10 +521,10 @@ final class ClassicSkinPresenter {
     }
 
     /// Toggle the MAIN window: close it if open, else (re)open it (when a skin is
-    /// loaded). This is the host's close affordance for the classic main window:
-    /// when a skin declares a custom region the main window is built BORDERLESS (no
-    /// titlebar, no close button), so there is otherwise no way to dismiss it short
-    /// of a re-skin or quitting. A no-op when no skin is loaded.
+    /// loaded). The chromeless main window's own skin CLOSE button also dismisses
+    /// it (routing `window.close()` through the same `onClose` funnel and its
+    /// P2-7 guards); this toggle remains the host's menu/keyboard affordance.
+    /// A no-op when no skin is loaded.
     func toggleMainWindow() {
         if mainHandle != nil {
             closeMainWindow()

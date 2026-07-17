@@ -8,12 +8,13 @@ import Foundation
 //
 // SCOPE: the transport row (previous/play/pause/stop/next), the two bottom-right
 // toggles (shuffle/repeat), the EQ / PL window-toggle buttons, the eject button,
-// and the title-bar minimize button. Sliders (volume/balance/seek) are NOT
-// `SkinControl` cases — they are scrubbable regions, handled like the posbar via
-// dedicated `ControlHitTest` region/value helpers — and the mono/stereo
-// INDICATORS are display-only (no hit-test). The title-bar CLOSE button and the
-// windowshade button are also not modelled here (see `ControlKind` notes / the
-// deferred windowshade mode).
+// and the title-bar minimize + close buttons (the classic windows are borderless,
+// so the skin's close button is the window's close affordance). Sliders
+// (volume/balance/seek) are NOT `SkinControl` cases — they are scrubbable
+// regions, handled like the posbar via dedicated `ControlHitTest` region/value
+// helpers — and the mono/stereo INDICATORS are display-only (no hit-test). The
+// title-bar WINDOWSHADE button is not modelled here (the deferred windowshade
+// mode).
 
 /// A clickable control on the classic main window.
 ///
@@ -21,16 +22,17 @@ import Foundation
 ///   • TRANSPORT controls (`previous`/`play`/`pause`/`stop`/`next`/`toggleShuffle`/
 ///     `toggleRepeat`) map to a `PlayerCore` transport action via
 ///     `PlayerControl.apply`.
-///   • HOST-ACTION controls (`eqButton`/`plButton`/`eject`/`minimize`) are NOT
-///     transport — a click drives a host/window action (toggle the EQ / playlist
-///     window, open a file, minimize the window). They are still `SkinControl`
-///     cases so their hit rect derives from the SAME `MainWindowLayout` +
-///     `SpriteCoordinates` single-source-of-truth as every other control; the
-///     controller routes them to injected callbacks instead of `PlayerControl`.
+///   • HOST-ACTION controls (`eqButton`/`plButton`/`eject`/`minimize`/`close`)
+///     are NOT transport — a click drives a host/window action (toggle the EQ /
+///     playlist window, open a file, minimize or close the window). They are
+///     still `SkinControl` cases so their hit rect derives from the SAME
+///     `MainWindowLayout` + `SpriteCoordinates` single-source-of-truth as every
+///     other control; the controller routes them to injected callbacks instead
+///     of `PlayerControl`.
 public enum SkinControl: Sendable, Equatable, CaseIterable {
     case previous, play, pause, stop, next
     case toggleShuffle, toggleRepeat
-    case eqButton, plButton, eject, minimize
+    case eqButton, plButton, eject, minimize, close
 }
 
 // MARK: - Control kind
@@ -39,21 +41,21 @@ public extension SkinControl {
 
     /// Whether a control drives a `PlayerCore` TRANSPORT action (mapped by
     /// `PlayerControl.apply`) or a HOST/window action routed via an injected
-    /// callback (EQ / PL window toggle, eject, minimize). Pure classification —
-    /// the controller uses it to decide whether to call `PlayerControl.apply` or a
-    /// host closure for a hit.
+    /// callback (EQ / PL window toggle, eject, minimize, close). Pure
+    /// classification — the controller uses it to decide whether to call
+    /// `PlayerControl.apply` or a host closure for a hit.
     enum Kind: Sendable, Equatable {
         case transport
         case hostAction
     }
 
     /// This control's kind. Transport for the five buttons + two toggles;
-    /// host-action for the EQ / PL / eject / minimize buttons.
+    /// host-action for the EQ / PL / eject / minimize / close buttons.
     var kind: Kind {
         switch self {
         case .previous, .play, .pause, .stop, .next, .toggleShuffle, .toggleRepeat:
             return .transport
-        case .eqButton, .plButton, .eject, .minimize:
+        case .eqButton, .plButton, .eject, .minimize, .close:
             return .hostAction
         }
     }
@@ -137,6 +139,7 @@ public extension SkinControl {
         case .plButton:      return ("shufrep.bmp", "plButtonOff")
         case .eject:         return ("cbuttons.bmp", "eject")
         case .minimize:      return ("titlebar.bmp", "minimize")
+        case .close:         return ("titlebar.bmp", "close")
         }
     }
 }

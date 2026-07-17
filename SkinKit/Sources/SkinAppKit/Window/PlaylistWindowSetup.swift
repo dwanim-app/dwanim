@@ -37,13 +37,16 @@ public struct PlaylistWindowHandle {
     public let window: NSWindow
 }
 
-/// Build and show the playlist window (a resizable titled window), wire the
-/// controller + view, and return the controller + window. Throws a `RenderError`
-/// when the playlist frame cannot be composed/scaled. The caller drives the run
-/// loop and holds the returned controller.
+/// Build and show the playlist window (a resizable borderless chromeless window
+/// — the skin's own title bar is the drag handle and its baked close glyph the
+/// close affordance), wire the controller + view, and return the controller +
+/// window. Throws a `RenderError` when the playlist frame cannot be
+/// composed/scaled. The caller drives the run loop and holds the returned
+/// controller.
 ///
-/// `title` is the window's title-bar text (a host-supplied label; NO brand name
-/// is invented here).
+/// `title` is the window's title — invisible on the borderless window but kept
+/// for accessibility / Mission Control labels (a host-supplied label; NO brand
+/// name is invented here).
 ///
 /// `terminatesAppOnClose` defaults to `true` — the original single-window CLI
 /// harness behavior (closing the window quits the process). A larger host (the
@@ -102,15 +105,21 @@ public func showPlaylistWindow(
     )
     controller.attach(view: view)
 
-    // `.resizable` lets the user drag the window; `windowDidResize` recomputes the
-    // skin-space size (floor(bounds / scale), clamped to the composer minimum),
-    // recomposes the frame, and re-runs the layout so more/fewer rows show.
-    let window = NSWindow(
+    // Chromeless: the skin's own title bar is the drag handle and its baked
+    // close glyph the close affordance (wired by `PlaylistWindowController`).
+    // `.resizable` still lets the user edge-drag the borderless window;
+    // `windowDidResize` recomputes the skin-space size (floor(bounds / scale),
+    // clamped to the composer minimum), recomposes the frame, and re-runs the
+    // layout so more/fewer rows show. `.miniaturizable` adds no visible chrome
+    // but keeps `miniaturize(_:)` functional; the subclass keeps the borderless
+    // window key-capable.
+    let window = ChromelessSkinWindow(
         contentRect: contentRect,
-        styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        styleMask: [.borderless, .miniaturizable, .resizable],
         backing: .buffered,
         defer: false
     )
+    // Invisible on a borderless window; kept for accessibility / Mission Control.
     window.title = title
     window.delegate = controller
     // Host handle (harness `liveController` / app `WindowHandle`) is the sole owner;

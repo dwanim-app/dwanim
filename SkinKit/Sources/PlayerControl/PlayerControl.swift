@@ -24,13 +24,14 @@ public enum PlayerControl {
     ///   .toggleShuffle -> isShuffle.toggle()
     ///   .toggleRepeat  -> cycle repeatMode off -> all -> one -> off
     ///
-    /// The HOST-ACTION controls (`.eqButton`/`.plButton`/`.eject`/`.minimize`) are
-    /// NOT transport — they drive a host/window action (toggle the EQ / playlist
-    /// window, open a file, minimize the window). They have no `PlayerCore`
-    /// mapping, so they are explicit no-ops HERE; the controller routes them to
-    /// injected host callbacks instead (it checks `control.kind` first and never
-    /// calls `apply` for a host action). They are listed so this switch stays
-    /// exhaustive and a future control cannot silently fall through.
+    /// The HOST-ACTION controls (`.eqButton`/`.plButton`/`.eject`/`.minimize`/
+    /// `.close`) are NOT transport — they drive a host/window action (toggle the
+    /// EQ / playlist window, open a file, minimize or close the window). They
+    /// have no `PlayerCore` mapping, so they are explicit no-ops HERE; the
+    /// controller routes them to injected host callbacks instead (it checks
+    /// `control.kind` first and never calls `apply` for a host action). They are
+    /// listed so this switch stays exhaustive and a future control cannot
+    /// silently fall through.
     ///
     /// `@MainActor` because it touches the now-main-actor `PlayerCore`; every
     /// caller (the window controllers) is already on the main actor, so this is a
@@ -55,7 +56,7 @@ public enum PlayerControl {
             core.isShuffle.toggle()
         case .toggleRepeat:
             core.repeatMode = nextRepeatMode(core.repeatMode)
-        case .eqButton, .plButton, .eject, .minimize:
+        case .eqButton, .plButton, .eject, .minimize, .close:
             // Host/window actions, not transport — handled via the controller's
             // injected callbacks (see the doc comment). No core action here.
             break

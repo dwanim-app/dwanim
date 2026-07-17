@@ -468,11 +468,10 @@ final class AudioSession {
     }
 
     /// Toggle the hosted classic MAIN window: close it if open, else reopen it (when
-    /// a skin is loaded). This is the host's close affordance for the borderless
-    /// region main window, which has NO titlebar / close button — without it there
-    /// is no way to dismiss a region-skin main window short of a re-skin or quit.
-    /// Same no-skin fallback as the other toggles (present "Open Skin…" when nothing
-    /// is loaded yet).
+    /// a skin is loaded). The chromeless main window's own skin CLOSE button also
+    /// dismisses it (routing through the same close funnel); this menu toggle
+    /// remains the keyboard/menu affordance. Same no-skin fallback as the other
+    /// toggles (present "Open Skin…" when nothing is loaded yet).
     func toggleMainWindow() {
         guard classicSkin.isSkinLoaded else {
             classicSkin.presentOpenPanel()
