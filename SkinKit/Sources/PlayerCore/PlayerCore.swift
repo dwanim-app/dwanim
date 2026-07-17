@@ -38,10 +38,16 @@ public final class PlayerCore {
     /// index. Injected so shuffle can be made deterministic in tests.
     public typealias ShuffleStrategy = (_ count: Int, _ current: Int?) -> Int
 
+    /// Produces a permutation of `0..<count` (new position -> old index) for
+    /// `randomize()`. Injected so the playlist shuffle-in-place can be made
+    /// deterministic in tests, exactly like `ShuffleStrategy` for `next()`.
+    public typealias PermutationStrategy = (_ count: Int) -> [Int]
+
     // MARK: - Dependencies
 
     @ObservationIgnored private let engine: AudioPlaybackEngine
     @ObservationIgnored private let shuffleStrategy: ShuffleStrategy
+    @ObservationIgnored private let permutationStrategy: PermutationStrategy
 
     /// The playlist index currently loaded into the engine, or `nil` when the
     /// engine holds no track (never loaded, stopped, or playlist replaced).
@@ -98,9 +104,14 @@ public final class PlayerCore {
         self.init(engine: engine, shuffleStrategy: PlayerCore.defaultShuffleStrategy)
     }
 
-    public init(engine: AudioPlaybackEngine, shuffleStrategy: @escaping ShuffleStrategy) {
+    public init(
+        engine: AudioPlaybackEngine,
+        shuffleStrategy: @escaping ShuffleStrategy,
+        permutationStrategy: @escaping PermutationStrategy = PlayerCore.defaultPermutationStrategy
+    ) {
         self.engine = engine
         self.shuffleStrategy = shuffleStrategy
+        self.permutationStrategy = permutationStrategy
         self.volume = engine.volume
         self.balance = engine.pan
         self.engine.onPlaybackFinished = { [weak self] in
@@ -121,6 +132,14 @@ public final class PlayerCore {
         return pick
     }
 
+    /// Uniform random permutation of `0..<count` (Fisher–Yates via `shuffled()`).
+    /// The default `PermutationStrategy` behind `randomize()`. `nonisolated`
+    /// (it touches no state) so it converts cleanly to the nonisolated
+    /// `PermutationStrategy` function type as the init's default argument.
+    nonisolated public static func defaultPermutationStrategy(count: Int) -> [Int] {
+        Array(0..<count).shuffled()
+    }
+
     // MARK: - Playlist commands
 
     /// Replace the playlist. If playback is in progress, the engine is stopped
@@ -135,6 +154,150 @@ public final class PlayerCore {
         loadedIndex = nil
         playlist = tracks
         currentIndex = tracks.isEmpty ? nil : 0
+    }
+
+    // MARK: - Playlist edits (append / remove / crop / clear)
+    //
+    // EDIT RULE (shared by every mutator below): `currentIndex` FOLLOWS THE
+    // PLAYING TRACK — it is recomputed to that track's new position and never
+    // silently retargeted to a different track. Only removing the current row
+    // itself moves the selection (to the first surviving row after the removal
+    // point) and stops playback, because the followed track is gone.
+
+    /// Append `tracks` to the end of the playlist. An existing selection is
+    /// untouched, playback keeps running, and appending nothing is a no-op.
+    /// Appending to an EMPTY list (no selection) selects the first new row —
+    /// SELECT ONLY, never auto-play: without a selection, `play()`/`next()`/
+    /// `previous()` (which guard on `currentIndex`) would all be dead over a
+    /// visibly non-empty list. The engine/`loadedIndex` are untouched — a
+    /// later `play()` loads the track through the normal path.
+    public func append(_ tracks: [Track]) {
+        guard !tracks.isEmpty else { return }
+        playlist.append(contentsOf: tracks)
+        if currentIndex == nil {
+            currentIndex = 0
+        }
+    }
+
+    /// Remove the rows at `indices` (out-of-range members are ignored).
+    ///
+    /// - The selection shifts DOWN by the number of removed rows before it, so
+    ///   it keeps pointing at the same track.
+    /// - If the CURRENT row itself is removed, playback stops and the selection
+    ///   moves to the first surviving row after the removal point (clamped to
+    ///   the new last row when everything after was removed too).
+    /// - When the list empties, the selection clears (`nil`).
+    public func remove(at indices: IndexSet) {
+        let valid = indices.intersection(IndexSet(playlist.indices))
+        guard !valid.isEmpty else { return }
+
+        let removingCurrent = currentIndex.map { valid.contains($0) } ?? false
+        let removedBefore = currentIndex.map { valid.count(in: 0..<$0) } ?? 0
+
+        for index in valid.reversed() {
+            playlist.remove(at: index)
+        }
+
+        guard !playlist.isEmpty else {
+            stop()
+            currentIndex = nil
+            return
+        }
+
+        if removingCurrent {
+            // The followed track is gone: stop, then land on the first
+            // surviving row after the removal point (the old current position
+            // minus the rows removed before it), clamped to the new last row.
+            stop()
+            let landing = (currentIndex ?? 0) - removedBefore
+            currentIndex = min(max(landing, 0), playlist.count - 1)
+        } else if currentIndex != nil {
+            currentIndex = (currentIndex ?? 0) - removedBefore
+            if let loaded = loadedIndex {
+                // Normally loadedIndex == currentIndex (both follow the loaded
+                // track); shift it the same way, and clear it defensively if
+                // the loaded row itself was somehow removed.
+                loadedIndex = valid.contains(loaded) ? nil : loaded - valid.count(in: 0..<loaded)
+            }
+        }
+    }
+
+    /// Keep ONLY the rows at `indices` ("crop") — i.e. remove the complement,
+    /// with exactly `remove(at:)`'s selection/stop rules. Cropping to an empty
+    /// or fully out-of-range set is a guarded NO-OP (never a silent clear —
+    /// `removeAll()` is the explicit way to empty the list).
+    public func crop(to indices: IndexSet) {
+        let kept = indices.intersection(IndexSet(playlist.indices))
+        guard !kept.isEmpty else { return }
+        remove(at: IndexSet(playlist.indices).subtracting(kept))
+    }
+
+    /// Empty the playlist: stop playback, clear the list and the selection.
+    public func removeAll() {
+        guard !playlist.isEmpty else { return }
+        stop()
+        playlist = []
+        currentIndex = nil
+    }
+
+    // MARK: - Playlist reorder (sort / reverse / randomize)
+
+    /// Sort the playlist by display title (case-insensitive; a track with no
+    /// title sorts by its filename, matching what the list draws). The selection
+    /// follows the playing track to its new position; playback is untouched.
+    public func sortByTitle() {
+        applyReorder(sortedPermutation { $0.title ?? $0.url.lastPathComponent })
+    }
+
+    /// Sort the playlist by filename (case-insensitive `lastPathComponent`).
+    /// The selection follows the playing track; playback is untouched.
+    public func sortByFilename() {
+        applyReorder(sortedPermutation { $0.url.lastPathComponent })
+    }
+
+    /// Reverse the playlist order. The selection follows the playing track;
+    /// playback is untouched.
+    public func reverse() {
+        applyReorder(Array((0..<playlist.count).reversed()))
+    }
+
+    /// Shuffle the playlist IN PLACE via the injected `PermutationStrategy`
+    /// (deterministic in tests). The selection follows the playing track;
+    /// playback is untouched. A malformed strategy result (not a permutation of
+    /// `0..<count`) is a guarded no-op, like `boundedShuffleIndex`.
+    public func randomize() {
+        applyReorder(permutationStrategy(playlist.count))
+    }
+
+    /// The permutation (new position -> old index) that sorts the playlist by
+    /// `key`, case-insensitively. Ties keep their original relative order (the
+    /// original index is the explicit tiebreak, so the sort is stable by
+    /// construction — not reliant on the stdlib sort's stability).
+    private func sortedPermutation(_ key: (Track) -> String) -> [Int] {
+        (0..<playlist.count).sorted { a, b in
+            let ka = key(playlist[a]).lowercased()
+            let kb = key(playlist[b]).lowercased()
+            return ka == kb ? a < b : ka < kb
+        }
+    }
+
+    /// Reorder the playlist by `permutation` (new position -> old index) and
+    /// recompute `currentIndex` / `loadedIndex` to the SAME tracks' new
+    /// positions, leaving the engine untouched (the playing audio never skips).
+    /// Anything but a true permutation of `0..<count` is a guarded no-op; 0- or
+    /// 1-track playlists have nothing to reorder.
+    private func applyReorder(_ permutation: [Int]) {
+        guard playlist.count > 1,
+              permutation.count == playlist.count,
+              permutation.sorted() == Array(playlist.indices) else { return }
+
+        playlist = permutation.map { playlist[$0] }
+        if let current = currentIndex {
+            currentIndex = permutation.firstIndex(of: current)
+        }
+        if let loaded = loadedIndex {
+            loadedIndex = permutation.firstIndex(of: loaded)
+        }
     }
 
     // MARK: - Transport

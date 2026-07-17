@@ -31,19 +31,19 @@ import SkinRender
 /// interior rect (top-left origin, skin pixels) is flipped into the bottom-left
 /// context space here.
 ///
-/// Each visible row draws its title in the pledit font at `normalText`. The
-/// `selectedIndex` row (if visible) gets a `selectedBackground` fill — the user's
-/// chosen-but-not-yet-playing highlight; the `currentIndex` row draws its title at
-/// `currentText` so the now-playing row reads at a glance. When a row is BOTH
-/// selected and current it gets the selection fill and the current text color.
-/// Rows are clipped to the interior, and a too-long title is truncated by the
-/// clip (no wrapping).
+/// Each visible row draws its title in the pledit font at `normalText`. Every
+/// row in `selectedIndices` (if visible) gets a `selectedBackground` fill — the
+/// user's chosen-but-not-yet-playing highlight (a multi-selection fills every
+/// member row); the `currentIndex` row draws its title at `currentText` so the
+/// now-playing row reads at a glance. When a row is BOTH selected and current it
+/// gets the selection fill and the current text color. Rows are clipped to the
+/// interior, and a too-long title is truncated by the clip (no wrapping).
 public func drawPlaylistTrackList(
     in context: CGContext,
     skin: Skin,
     tracks: [Track],
     currentIndex: Int?,
-    selectedIndex: Int? = nil,
+    selectedIndices: Set<Int> = [],
     scrollRow: Int,
     skinWidth: Int,
     skinHeight: Int,
@@ -88,7 +88,7 @@ public func drawPlaylistTrackList(
             skinHeight: skinHeight, scale: scale
         )
 
-        let isSelected = (row == selectedIndex)
+        let isSelected = selectedIndices.contains(row)
         let isCurrent = (row == currentIndex)
         if isSelected, let selBG = style.selectedBackground {
             context.setFillColor(selBG)

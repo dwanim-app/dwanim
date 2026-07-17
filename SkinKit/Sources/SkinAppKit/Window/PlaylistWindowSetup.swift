@@ -59,6 +59,12 @@ public struct PlaylistWindowHandle {
 /// and its behavior is unchanged. The real app passes a closure routing the
 /// dropped `[URL]` to its drop handler, so dropping onto the playlist window opens
 /// a skin / audio (a multi-file audio drop becomes the queue) just like the panels.
+///
+/// The bottom-bar HOST HOOKS (`onAddFiles` / `onAddFolder` / `onOpenList` /
+/// `onSaveList` / `onPlaylistEdited`) mirror `onFileDrop`: each defaults to
+/// `nil` (harness mode — the matching menu item is disabled), and the real app
+/// passes closures that run its panels / persistence (the panels + sandbox
+/// bookkeeping live in the App layer, not here). See the controller's hook docs.
 @MainActor
 @discardableResult
 public func showPlaylistWindow(
@@ -68,7 +74,12 @@ public func showPlaylistWindow(
     title: String,
     terminatesAppOnClose: Bool = true,
     onClose: (() -> Void)? = nil,
-    onFileDrop: (([URL]) -> Void)? = nil
+    onFileDrop: (([URL]) -> Void)? = nil,
+    onAddFiles: (() -> Void)? = nil,
+    onAddFolder: (() -> Void)? = nil,
+    onOpenList: (() -> Void)? = nil,
+    onSaveList: (() -> Void)? = nil,
+    onPlaylistEdited: (() -> Void)? = nil
 ) throws -> PlaylistWindowHandle {
     let width = PlaylistWindowGeometry.defaultWidth
     let height = PlaylistWindowGeometry.defaultHeight
@@ -112,6 +123,13 @@ public func showPlaylistWindow(
         core: core, skin: skin, scale: scale, skinWidth: frame.width, skinHeight: frame.height,
         terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
     )
+    // Bottom-bar host hooks (panels + persistence live in the App layer; nil
+    // in the harness, which disables the matching menu items).
+    controller.onAddFiles = onAddFiles
+    controller.onAddFolder = onAddFolder
+    controller.onOpenList = onOpenList
+    controller.onSaveList = onSaveList
+    controller.onPlaylistEdited = onPlaylistEdited
     controller.attach(view: view)
 
     // Chromeless: the skin's own title bar is the drag handle and its baked

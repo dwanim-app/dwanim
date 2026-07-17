@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import PlayerControl
 import PlayerCore
 import SkinKit
 import SkinRender
@@ -22,11 +23,18 @@ import SkinRender
 /// the list view); scroll and click events drive a redraw.
 ///
 /// Interaction:
-///   * SINGLE click in the interior SELECTS that row (`selectedRow`, distinct from
-///     the now-playing `core.currentIndex`); the row is highlighted with the
-///     skin's `selectedBackground`.
+///   * SINGLE click in the interior SELECTS that row — a plain click REPLACES the
+///     selection with that row, a cmd-click TOGGLES the row in/out of the
+///     multi-selection (`selectedRows`, distinct from the now-playing
+///     `core.currentIndex`); every selected row is highlighted with the skin's
+///     `selectedBackground`.
 ///   * DOUBLE click PLAYS that track (`core.select`, which sets the current index
 ///     and plays it) — it becomes the now-playing row, drawn in `currentText`.
+///   * The BOTTOM BAR's baked buttons are live (hit rects from the pure
+///     `PlaylistBarLayout`): ADD / REM / SEL / MISC / LIST OPTS pop up a native
+///     menu anchored at the button; the mini transport routes previous / play /
+///     pause / stop / next through `PlayerControl` (the main window's mapping)
+///     and eject to the host's add-files hook.
 ///   * Wheel scroll accumulates the fractional `scrollingDeltaY` into a residual
 ///     and emits a whole-row step only when it crosses one `rowHeight`, so a
 ///     trackpad / momentum stream does not over-scroll. The step is clamped by the
@@ -69,9 +77,34 @@ public final class PlaylistWindowController: SkinWindowController {
     /// magnitude crosses one row height we emit a whole-row scroll step and carry
     /// the remainder, so momentum scrolling advances smoothly by whole rows.
     private var scrollResidual = 0.0
-    /// The row the user has SELECTED (single click), distinct from the now-playing
-    /// `core.currentIndex`. `nil` until the user clicks a row.
-    private var selectedRow: Int?
+    /// The rows the user has SELECTED, distinct from the now-playing
+    /// `core.currentIndex`. Empty until the user clicks a row. A plain click
+    /// replaces the set with the clicked row; cmd-click toggles membership; the
+    /// SEL menu drives all/none/invert; the REM menu consumes the set. Pruned
+    /// to valid indices whenever the playlist changes (see `observeCore`).
+    private var selectedRows: Set<Int> = []
+
+    // MARK: - Host hooks (panels live in the App layer)
+    //
+    // The bar's file-flavored actions need panels (NSOpenPanel / NSSavePanel)
+    // and sandbox bookkeeping, which live in the HOST (the app's AudioSession)
+    // — exactly like the main window's eject. Each hook defaults to `nil`
+    // (harness mode): its menu item is then disabled, so nothing half-works.
+
+    /// ADD > "Add File(s)…" and the mini-transport EJECT: open the host's
+    /// add-files panel (append to the queue).
+    public var onAddFiles: (() -> Void)?
+    /// ADD > "Add Directory…": open the host's add-folder panel.
+    public var onAddFolder: (() -> Void)?
+    /// LIST OPTS > "Open List…": open the host's `.m3u` open panel (replaces
+    /// the playlist).
+    public var onOpenList: (() -> Void)?
+    /// LIST OPTS > "Save List…": open the host's `.m3u` save panel.
+    public var onSaveList: (() -> Void)?
+    /// Fired after any model mutation initiated FROM THIS WINDOW (remove /
+    /// crop / clear / sort / reverse / randomize), so the host can re-persist
+    /// its playlist bookmarks. `nil` (harness) skips persistence.
+    public var onPlaylistEdited: (() -> Void)?
 
     public init(
         core: PlayerCore,
@@ -95,11 +128,13 @@ public final class PlaylistWindowController: SkinWindowController {
         self.view = view
         view.tracksProvider = { [weak self] in self?.core.playlist ?? [] }
         view.currentIndexProvider = { [weak self] in self?.core.currentIndex }
-        view.selectedIndexProvider = { [weak self] in self?.selectedRow }
+        view.selectedIndicesProvider = { [weak self] in self?.selectedRows ?? [] }
         view.scrollRowProvider = { [weak self] in self?.scrollRow ?? 0 }
         view.onScroll = { [weak self] rawDeltaY in self?.scrollBy(rawDeltaY: rawDeltaY) }
         view.routeClicks(
-            onSingleClick: { [weak self] x, y, h in self?.handleSingleClick(viewX: x, viewY: y, viewHeight: h) },
+            onSingleClick: { [weak self] x, y, h, modifiers in
+                self?.handleSingleClick(viewX: x, viewY: y, viewHeight: h, modifiers: modifiers)
+            },
             onDoubleClick: { [weak self] x, y, h in self?.handleDoubleClick(viewX: x, viewY: y, viewHeight: h) }
         )
         // Title-bar drag gate (the window is borderless, so the skin's title bar
@@ -117,31 +152,39 @@ public final class PlaylistWindowController: SkinWindowController {
                 skinX: point.x, skinY: point.y, canvasWidth: self.skinWidth
             )
         }
-        // Follow the now-playing track: redraw when core.currentIndex changes so
-        // the highlight moves on an AUTOMATIC advance too, not only on a click here.
-        observeNowPlaying()
+        // Follow the live core: redraw when core.currentIndex OR core.playlist
+        // changes so the highlight moves on an AUTOMATIC advance and the list
+        // follows edits made anywhere (the host's add-files panel, another
+        // window) — not only on a click here.
+        observeCore()
     }
 
-    /// Redraw the list whenever the now-playing track changes, so the highlighted
-    /// row follows an AUTOMATIC advance (end-of-track auto-advance, or next/previous
-    /// pressed on the MAIN window) — not just the playlist window's own gestures.
-    /// The list owns no redraw timer, so without this the highlight stays on the
-    /// old row until the user scrolls/clicks the playlist. Uses `@Observable`
-    /// tracking (one-shot; re-armed after each change) and self-cancels when the
+    /// Redraw the list whenever the now-playing track OR the playlist itself
+    /// changes, so the highlighted row follows an AUTOMATIC advance (end-of-track
+    /// auto-advance, or next/previous pressed on the MAIN window) and the rows
+    /// follow playlist edits (append from the host's add panel, remove/sort from
+    /// this window's menus). The list owns no redraw timer, so without this it
+    /// would go stale until the user scrolls/clicks. A playlist change also
+    /// RE-CLAMPS the scroll (a shrunken list must not strand blank rows) and
+    /// PRUNES the selection to valid indices. Uses `@Observable` tracking
+    /// (one-shot; re-armed after each change) and self-cancels when the
     /// controller deallocs — the `weak self` simply stops re-arming.
-    private func observeNowPlaying() {
+    private func observeCore() {
         withObservationTracking {
             _ = core.currentIndex
+            _ = core.playlist
         } onChange: { [weak self] in
             // onChange is delivered synchronously as the value is about to change;
-            // hop to the main actor so we read the SETTLED index (at draw time),
+            // hop to the main actor so we read the SETTLED state (at draw time),
             // touch AppKit safely, and re-arm tracking. Re-capture `self` weakly in
             // the hop so it is not a cross-closure captured var (Swift-6 clean).
             DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self else { return }
+                    self.selectedRows = self.selectedRows.filter(self.core.playlist.indices.contains)
+                    self.applyScroll(rowDelta: 0)
                     self.view?.needsDisplay = true
-                    self.observeNowPlaying()
+                    self.observeCore()
                 }
             }
         }
@@ -243,10 +286,14 @@ public final class PlaylistWindowController: SkinWindowController {
     /// Single click: the title-bar CLOSE button closes just this window (the
     /// window is borderless — the skin's baked close glyph is the close
     /// affordance; `window.close()` routes through `windowWillClose` → `onClose`,
-    /// the same path as a programmatic host close). Otherwise select the clicked
-    /// row (no playback change). A click that resolves to no row (chrome / gap
-    /// below the list) is a no-op.
-    private func handleSingleClick(viewX: Double, viewY: Double, viewHeight: Double) {
+    /// the same path as a programmatic host close). Next, the BOTTOM BAR's baked
+    /// buttons (menus + mini transport) win over row hit-testing. Otherwise
+    /// select the clicked row (no playback change): a plain click REPLACES the
+    /// selection, a cmd-click TOGGLES that row. A click that resolves to nothing
+    /// (chrome / gap below the list) is a no-op.
+    private func handleSingleClick(
+        viewX: Double, viewY: Double, viewHeight: Double, modifiers: ClickModifiers
+    ) {
         let point = ControlHitTest.skinPoint(
             viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
         )
@@ -256,24 +303,287 @@ public final class PlaylistWindowController: SkinWindowController {
             view?.window?.close()
             return
         }
+        if let control = PlaylistBarLayout.control(
+            atX: point.x, y: point.y, canvasWidth: skinWidth, canvasHeight: skinHeight
+        ) {
+            handleBarControl(control)
+            return
+        }
         guard let row = rowAtViewPoint(viewX: viewX, viewY: viewY, viewHeight: viewHeight) else {
             return
         }
-        guard row != selectedRow else { return }
-        selectedRow = row
+        if modifiers.command {
+            // Cmd-click: toggle the row in/out of the multi-selection.
+            selectedRows.formSymmetricDifference([row])
+        } else {
+            guard selectedRows != [row] else { return }
+            selectedRows = [row]
+        }
         view?.needsDisplay = true
     }
 
     /// Double click: play the clicked row. `core.select` sets the current index and
     /// starts that track, so it becomes the now-playing row; we also mark it
-    /// selected so the highlight and the now-playing color agree. A click resolving
-    /// to no row is a no-op.
+    /// selected so the highlight and the now-playing color agree. A bar button is
+    /// re-dispatched as another single activation FIRST (so rapidly clicking a
+    /// mini-transport button — e.g. next-next — fires once per press instead of
+    /// losing the second). A click resolving to no row is a no-op.
     private func handleDoubleClick(viewX: Double, viewY: Double, viewHeight: Double) {
+        let point = ControlHitTest.skinPoint(
+            viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
+        )
+        if let control = PlaylistBarLayout.control(
+            atX: point.x, y: point.y, canvasWidth: skinWidth, canvasHeight: skinHeight
+        ) {
+            handleBarControl(control)
+            return
+        }
         guard let row = rowAtViewPoint(viewX: viewX, viewY: viewY, viewHeight: viewHeight) else {
             return
         }
-        selectedRow = row
+        selectedRows = [row]
         core.select(row)
+        view?.needsDisplay = true
+    }
+
+    // MARK: - Bottom bar (menus + mini transport)
+
+    /// Route a hit bar control: menu buttons pop up their native menu anchored
+    /// at the button; the mini transport fires the matching transport action
+    /// through `PlayerControl.apply` — the SAME control→core mapping the main
+    /// window's transport uses (so mini-stop is the classic stop: pause + seek
+    /// to 0) — and eject opens the host's add-files panel.
+    private func handleBarControl(_ control: PlaylistBarLayout.Control) {
+        switch control {
+        case .addMenu:
+            popUpMenu(makeAddMenu(), at: control)
+        case .removeMenu:
+            popUpMenu(makeRemoveMenu(), at: control)
+        case .selectionMenu:
+            popUpMenu(makeSelectionMenu(), at: control)
+        case .miscMenu:
+            popUpMenu(makeMiscMenu(), at: control)
+        case .listMenu:
+            popUpMenu(makeListMenu(), at: control)
+        case .miniPrevious:
+            PlayerControl.apply(.previous, to: core)
+        case .miniPlay:
+            PlayerControl.apply(.play, to: core)
+        case .miniPause:
+            PlayerControl.apply(.pause, to: core)
+        case .miniStop:
+            PlayerControl.apply(.stop, to: core)
+        case .miniNext:
+            PlayerControl.apply(.next, to: core)
+        case .miniEject:
+            onAddFiles?()
+        }
+    }
+
+    /// Pop up `menu` anchored at `control`'s hit rect: the rect's TOP-left is
+    /// mapped skin→view via the same forward map the drawing uses
+    /// (`ControlHitTest.viewPoint`, at the live scale/size), so the menu opens
+    /// at the button across any resize. AppKit opens downward and auto-flips
+    /// upward near the screen bottom — where the playlist bar always is — which
+    /// reproduces the classic pop-up-above feel. `popUp` is synchronous (it runs
+    /// its own tracking loop until dismissal); no pressed state is latched here,
+    /// so the swallowed mouse-up is harmless.
+    private func popUpMenu(_ menu: NSMenu, at control: PlaylistBarLayout.Control) {
+        guard let view else { return }
+        let rect = PlaylistBarLayout.rect(
+            for: control, canvasWidth: skinWidth, canvasHeight: skinHeight
+        )
+        let anchor = ControlHitTest.viewPoint(
+            skinX: rect.x, skinY: rect.y,
+            viewHeight: Double(view.bounds.height), scale: scale
+        )
+        menu.popUp(positioning: nil, at: NSPoint(x: anchor.x, y: anchor.y), in: view)
+    }
+
+    // MARK: - Menu construction
+    //
+    // Native NSMenus for the five bar buttons, rebuilt fresh on each pop-up so
+    // the enabled states reflect the LIVE selection / playlist / host hooks.
+    // Items are enabled explicitly (`autoenablesItems = false`); an item whose
+    // host hook is absent (harness mode) or whose precondition fails (e.g.
+    // "Remove Selected" with an empty selection) is disabled, matching the
+    // classic behavior. NO brand words appear in any item title (§12).
+
+    /// ADD menu: append files / a directory. "Add URL…" is deliberately OMITTED —
+    /// the app sandbox ships with NO network entitlement, so a remote stream
+    /// could never play; the classic third item is left out rather than shown dead.
+    private func makeAddMenu() -> NSMenu {
+        let menu = makeBarMenu()
+        addItem(to: menu, title: "Add File(s)…", enabled: onAddFiles != nil) { [weak self] in
+            self?.onAddFiles?()
+        }
+        addItem(to: menu, title: "Add Directory…", enabled: onAddFolder != nil) { [weak self] in
+            self?.onAddFolder?()
+        }
+        return menu
+    }
+
+    /// REM menu: remove the selection, crop TO the selection, or clear the list.
+    private func makeRemoveMenu() -> NSMenu {
+        let menu = makeBarMenu()
+        let hasSelection = !selectedRows.isEmpty
+        let hasTracks = !core.playlist.isEmpty
+        addItem(to: menu, title: "Remove Selected", enabled: hasSelection) { [weak self] in
+            self?.removeSelectedRows()
+        }
+        addItem(to: menu, title: "Crop Selected", enabled: hasSelection) { [weak self] in
+            self?.cropToSelectedRows()
+        }
+        addItem(to: menu, title: "Remove All", enabled: hasTracks) { [weak self] in
+            self?.removeAllRows()
+        }
+        return menu
+    }
+
+    /// SEL menu: select all / none / invert.
+    private func makeSelectionMenu() -> NSMenu {
+        let menu = makeBarMenu()
+        let hasTracks = !core.playlist.isEmpty
+        addItem(to: menu, title: "Select All", enabled: hasTracks) { [weak self] in
+            self?.replaceSelection(with: Set(self?.core.playlist.indices ?? 0..<0))
+        }
+        addItem(to: menu, title: "Select None", enabled: !selectedRows.isEmpty) { [weak self] in
+            self?.replaceSelection(with: [])
+        }
+        addItem(to: menu, title: "Invert Selection", enabled: hasTracks) { [weak self] in
+            guard let self else { return }
+            self.replaceSelection(with: Set(self.core.playlist.indices).symmetricDifference(self.selectedRows))
+        }
+        return menu
+    }
+
+    /// MISC menu: sort / reverse / randomize. ("File info…" is DEFERRED — no
+    /// metadata pane exists yet.) All reorders keep playback running and the
+    /// core recomputes `currentIndex` to follow the playing track.
+    private func makeMiscMenu() -> NSMenu {
+        let menu = makeBarMenu()
+        let canReorder = core.playlist.count > 1
+        addItem(to: menu, title: "Sort List by Title", enabled: canReorder) { [weak self] in
+            self?.reorder { $0.sortByTitle() }
+        }
+        addItem(to: menu, title: "Sort List by Filename", enabled: canReorder) { [weak self] in
+            self?.reorder { $0.sortByFilename() }
+        }
+        addItem(to: menu, title: "Reverse List", enabled: canReorder) { [weak self] in
+            self?.reorder { $0.reverse() }
+        }
+        addItem(to: menu, title: "Randomize List", enabled: canReorder) { [weak self] in
+            self?.reorder { $0.randomize() }
+        }
+        return menu
+    }
+
+    /// LIST OPTS menu: new (clear) / open / save `.m3u`.
+    private func makeListMenu() -> NSMenu {
+        let menu = makeBarMenu()
+        addItem(to: menu, title: "New List", enabled: !core.playlist.isEmpty) { [weak self] in
+            self?.removeAllRows()
+        }
+        addItem(to: menu, title: "Open List…", enabled: onOpenList != nil) { [weak self] in
+            self?.onOpenList?()
+        }
+        addItem(
+            to: menu, title: "Save List…",
+            enabled: onSaveList != nil && !core.playlist.isEmpty
+        ) { [weak self] in
+            self?.onSaveList?()
+        }
+        return menu
+    }
+
+    /// An empty bar menu with explicit enabling (`autoenablesItems = false`, so
+    /// `isEnabled` set per item sticks).
+    private func makeBarMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        return menu
+    }
+
+    /// Append one closure-backed item: the closure rides in `representedObject`
+    /// (boxed — see `MenuAction`) and `performMenuAction` runs it on selection.
+    /// The controller (an NSObject via `SkinWindowController`) is the target.
+    private func addItem(
+        to menu: NSMenu, title: String, enabled: Bool, action: @escaping @MainActor () -> Void
+    ) {
+        let item = NSMenuItem(
+            title: title, action: #selector(performMenuAction(_:)), keyEquivalent: ""
+        )
+        item.target = self
+        item.isEnabled = enabled
+        item.representedObject = MenuAction(action)
+        menu.addItem(item)
+    }
+
+    /// Run the boxed closure carried by a bar-menu item. NSMenu fires this on
+    /// the main thread (the menu tracking loop), matching this controller's
+    /// `@MainActor` isolation.
+    @objc private func performMenuAction(_ sender: NSMenuItem) {
+        (sender.representedObject as? MenuAction)?.run()
+    }
+
+    /// A reference box for a `@MainActor` menu-item closure, so it can ride in
+    /// `NSMenuItem.representedObject`.
+    private final class MenuAction {
+        let run: @MainActor () -> Void
+        init(_ run: @escaping @MainActor () -> Void) { self.run = run }
+    }
+
+    // MARK: - Menu actions (model mutations)
+
+    /// REM > Remove Selected: drop the selected rows from the core (which
+    /// shifts/stops the now-playing selection per its edit rules), clear the
+    /// consumed selection, then re-clamp scroll + redraw + notify the host.
+    private func removeSelectedRows() {
+        guard !selectedRows.isEmpty else { return }
+        core.remove(at: IndexSet(selectedRows))
+        selectedRows = []
+        finishEdit()
+    }
+
+    /// REM > Crop Selected: keep ONLY the selected rows. The survivors are the
+    /// whole new list, so the selection becomes all rows (they remain exactly
+    /// the rows the user had selected).
+    private func cropToSelectedRows() {
+        guard !selectedRows.isEmpty else { return }
+        core.crop(to: IndexSet(selectedRows))
+        selectedRows = Set(core.playlist.indices)
+        finishEdit()
+    }
+
+    /// REM > Remove All / LIST OPTS > New List: clear the queue.
+    private func removeAllRows() {
+        core.removeAll()
+        selectedRows = []
+        finishEdit()
+    }
+
+    /// MISC reorders: run the core mutation, then DROP the selection — the row
+    /// indices no longer point at the tracks the user picked (the core follows
+    /// only the PLAYING track through a reorder; per-row selection identity is
+    /// not tracked). Classic parity for selection-across-reorder is deferred.
+    private func reorder(_ mutate: (PlayerCore) -> Void) {
+        mutate(core)
+        selectedRows = []
+        finishEdit()
+    }
+
+    /// Shared tail of every model mutation from this window: re-clamp the
+    /// scroll to the (possibly shorter) list, redraw, and let the host
+    /// re-persist its playlist bookmarks.
+    private func finishEdit() {
+        applyScroll(rowDelta: 0)
+        view?.needsDisplay = true
+        onPlaylistEdited?()
+    }
+
+    /// Replace the selection (the SEL menu's all / none / invert).
+    private func replaceSelection(with rows: Set<Int>) {
+        selectedRows = rows
         view?.needsDisplay = true
     }
 
@@ -284,7 +594,7 @@ public final class PlaylistWindowController: SkinWindowController {
     /// view, and re-clamp the scroll so more/fewer rows show. The pure layers handle
     /// arbitrary sizes; this is the wiring that re-renders the view at its bounds.
     ///
-    /// Selection / scroll / now-playing all persist: `selectedRow` and
+    /// Selection / scroll / now-playing all persist: `selectedRows` and
     /// `core.currentIndex` are untouched, and `scrollRow` is re-clamped via the same
     /// `PlaylistLayout` the draw path uses, so a row pinned at the bottom stays
     /// valid when the interior grows or shrinks.

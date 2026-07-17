@@ -153,7 +153,10 @@ func runPlaylistSnapshotMode() -> Never {
         skin: skin,
         tracks: tracks,
         currentIndex: snapshotCurrentIndex,
-        selectedIndex: selectedIndex,
+        // The CLI stays single-selection; the drawing takes a (possibly
+        // multi-row) set now, so wrap the one index. Same rows highlighted —
+        // the snapshot PNG stays byte-identical.
+        selectedIndices: [selectedIndex],
         scrollRow: 0,
         skinWidth: frame.width,
         skinHeight: frame.height,

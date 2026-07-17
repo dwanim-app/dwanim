@@ -76,9 +76,9 @@ public final class EQController: SkinWindowController {
         super.init(terminatesAppOnClose: terminatesAppOnClose, onClose: onClose)
 
         // Mouse-down is a fresh gesture (isDown: true); a drag continues it
-        // (isDown: false). The shared view's clickCount is ignored here (the EQ
-        // window does not distinguish single vs double click).
-        view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _ in
+        // (isDown: false). The shared view's clickCount and modifiers are
+        // ignored here (the EQ window distinguishes neither).
+        view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _, _ in
             self?.handleMouse(viewX: viewX, viewY: viewY, viewHeight: viewHeight, isDown: true)
         }
         view.onMouseDragged = { [weak self] viewX, viewY, viewHeight in

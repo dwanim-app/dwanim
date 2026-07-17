@@ -214,10 +214,10 @@ public final class InteractiveController: SkinWindowController {
 
         super.init(terminatesAppOnClose: terminatesAppOnClose, onClose: onClose)
 
-        // The shared view carries the event's clickCount for windows that
-        // distinguish single vs double click; the main window does not, so it is
-        // ignored here.
-        view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _ in
+        // The shared view carries the event's clickCount + modifiers for windows
+        // that distinguish them; the main window does not, so both are ignored
+        // here.
+        view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _, _ in
             self?.handleMouseDown(viewX: viewX, viewY: viewY, viewHeight: viewHeight)
         }
         // Title-bar drag gate (the window is borderless, so the skin's own
