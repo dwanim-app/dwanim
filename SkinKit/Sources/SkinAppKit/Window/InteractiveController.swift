@@ -47,6 +47,12 @@ public final class InteractiveController: SkinWindowController {
     /// The control currently held down (for pressed-sprite feedback), or `nil`.
     private var pressedControl: SkinControl?
 
+    /// `true` while a posbar (seek) drag is in progress: set on a mouse-down that
+    /// grabbed the posbar track, kept across drags so the cursor can wander off the
+    /// track vertically and still scrub, and cleared on mouse-up. Mirrors
+    /// `EQController.draggingSlider`'s gesture latch.
+    private var isSeeking = false
+
     /// The shared ~25 Hz redraw cadence + audio-tap wiring (timer + tap install /
     /// remove + the `SpectrumFeed` write). Built in `init` and started/stopped by
     /// `start()` / `tearDown()`.
@@ -153,6 +159,13 @@ public final class InteractiveController: SkinWindowController {
         view.onMouseDown = { [weak self] viewX, viewY, viewHeight, _ in
             self?.handleMouseDown(viewX: viewX, viewY: viewY, viewHeight: viewHeight)
         }
+        // Dragging the posbar scrubs continuously: wire the drag callback (the EQ
+        // sliders are the only other draggable surface). A drag only acts when a
+        // mouse-down latched a seek; otherwise it is ignored (transport/toggle
+        // buttons are click-only).
+        view.onMouseDragged = { [weak self] viewX, viewY, viewHeight in
+            self?.handleMouseDragged(viewX: viewX, viewY: viewY, viewHeight: viewHeight)
+        }
         view.onMouseUp = { [weak self] in self?.handleMouseUp() }
 
         // ~25 Hz: full-window recompose per tick (acceptable for the dev harness;
@@ -206,25 +219,65 @@ public final class InteractiveController: SkinWindowController {
 
     // MARK: Mouse
 
-    /// A click hits a control -> apply its action. The view-space point is mapped
-    /// to a control by the pure `ControlHitTest` (undo scale + y-flip), and the
-    /// action by the pure `PlayerControl`. A pressed transport button is recorded
-    /// so the next redraw can show its pressed sprite.
+    /// A press routes to either a button or the posbar. A button hit applies its
+    /// action via the pure `PlayerControl` and records the pressed control for
+    /// feedback; a press on the posbar track latches a seek drag and seeks to the
+    /// pressed position. Buttons take precedence (a press is a button or the
+    /// posbar, never both — they do not overlap). The view-space point is mapped to
+    /// skin space by the pure `ControlHitTest` (undo scale + y-flip).
     private func handleMouseDown(viewX: Double, viewY: Double, viewHeight: Double) {
-        guard let control = ControlHitTest.control(
+        if let control = ControlHitTest.control(
             atViewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
-        ) else {
+        ) {
+            pressedControl = control
+            PlayerControl.apply(control, to: core)
+            redraw()
             return
         }
-        pressedControl = control
-        PlayerControl.apply(control, to: core)
+
+        // Not a button: a press on the posbar track begins a seek drag.
+        let point = ControlHitTest.skinPoint(
+            viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
+        )
+        if ControlHitTest.hitsPosbar(skinX: point.x, skinY: point.y) {
+            isSeeking = true
+            seek(toSkinX: point.x)
+        }
+    }
+
+    /// A drag only acts while a posbar seek is latched (set on mouse-down): map the
+    /// cursor x to a seek and redraw the thumb. The drag y is intentionally ignored
+    /// so the cursor can wander vertically off the track and still scrub, mirroring
+    /// the EQ slider drag. Transport/toggle buttons are click-only, so a drag that
+    /// did not start on the posbar is a no-op.
+    private func handleMouseDragged(viewX: Double, viewY: Double, viewHeight: Double) {
+        guard isSeeking else { return }
+        let point = ControlHitTest.skinPoint(
+            viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
+        )
+        seek(toSkinX: point.x)
+    }
+
+    /// Map a skin-space x on the posbar to a seek time and apply it. Routes through
+    /// the pure helpers so the value reaching `core.seek(to:)` is finite and in
+    /// range: `ControlHitTest.posbarFraction` clamps the x to `0...1`, and
+    /// `SeekMath.time(forFraction:duration:)` is the finite / zero-duration trap
+    /// (a `nil` time — nothing loaded or a non-seekable source — does not seek, so
+    /// no `NaN` can reach the engine). Redraws so the thumb tracks the cursor.
+    private func seek(toSkinX skinX: Int) {
+        guard let fraction = ControlHitTest.posbarFraction(skinX: skinX),
+              let time = SeekMath.time(forFraction: fraction, duration: core.duration) else {
+            return
+        }
+        core.seek(to: time)
         redraw()
     }
 
     private func handleMouseUp() {
-        guard pressedControl != nil else { return }
+        let wasInteracting = pressedControl != nil || isSeeking
         pressedControl = nil
-        redraw()
+        isSeeking = false
+        if wasInteracting { redraw() }
     }
 
     // MARK: Redraw
@@ -340,6 +393,20 @@ public final class InteractiveController: SkinWindowController {
             palette: skin.visColors
         )
 
+        // Posbar thumb: draw the draggable knob at the live playback position so
+        // the bar shows progress and a grabbable handle. Position comes from the
+        // pure SeekMath fraction (currentTime/duration, finite/zero-duration safe)
+        // mapped to the thumb's draw origin by ControlHitTest. The pressed thumb
+        // art is used while scrubbing. Drawn over the static `track`; with nothing
+        // loaded (duration 0) the fraction is 0, so the thumb seats at the left.
+        overlayPosbarThumb(onto: &composed)
+
+        // Toggle on-state: shuffle/repeat are composited in their OFF art by the
+        // static composer; when a toggle is live (shuffle on, or repeat != off)
+        // overlay its ON sprite so the button visibly lights up. Drawn before the
+        // pressed overlay so a held toggle still reads its pressed art on top.
+        overlayActiveToggles(onto: &composed)
+
         // Pressed-button feedback: while a transport/toggle button is held, draw
         // its pressed sprite over the released one at the control's draw origin.
         overlayPressedSprite(onto: &composed)
@@ -356,18 +423,60 @@ public final class InteractiveController: SkinWindowController {
 
     /// If a control is held, overlay its pressed sprite at its hit-rect origin
     /// (the same origin the hit rect is derived from). The pressed sprite name
-    /// comes from the unified `SkinControl.spriteName(pressed:)` — the single
-    /// source of truth shared with the hit-test layout, so the released/pressed
-    /// tables cannot drift. A missing pressed sprite is simply skipped.
+    /// comes from `SkinControl.spriteName(pressed:active:)`, so a held toggle shows
+    /// its on-pressed art when live (`shuffleOnPressed` / `repeatOnPressed`) and its
+    /// off-pressed art otherwise; a transport button ignores `active`. A missing
+    /// pressed sprite is simply skipped.
     private func overlayPressedSprite(onto base: inout DecodedBitmap) {
         guard let control = pressedControl,
               let rect = ControlHitTest.hitRect(for: control) else {
             return
         }
-        let key = control.spriteName(pressed: true)
+        let key = control.spriteName(pressed: true, active: isToggleActive(control))
         guard let sprite = skin.sprite(sheet: key.sheet, name: key.name) else {
             return
         }
         SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+    }
+
+    /// Overlay the ON sprite for each toggle that is live (shuffle on, or repeat
+    /// != off) at its hit-rect origin, so an active toggle visibly lights up over
+    /// the static OFF art the composer drew. The released (not pressed) on sprite
+    /// is used here; a press is layered on top by `overlayPressedSprite`. A toggle
+    /// that is off, or whose on sprite is missing, is left as the composed off art.
+    private func overlayActiveToggles(onto base: inout DecodedBitmap) {
+        for control in [SkinControl.toggleShuffle, .toggleRepeat] where isToggleActive(control) {
+            guard let rect = ControlHitTest.hitRect(for: control) else { continue }
+            let key = control.spriteName(pressed: false, active: true)
+            guard let sprite = skin.sprite(sheet: key.sheet, name: key.name) else { continue }
+            SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+        }
+    }
+
+    /// Whether a control's live toggle state is "on": shuffle reflects
+    /// `core.isShuffle`; repeat is on for any mode other than `.off` (both `.all`
+    /// and `.one` light the button — a distinct repeat-one indicator is a later
+    /// refinement). Transport buttons are never "active" (no on/off state).
+    private func isToggleActive(_ control: SkinControl) -> Bool {
+        switch control {
+        case .toggleShuffle: return core.isShuffle
+        case .toggleRepeat:  return core.repeatMode != .off
+        default:             return false
+        }
+    }
+
+    /// Draw the posbar thumb at the live playback position. The fraction is the
+    /// pure `SeekMath.fraction(currentTime:duration:)` (zero when nothing is
+    /// loaded), mapped to the thumb's top-left draw origin by
+    /// `ControlHitTest.posbarThumbOrigin`. The pressed thumb art (`thumbPressed`)
+    /// is used while scrubbing, the normal `thumb` otherwise. Skipped if the posbar
+    /// region cannot be derived or the thumb sprite is absent (a short-strip skin),
+    /// so the static track still renders alone.
+    private func overlayPosbarThumb(onto base: inout DecodedBitmap) {
+        let fraction = SeekMath.fraction(currentTime: core.currentTime, duration: core.duration)
+        guard let origin = ControlHitTest.posbarThumbOrigin(fraction: fraction) else { return }
+        let name = isSeeking ? "thumbPressed" : "thumb"
+        guard let sprite = skin.sprite(sheet: "posbar.bmp", name: name) else { return }
+        SkinCanvas.overlay(sprite, onto: &base, x: origin.x, y: origin.y)
     }
 }
