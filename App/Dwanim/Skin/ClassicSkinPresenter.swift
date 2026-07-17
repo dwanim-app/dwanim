@@ -174,9 +174,19 @@ final class ClassicSkinPresenter {
     /// true for the rest of the process lifetime — termination never reverses.
     private var isTerminating = false
 
-    /// Integer zoom for the hosted classic windows. Matches the harness's default
-    /// `--scale 2` so the in-app windows read at the same size as the dev path.
-    private static let scale = 2
+    /// Integer zoom for the hosted classic windows. Set to `1` so the classic skin
+    /// renders at its NATIVE size (authentic Winamp pixel size). At `2` the app
+    /// software-upscaled the skin bitmap by an integer factor with nearest-neighbor,
+    /// and on a Retina display that COMPOUNDED with the OS backing scale: the result
+    /// was a window that read both too large AND blocky (the integer upscale bakes in
+    /// hard pixel edges that the backing scale then magnifies). At `1` the bitmap is
+    /// drawn 1:1 in points and the OS renders it crisply at the native backing scale,
+    /// so the window is smaller and sharp on Retina. The whole scale-aware pipeline
+    /// (window sizing, hit-testing via `ControlHitTest`, and the `RegionMaskLayer`
+    /// silhouette) divides/multiplies by this one value, so they all follow to `1`.
+    /// The SkinHarness has its OWN `--scale` CLI argument (still defaulting to `2`),
+    /// so the package snapshot tests are unaffected by this app-side constant.
+    private static let scale = 1
 
     /// The hosted classic windows' title-bar text used on the titled-fallback path
     /// (and for the playlist / EQ windows, which are always titled). Neutral,
