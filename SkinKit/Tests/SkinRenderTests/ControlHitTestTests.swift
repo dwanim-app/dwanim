@@ -138,10 +138,12 @@ final class ControlHitTestTests: XCTestCase {
     // MARK: - View-space coordinate transform (click routing)
     //
     // The interactive window draws the composed skin into a NON-flipped NSView
-    // (origin bottom-left, y UP) scaled by an integer zoom; the skin image is
-    // top-left origin (y DOWN). `ControlHitTest.skinPoint(...)` is the inverse of
-    // that draw map. These tests pin click routing so a future y-flip or scale
-    // regression FAILS here — it cannot be caught by clicking a real window.
+    // (origin bottom-left, y UP) scaled by the PRESENTATION scale (an integer
+    // zoom like 1/2, or the fractional 1.5 points-per-skin-pixel the app uses);
+    // the skin image is top-left origin (y DOWN). `ControlHitTest.skinPoint(...)`
+    // is the inverse of that draw map. These tests pin click routing so a future
+    // y-flip or scale regression FAILS here — it cannot be caught by clicking a
+    // real window.
     //
     // Forward map (the click point a press on a skin pixel CENTER produces), the
     // exact inverse of `skinPoint`:
@@ -156,11 +158,11 @@ final class ControlHitTestTests: XCTestCase {
     private func viewPoint(
         skinX: Int,
         skinY: Int,
-        scale: Int
+        scale: Double
     ) -> (viewX: Double, viewY: Double, viewHeight: Double) {
-        let viewHeight = Double(MainWindowLayout.windowHeight * scale)
-        let viewX = (Double(skinX) + 0.5) * Double(scale)
-        let viewY = viewHeight - (Double(skinY) + 0.5) * Double(scale)
+        let viewHeight = Double(MainWindowLayout.windowHeight) * scale
+        let viewX = (Double(skinX) + 0.5) * scale
+        let viewY = viewHeight - (Double(skinY) + 0.5) * scale
         return (viewX, viewY, viewHeight)
     }
 
@@ -168,10 +170,12 @@ final class ControlHitTestTests: XCTestCase {
     /// `.toggleShuffle` (a different row, lower-right) — take the control's hit
     /// rect CENTER in skin space, map it forward to the view-space point a click
     /// there would produce, feed that back through `control(atViewX:...)`, and
-    /// assert it round-trips to the same control. Exercised at scale 1 and 2.
+    /// assert it round-trips to the same control. Exercised at the integer scales
+    /// 1 and 2 AND the app's fractional 1.5, so a click at any presentation scale
+    /// lands the same control.
     func testViewSpaceClickRoundTripsToControlCenter() {
         let controls: [SkinControl] = [.play, .next, .toggleShuffle]
-        for scale in [1, 2] {
+        for scale in [1.0, 1.5, 2.0] {
             for control in controls {
                 let rect = expectedRect(for: control)
                 let centerX = rect.x + rect.width / 2
@@ -307,6 +311,138 @@ final class ControlHitTestTests: XCTestCase {
             )
             XCTAssertEqual(back.x, sx, "x round-trip for (\(sx),\(sy))")
             XCTAssertEqual(back.y, sy, "y round-trip for (\(sx),\(sy))")
+        }
+    }
+
+    // MARK: - Fractional presentation scale (1.5)
+    //
+    // The app presents the classic windows at 1.5 POINTS per skin pixel (the
+    // 275x116 main window is a 412.5 x 174 pt view). These tests pin the Double
+    // scale math: edge clicks never map out of the skin bounds, every control's
+    // hit rect routes the SAME control at 1.5 as at the integer scales, and the
+    // title-bar drag band gates identically.
+
+    /// Clicks hugging the window edges at scale 1.5 always map INSIDE the skin
+    /// bounds (x in 0..<275, y in 0..<116) — e.g. viewX 412.4 (just inside the
+    /// 412.5-pt right edge) maps to skin x 274, never 275.
+    func testSkinPointAtOnePointFiveNeverMapsOutOfBoundsAtTheEdges() {
+        let scale = 1.5
+        let viewWidth = Double(MainWindowLayout.windowWidth) * scale   // 412.5
+        let viewHeight = Double(MainWindowLayout.windowHeight) * scale // 174.0
+        XCTAssertEqual(viewWidth, 412.5, accuracy: 1e-9)
+        XCTAssertEqual(viewHeight, 174.0, accuracy: 1e-9)
+
+        // Just inside the right edge: floor(412.4 / 1.5) = floor(274.93) = 274.
+        let right = ControlHitTest.skinPoint(
+            viewX: 412.4, viewY: 1, viewHeight: viewHeight, scale: scale
+        )
+        XCTAssertEqual(right.x, 274, "viewX 412.4 -> skin x 274 (in bounds)")
+
+        // Sweep points hugging all four edges (0.1 pt inside): every mapped skin
+        // coordinate stays strictly inside the half-open skin bounds.
+        let inset = 0.1
+        let edgePoints: [(x: Double, y: Double)] = [
+            (inset, inset),                              // bottom-left
+            (viewWidth - inset, inset),                  // bottom-right
+            (inset, viewHeight - inset),                 // top-left
+            (viewWidth - inset, viewHeight - inset),     // top-right
+            (viewWidth / 2, inset),                      // bottom-center
+            (viewWidth / 2, viewHeight - inset)          // top-center
+        ]
+        for point in edgePoints {
+            let skin = ControlHitTest.skinPoint(
+                viewX: point.x, viewY: point.y, viewHeight: viewHeight, scale: scale
+            )
+            XCTAssertTrue(
+                (0..<MainWindowLayout.windowWidth).contains(skin.x),
+                "view (\(point.x),\(point.y)) -> skin x \(skin.x) must be in 0..<275"
+            )
+            XCTAssertTrue(
+                (0..<MainWindowLayout.windowHeight).contains(skin.y),
+                "view (\(point.x),\(point.y)) -> skin y \(skin.y) must be in 0..<116"
+            )
+        }
+    }
+
+    /// EVERY control with a hit rect routes the SAME control at scale 1.5 as at
+    /// the integer scales 1 and 2, sampled at all four corner pixels and the
+    /// center of its rect — the fractional scale shifts no control's hit area.
+    func testEveryControlRoutesTheSameAtOnePointFiveAsAtIntegerScales() {
+        for control in SkinControl.allCases {
+            guard let rect = ControlHitTest.hitRect(for: control) else {
+                XCTFail("no hit rect for \(control)")
+                continue
+            }
+            // Corner pixels (half-open rect: the last inside pixel is +w-1/+h-1)
+            // plus the center.
+            let samples = [
+                (rect.x, rect.y),
+                (rect.x + rect.width - 1, rect.y),
+                (rect.x, rect.y + rect.height - 1),
+                (rect.x + rect.width - 1, rect.y + rect.height - 1),
+                (rect.x + rect.width / 2, rect.y + rect.height / 2)
+            ]
+            for (sx, sy) in samples {
+                // What the point routes to in pure skin space (some corner pixels
+                // may fall inside an OVERLAPPING control's rect first — the
+                // allCases tie-break — so compare against the skin-space answer,
+                // not blindly against `control`).
+                let skinRouted = ControlHitTest.control(atX: sx, y: sy)
+                for scale in [1.0, 1.5, 2.0] {
+                    let point = viewPoint(skinX: sx, skinY: sy, scale: scale)
+                    XCTAssertEqual(
+                        ControlHitTest.control(
+                            atViewX: point.viewX,
+                            viewY: point.viewY,
+                            viewHeight: point.viewHeight,
+                            scale: scale
+                        ),
+                        skinRouted,
+                        "scale \(scale): (\(sx),\(sy)) of \(control) must route like skin space"
+                    )
+                }
+            }
+        }
+    }
+
+    /// The title-bar DRAG band gates identically at 1.5: a band point that is not
+    /// on a button still drags after the view->skin mapping, and the close /
+    /// minimize button centers do NOT drag (buttons win over drag).
+    func testTitleBarDragBandGatesTheSameAtOnePointFive() {
+        let scale = 1.5
+
+        // (0,0) is in the title bar and on no control (pinned by
+        // `testPointOutsideEveryControlReturnsNil`), so it IS drag area. Map its
+        // pixel center forward at 1.5 and back: still drag area.
+        XCTAssertTrue(ControlHitTest.hitsTitleBarDragArea(skinX: 0, skinY: 0))
+        let dragPoint = viewPoint(skinX: 0, skinY: 0, scale: scale)
+        let mappedDrag = ControlHitTest.skinPoint(
+            viewX: dragPoint.viewX, viewY: dragPoint.viewY,
+            viewHeight: dragPoint.viewHeight, scale: scale
+        )
+        XCTAssertTrue(
+            ControlHitTest.hitsTitleBarDragArea(skinX: mappedDrag.x, skinY: mappedDrag.y),
+            "a drag-band press at 1.5 must still be drag area after the mapping"
+        )
+
+        // The close + minimize buttons live IN the band; their centers must NOT
+        // be drag area after the same 1.5 mapping (buttons win over drag).
+        for control in [SkinControl.close, .minimize] {
+            guard let rect = ControlHitTest.hitRect(for: control) else {
+                XCTFail("no hit rect for \(control)")
+                continue
+            }
+            let cx = rect.x + rect.width / 2
+            let cy = rect.y + rect.height / 2
+            let point = viewPoint(skinX: cx, skinY: cy, scale: scale)
+            let mapped = ControlHitTest.skinPoint(
+                viewX: point.viewX, viewY: point.viewY,
+                viewHeight: point.viewHeight, scale: scale
+            )
+            XCTAssertFalse(
+                ControlHitTest.hitsTitleBarDragArea(skinX: mapped.x, skinY: mapped.y),
+                "\(control)'s center at 1.5 must NOT be drag area (button wins)"
+            )
         }
     }
 

@@ -31,7 +31,9 @@ func openEQWindow(skin: Skin, core: PlayerCore, scale: Int) -> Never {
 
     let handle: EQWindowHandle
     do {
-        handle = try showEQWindow(skin: skin, core: core, scale: scale, title: "SkinHarness EQ")
+        // The integer CLI zoom is an integer PRESENTATION scale, so the bitmap
+        // factor equals it and the window path behaves exactly as before.
+        handle = try showEQWindow(skin: skin, core: core, scale: Double(scale), title: "SkinHarness EQ")
     } catch {
         eqFail("Failed to render the EQ window: \(error)")
     }

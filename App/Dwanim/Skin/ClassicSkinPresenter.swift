@@ -183,19 +183,24 @@ final class ClassicSkinPresenter {
     /// true for the rest of the process lifetime — termination never reverses.
     private var isTerminating = false
 
-    /// Integer zoom for the hosted classic windows. Set to `1` so the classic skin
-    /// renders at its NATIVE size (authentic Winamp pixel size). At `2` the app
-    /// software-upscaled the skin bitmap by an integer factor with nearest-neighbor,
-    /// and on a Retina display that COMPOUNDED with the OS backing scale: the result
-    /// was a window that read both too large AND blocky (the integer upscale bakes in
-    /// hard pixel edges that the backing scale then magnifies). At `1` the bitmap is
-    /// drawn 1:1 in points and the OS renders it crisply at the native backing scale,
-    /// so the window is smaller and sharp on Retina. The whole scale-aware pipeline
-    /// (window sizing, hit-testing via `ControlHitTest`, and the `RegionMaskLayer`
-    /// silhouette) divides/multiplies by this one value, so they all follow to `1`.
-    /// The SkinHarness has its OWN `--scale` CLI argument (still defaulting to `2`),
-    /// so the package snapshot tests are unaffected by this app-side constant.
-    private static let scale = 1
+    /// PRESENTATION scale for the hosted classic windows: POINTS per skin pixel.
+    /// `1.5` is the sweet spot between `1` (authentic 275x116-pt main window —
+    /// too small on modern displays) and `2` (too big). The main window becomes
+    /// 412.5 x 174 points; the playlist / EQ windows scale likewise (fractional
+    /// point sizes are legal for `NSWindow`).
+    ///
+    /// WHY 1.5 stays pixel-crisp on Retina: the composed bitmap is still upscaled
+    /// by an INTEGER nearest-neighbor factor — the pure
+    /// `PresentationScale.bitmapScale` derives 3 for 1.5 — and on a 2x-backing
+    /// display 1.5 points is EXACTLY 3 device pixels, so the view's draw is a
+    /// 1:1 device-pixel copy of the 3x bitmap (no resampling, no smear). The
+    /// whole scale-aware pipeline (window sizing, hit-testing via
+    /// `ControlHitTest`, the `RegionMaskLayer` silhouette, and the title-bar drag
+    /// bands) divides/multiplies by this one Double, so all three windows follow
+    /// consistently. The SkinHarness has its OWN integer `--scale` CLI argument
+    /// (still defaulting to `2`), so the package snapshot output is unaffected by
+    /// this app-side constant.
+    private static let scale = 1.5
 
     /// The hosted classic windows' titles. The classic windows are borderless
     /// (chromeless), so these are invisible — they are kept set for accessibility

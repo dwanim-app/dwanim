@@ -159,7 +159,9 @@ func runInteractiveMode() -> Never {
     do {
         handle = try showInteractiveWindow(
             skin: skin, core: core, tap: engine, format: engine,
-            region: region, scale: arguments.scale, title: "SkinHarness"
+            // The integer CLI zoom is an integer PRESENTATION scale, so the bitmap
+            // factor equals it and the window path behaves exactly as before.
+            region: region, scale: Double(arguments.scale), title: "SkinHarness"
         )
     } catch {
         interactiveFail("Failed to render skin: \(error)")

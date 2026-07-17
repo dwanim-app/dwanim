@@ -24,10 +24,12 @@ import SkinRender
 /// drift.
 ///
 /// Coordinates: `context` is the view/bitmap context whose origin is BOTTOM-left
-/// (y up), already scaled so 1 context unit == 1 scaled pixel. `skinWidth` /
-/// `skinHeight` are the UNSCALED composed-frame dimensions; `scale` maps skin
-/// pixels to context units. The interior rect (top-left origin, skin pixels) is
-/// flipped into the bottom-left context space here.
+/// (y up). `skinWidth` / `skinHeight` are the UNSCALED composed-frame dimensions;
+/// `scale` maps skin pixels to context units (view POINTS in the live window —
+/// possibly fractional, e.g. 1.5 — or scaled pixels in the harness's offscreen
+/// snapshot, where the integer CLI scale is passed through as a Double). The
+/// interior rect (top-left origin, skin pixels) is flipped into the bottom-left
+/// context space here.
 ///
 /// Each visible row draws its title in the pledit font at `normalText`. The
 /// `selectedIndex` row (if visible) gets a `selectedBackground` fill — the user's
@@ -45,7 +47,7 @@ public func drawPlaylistTrackList(
     scrollRow: Int,
     skinWidth: Int,
     skinHeight: Int,
-    scale: Int
+    scale: Double
 ) {
     let interior = PlaylistWindowComposer.interiorRect(width: skinWidth, height: skinHeight, skin: skin)
     guard interior.w > 0, interior.h > 0 else { return }
@@ -100,7 +102,7 @@ public func drawPlaylistTrackList(
             rect: rowRect,
             font: style.font,
             color: color,
-            leftPaddingScaled: CGFloat(PlaylistTextStyle.leftPadding * scale)
+            leftPaddingScaled: CGFloat(Double(PlaylistTextStyle.leftPadding) * scale)
         )
     }
 }
@@ -142,7 +144,7 @@ private func drawLine(
 /// context space. `skinHeight` is the unscaled composed-frame height.
 private func scaledFlippedRect(
     x: Int, y: Int, w: Int, h: Int,
-    skinHeight: Int, scale: Int
+    skinHeight: Int, scale: Double
 ) -> CGRect {
     let s = CGFloat(scale)
     // Flip y: a skin-space top edge at `y` is `skinHeight - y - h` from the

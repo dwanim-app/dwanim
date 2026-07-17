@@ -110,6 +110,15 @@ open class ScaledImageView: NSView {
 
     // MARK: Draw
 
+    /// Draws the bitmap into the view's bounds with interpolation OFF. The bitmap
+    /// is pre-scaled by an INTEGER nearest-neighbor factor (`PresentationScale
+    /// .bitmapScale`), and the bounds are the skin size times the PRESENTATION
+    /// scale in points. For an integer presentation scale the two coincide (the
+    /// historical 1:1-in-points draw). For the fractional 1.5 on a 2x backing,
+    /// bounds(points) x backingScaleFactor == bitmap pixels (275 x 1.5 x 2 ==
+    /// 275 x 3), so this draw is a 1:1 device-pixel copy — no resampling, and
+    /// `.none` interpolation guarantees no smoothing on any residual mismatch
+    /// (e.g. a 1x display, where 3 bitmap pixels cover 1.5 device pixels).
     public override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.interpolationQuality = .none

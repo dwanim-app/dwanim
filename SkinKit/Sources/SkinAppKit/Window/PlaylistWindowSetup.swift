@@ -64,7 +64,7 @@ public struct PlaylistWindowHandle {
 public func showPlaylistWindow(
     skin: Skin,
     core: PlayerCore,
-    scale: Int,
+    scale: Double,
     title: String,
     terminatesAppOnClose: Bool = true,
     onClose: (() -> Void)? = nil,
@@ -78,9 +78,18 @@ public func showPlaylistWindow(
         throw RenderError.imageCreationFailed
     }
 
-    let scaled = try scaledImage(image, scale: scale)
+    // Integer nearest-neighbor bitmap + point-sized window: the bitmap renders at
+    // the integer factor derived from the presentation scale (1.5 -> 3 on a 2x
+    // backing), while the window content rect is the composed frame's size *
+    // scale in POINTS. See `PresentationScale`.
+    let bitmapScale = PresentationScale.bitmapScale(forPresentationScale: scale)
+    let scaled = try scaledImage(image, scale: bitmapScale)
 
-    let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
+    let contentRect = NSRect(
+        x: 0, y: 0,
+        width: Double(frame.width) * scale,
+        height: Double(frame.height) * scale
+    )
     // Compose returns the CLAMPED size; use the frame's actual dimensions so the
     // text layout matches the bitmap exactly.
     let view = PlaylistContentView(
@@ -127,13 +136,13 @@ public func showPlaylistWindow(
     // double-release footgun on close / re-skin).
     window.isReleasedWhenClosed = false
     window.contentView = view
-    // Floor the draggable size at the composer minimum (scaled), so the user can
-    // never drag below where the frame corners stop fitting. The composer also
-    // clamps defensively, but this keeps the live drag from showing a clamped frame
-    // smaller than the window chrome.
+    // Floor the draggable size at the composer minimum (in points, at the
+    // presentation scale), so the user can never drag below where the frame
+    // corners stop fitting. The composer also clamps defensively, but this keeps
+    // the live drag from showing a clamped frame smaller than the window chrome.
     window.contentMinSize = NSSize(
-        width: PlaylistWindowComposer.minimumWidth * scale,
-        height: PlaylistWindowComposer.minimumHeight * scale
+        width: Double(PlaylistWindowComposer.minimumWidth) * scale,
+        height: Double(PlaylistWindowComposer.minimumHeight) * scale
     )
     window.center()
     window.makeKeyAndOrderFront(nil)

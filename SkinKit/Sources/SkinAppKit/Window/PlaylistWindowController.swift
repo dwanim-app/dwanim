@@ -48,7 +48,14 @@ public final class PlaylistWindowController: SkinWindowController {
     private weak var view: PlaylistContentView?
     /// The skin, kept so a drag-resize can RE-COMPOSE the frame at the new size.
     private let skin: Skin
-    private let scale: Int
+    /// PRESENTATION scale: points per skin pixel (possibly fractional — e.g. 1.5).
+    /// Used for the view-point <-> skin-point hit-test mapping and the resize
+    /// view-size -> skin-size inverse.
+    private let scale: Double
+    /// INTEGER nearest-neighbor factor the composed bitmap is rendered at, derived
+    /// from `scale` by the pure `PresentationScale` (integer scale -> itself;
+    /// fractional 1.5 -> the 2x-backing device factor 3).
+    private let bitmapScale: Int
     /// The composed-frame UNSCALED dimensions, so the controller can re-derive the
     /// interior rect (the single geometry source) for click mapping. Mutable: a
     /// drag-resize recomputes them from the view bounds (clamped to the composer
@@ -68,7 +75,7 @@ public final class PlaylistWindowController: SkinWindowController {
     public init(
         core: PlayerCore,
         skin: Skin,
-        scale: Int,
+        scale: Double,
         skinWidth: Int,
         skinHeight: Int,
         terminatesAppOnClose: Bool = true,
@@ -77,6 +84,7 @@ public final class PlaylistWindowController: SkinWindowController {
         self.core = core
         self.skin = skin
         self.scale = scale
+        self.bitmapScale = PresentationScale.bitmapScale(forPresentationScale: scale)
         self.skinWidth = skinWidth
         self.skinHeight = skinHeight
         super.init(terminatesAppOnClose: terminatesAppOnClose, onClose: onClose)
@@ -273,7 +281,9 @@ public final class PlaylistWindowController: SkinWindowController {
         }
         let scaled: (image: CGImage, width: Int, height: Int)
         do {
-            scaled = try scaledImage(image, scale: scale)
+            // Integer nearest-neighbor bitmap; the view's point-sized bounds place
+            // it 1:1 in device pixels at a fractional presentation scale.
+            scaled = try scaledImage(image, scale: bitmapScale)
         } catch {
             return
         }

@@ -71,7 +71,7 @@ public func showInteractiveWindow(
     tap: AudioTapProviding?,
     format: TrackFormatProviding?,
     region: SkinRegion?,
-    scale: Int,
+    scale: Double,
     title: String,
     externalFeed: SpectrumFeed? = nil,
     terminatesAppOnClose: Bool = true,
@@ -91,23 +91,33 @@ public func showInteractiveWindow(
         throw RenderError.imageCreationFailed
     }
 
-    let scaled = try scaledImage(image, scale: scale)
+    // The bitmap is upscaled by an INTEGER nearest-neighbor factor (crisp pixel
+    // art needs whole-pixel duplication), while the WINDOW is sized in POINTS at
+    // the presentation scale. For an integer scale the two coincide (the
+    // historical behavior); for a fractional scale (1.5) the bitmap renders at
+    // the 2x-backing device factor (3x) and the 1.5x-points bounds place it
+    // 1:1 in device pixels. See `PresentationScale`.
+    let bitmapScale = PresentationScale.bitmapScale(forPresentationScale: scale)
+    let scaled = try scaledImage(image, scale: bitmapScale)
 
-    let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
+    let pointWidth = Double(base.width) * scale
+    let pointHeight = Double(base.height) * scale
+    let contentRect = NSRect(x: 0, y: 0, width: pointWidth, height: pointHeight)
     let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
     // Wire the optional file-URL drop hook. Setting it registers the view for
     // `.fileURL` dragging; leaving it `nil` (harness) registers nothing.
     contentView.onFileDrop = onFileDrop
 
     // Window-level region mask (same as the static window path): the content stays
-    // opaque and the shape is carried by a CAShapeLayer mask.
+    // opaque and the shape is carried by a CAShapeLayer mask, built in the view's
+    // POINT space (skin size * presentation scale).
     let maskLayer: CAShapeLayer? = region.flatMap { region in
         RegionMaskLayer.make(
             for: region,
             skinHeight: base.height,
             scale: scale,
-            scaledWidth: scaled.width,
-            scaledHeight: scaled.height
+            scaledWidth: pointWidth,
+            scaledHeight: pointHeight
         )
     }
 

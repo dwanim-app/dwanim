@@ -58,7 +58,7 @@ public struct EQWindowHandle {
 public func showEQWindow(
     skin: Skin,
     core: PlayerCore,
-    scale: Int,
+    scale: Double,
     title: String,
     terminatesAppOnClose: Bool = true,
     onClose: (() -> Void)? = nil,
@@ -72,9 +72,18 @@ public func showEQWindow(
         throw RenderError.imageCreationFailed
     }
 
-    let scaled = try scaledImage(image, scale: scale)
+    // Integer nearest-neighbor bitmap + point-sized window: the bitmap renders at
+    // the integer factor derived from the presentation scale (1.5 -> 3 on a 2x
+    // backing), while the window content rect is skin size * scale in POINTS.
+    // See `PresentationScale`.
+    let bitmapScale = PresentationScale.bitmapScale(forPresentationScale: scale)
+    let scaled = try scaledImage(image, scale: bitmapScale)
 
-    let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
+    let contentRect = NSRect(
+        x: 0, y: 0,
+        width: Double(base.width) * scale,
+        height: Double(base.height) * scale
+    )
     let contentView = ScaledImageView(image: scaled.image, frame: contentRect)
     // Optional file-URL drop hook (nil for the harness — registers nothing).
     contentView.onFileDrop = onFileDrop

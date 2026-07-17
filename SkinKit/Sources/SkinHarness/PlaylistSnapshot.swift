@@ -157,7 +157,9 @@ func runPlaylistSnapshotMode() -> Never {
         scrollRow: 0,
         skinWidth: frame.width,
         skinHeight: frame.height,
-        scale: scale
+        // Integer CLI scale passed through as a Double: identical math, so the
+        // snapshot PNG stays byte-identical to the Int-scale output.
+        scale: Double(scale)
     )
 
     guard let image = context.makeImage() else {

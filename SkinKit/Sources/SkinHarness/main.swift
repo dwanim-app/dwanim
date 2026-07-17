@@ -223,9 +223,10 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
         RegionMaskLayer.make(
             for: region,
             skinHeight: bitmap.height,
-            scale: scale,
-            scaledWidth: scaled.width,
-            scaledHeight: scaled.height
+            // Integer CLI scale as a presentation scale: points == scaled pixels.
+            scale: Double(scale),
+            scaledWidth: Double(scaled.width),
+            scaledHeight: Double(scaled.height)
         )
     }
 

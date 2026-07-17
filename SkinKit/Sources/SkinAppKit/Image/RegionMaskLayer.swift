@@ -19,8 +19,9 @@ import SkinRender
 // bug class, so the flip lives in ONE tested place):
 //   - Region vertices are in the skin's NATURAL pixel space (e.g. 275x116),
 //     TOP-LEFT origin, x rightward / y downward.
-//   - The content view shows the composed image at an integer `scale` in a
-//     NON-flipped `NSView` (origin bottom-left, y UP). `SkinImageView` draws the
+//   - The content view shows the composed image at the PRESENTATION `scale`
+//     (points per skin pixel, possibly fractional — e.g. 1.5) in a NON-flipped
+//     `NSView` (origin bottom-left, y UP). `SkinImageView` draws the
 //     top-left-origin CGImage via `context.draw(image, in: bounds)`, and
 //     CoreGraphics AUTO-ORIENTS the image in that bottom-left context, so skin
 //     row 0 appears at the visual TOP (high y).
@@ -45,7 +46,8 @@ import SkinRender
 public enum RegionMaskLayer {
 
     /// Builds the mask path for `region` in the content view's coordinate space,
-    /// where the view shows the image at integer `scale`.
+    /// where the view shows the image at the presentation `scale` (points per
+    /// skin pixel, possibly fractional — e.g. 1.5).
     ///
     /// `skinHeight` is the image's pixel height; it is load-bearing — it sets the
     /// view height used to flip y (skin top-left origin -> the non-flipped view's
@@ -56,12 +58,12 @@ public enum RegionMaskLayer {
     public static func maskPath(
         for region: SkinRegion,
         skinHeight: Int,
-        scale: Int
+        scale: Double
     ) -> CGPath? {
         let fillable = region.polygons.filter { $0.points.count >= 3 }
         guard !fillable.isEmpty else { return nil }
 
-        let viewHeight = Double(skinHeight * scale)
+        let viewHeight = Double(skinHeight) * scale
         let path = CGMutablePath()
 
         for polygon in fillable {
@@ -89,8 +91,9 @@ public enum RegionMaskLayer {
     }
 
     /// Builds a `CAShapeLayer` that masks a content view of size
-    /// `scaledWidth x scaledHeight` (in points) to `region`'s shape, or `nil` if
-    /// the region declares no fillable polygon.
+    /// `scaledWidth x scaledHeight` (in POINTS — the skin size times the
+    /// presentation `scale`, so fractional at e.g. 1.5) to `region`'s shape, or
+    /// `nil` if the region declares no fillable polygon.
     ///
     /// The shape layer's frame matches the content view's bounds and its `path`
     /// is built in that same (no-flip) content-layer space; assigning it to the
@@ -100,9 +103,9 @@ public enum RegionMaskLayer {
     public static func make(
         for region: SkinRegion,
         skinHeight: Int,
-        scale: Int,
-        scaledWidth: Int,
-        scaledHeight: Int
+        scale: Double,
+        scaledWidth: Double,
+        scaledHeight: Double
     ) -> CAShapeLayer? {
         guard let path = maskPath(for: region, skinHeight: skinHeight, scale: scale) else {
             return nil

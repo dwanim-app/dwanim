@@ -27,7 +27,10 @@ import SkinRender
 ///   * raw wheel delta                  -> `onScroll`
 public final class PlaylistContentView: ScaledImageView {
     private let skin: Skin
-    private let scale: Int
+    /// PRESENTATION scale: points per skin pixel (possibly fractional — e.g. 1.5).
+    /// The text overlay draws in the view's POINT space, so it maps skin pixels
+    /// by this scale (CoreText is vector — fractional point sizes stay crisp).
+    private let scale: Double
     /// The composed-frame UNSCALED dimensions. Mutable so a drag-resize can swap in
     /// a freshly composed frame at the new size and the text layout follows it.
     private var skinWidth: Int
@@ -39,7 +42,7 @@ public final class PlaylistContentView: ScaledImageView {
     public var selectedIndexProvider: () -> Int? = { nil }
     public var scrollRowProvider: () -> Int = { 0 }
 
-    public init(frameImage: CGImage, skin: Skin, scale: Int, skinWidth: Int, skinHeight: Int, frame: NSRect) {
+    public init(frameImage: CGImage, skin: Skin, scale: Double, skinWidth: Int, skinHeight: Int, frame: NSRect) {
         self.skin = skin
         self.scale = scale
         self.skinWidth = skinWidth
