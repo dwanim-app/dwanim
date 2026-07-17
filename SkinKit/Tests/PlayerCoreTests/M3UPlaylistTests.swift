@@ -66,4 +66,12 @@ final class M3UPlaylistTests: XCTestCase {
         XCTAssertEqual(M3UPlaylist.parse(""), [])
         XCTAssertEqual(M3UPlaylist.parse("#EXTM3U\n# nothing here\n"), [])
     }
+
+    /// A leading UTF-8 BOM (U+FEFF) — the norm for Windows-exported .m3u8 —
+    /// must be stripped: left in place it defeats the `#` comment check on the
+    /// `#EXTM3U` header line, which then resolves to a phantom garbage track.
+    func testParseStripsLeadingBOMWithoutPhantomEntry() {
+        let text = "\u{FEFF}#EXTM3U\n/a/b.wav\n"
+        XCTAssertEqual(M3UPlaylist.parse(text), [URL(fileURLWithPath: "/a/b.wav")])
+    }
 }

@@ -65,16 +65,37 @@ final class PlayerCorePlaylistEditTests: XCTestCase {
         XCTAssertEqual(engine.stopCount, 0)
     }
 
-    func testAppendToEmptyDoesNotSelectOrPlay() {
+    /// Appending to an EMPTY list selects the first new row — SELECT ONLY,
+    /// never auto-play (the adding-never-auto-plays contract holds). Without
+    /// the selection, `play()`/`next()`/`previous()` (which guard on
+    /// `currentIndex`) would all be dead over a visibly non-empty list.
+    func testAppendToEmptySelectsFirstRowWithoutPlaying() {
         let engine = FakePlaybackEngine()
         let core = makeCore(engine: engine)
 
         core.append([track("a"), track("b")])
 
         XCTAssertEqual(core.playlist.count, 2)
-        XCTAssertNil(core.currentIndex)
+        XCTAssertEqual(core.currentIndex, 0)
         XCTAssertFalse(core.isPlaying)
         XCTAssertEqual(engine.playCount, 0)
+        XCTAssertEqual(engine.loadedURLs, [], "append must not touch the engine")
+    }
+
+    /// The payoff of the select-on-append-to-empty rule: ADD files to a fresh
+    /// queue, press play — playback starts (before the fix, `play()` bailed on
+    /// the nil `currentIndex` and nothing happened).
+    func testAppendToEmptyThenPlayStartsPlayback() {
+        let engine = FakePlaybackEngine()
+        let core = makeCore(engine: engine)
+
+        core.append([track("a"), track("b")])
+        core.play()
+
+        XCTAssertTrue(core.isPlaying)
+        XCTAssertEqual(core.currentIndex, 0)
+        XCTAssertEqual(engine.lastLoadedURL?.lastPathComponent, "a.mp3")
+        XCTAssertEqual(engine.playCount, 1)
     }
 
     func testAppendNothingIsNoOp() {
@@ -308,16 +329,20 @@ final class PlayerCorePlaylistEditTests: XCTestCase {
         XCTAssertTrue(core.isPlaying)
     }
 
-    func testReverseWithNoSelectionJustReorders() {
+    /// Empty the list, re-fill it via append (which now selects row 0 — the
+    /// select-on-append-to-empty rule), then reverse: the selection follows the
+    /// selected (idle, not playing) track to its new position and nothing plays.
+    func testReverseAfterEmptyThenAppendFollowsSelectedRow() {
         let core = makeCore()
         core.load([track("a"), track("b")])
         core.remove(at: [0, 1]) // empty the list, selection nil
-        core.append([track("x"), track("y")])
+        core.append([track("x"), track("y")]) // re-fill: selects "x" (row 0)
 
         core.reverse()
 
         XCTAssertEqual(titles(of: core), ["y", "x"])
-        XCTAssertNil(core.currentIndex)
+        XCTAssertEqual(core.currentIndex, 1) // still "x", followed to its new row
+        XCTAssertFalse(core.isPlaying)
     }
 
     // MARK: - randomize (injected permutation — deterministic)

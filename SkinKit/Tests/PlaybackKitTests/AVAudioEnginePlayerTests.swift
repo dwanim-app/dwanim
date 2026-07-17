@@ -278,6 +278,44 @@ final class AVAudioEnginePlayerTests: XCTestCase {
         XCTAssertFalse(fired, "a paused seek-to-end must not synthesize a finish")
     }
 
+    /// A play() AFTER a paused seek-to-end must fire `onPlaybackFinished`
+    /// exactly once (the natural-finish path), not enter a permanent silent
+    /// "playing" state. Before the fix, the paused seek parked with the seek
+    /// base at the duration and nothing scheduled (`remaining > 0` guard), so
+    /// play() started the node over an EMPTY queue: `isPlaying` read true, the
+    /// position pinned at the duration, and no completion EVER fired — no
+    /// auto-advance/repeat, no recovery without another manual transport press.
+    /// Deterministic — the finish is synthesized, no real audio drain needed.
+    func testPlayAfterPausedSeekToEndFiresPlaybackFinishedOnce() throws {
+        let url = try synthWAV(duration: 1.0)
+        let player = AVAudioEnginePlayer()
+        try player.load(url)
+
+        let finished = expectation(description: "onPlaybackFinished on play after paused seek-to-end")
+        finished.assertForOverFulfill = true // a double-fire fails the test
+        player.onPlaybackFinished = { finished.fulfill() }
+
+        player.pause()
+        player.seek(to: player.duration) // parks at the end, nothing scheduled
+        player.play()
+
+        wait(for: [finished], timeout: 2.0)
+        XCTAssertFalse(
+            player.isPlaying,
+            "the synthesized finish must not leave a silent 'playing' state"
+        )
+        XCTAssertEqual(
+            player.currentTime, player.duration, accuracy: 0.01,
+            "the position must report the end after the synthesized finish"
+        )
+
+        // Drain the main queue so a (wrong) SECOND finish would have run —
+        // `assertForOverFulfill` above turns any double-fire into a failure.
+        let drain = expectation(description: "drain")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { drain.fulfill() }
+        wait(for: [drain], timeout: 1.0)
+    }
+
     /// Seeking WHILE paused must clear the paused-position freeze and report the
     /// seek target (not the frozen time). Deterministic — no real playback needed:
     /// a pause from a stopped node caches 0, and the seek must override it.

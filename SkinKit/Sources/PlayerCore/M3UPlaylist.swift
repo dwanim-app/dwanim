@@ -18,9 +18,18 @@ import Foundation
 public enum M3UPlaylist {
 
     /// Parse `.m3u` text into the file URLs it lists, in order. Tolerant of
-    /// CRLF, blank lines, and `#`-prefixed comment/directive lines.
+    /// a leading UTF-8 BOM, CRLF, blank lines, and `#`-prefixed
+    /// comment/directive lines.
     public static func parse(_ text: String) -> [URL] {
-        text.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+        // Strip a leading UTF-8 BOM (U+FEFF) — the norm for Windows-exported
+        // .m3u8 files — BEFORE splitting: left in place it glues itself onto
+        // the `#EXTM3U` header, defeats the `#` comment check below, and the
+        // line then resolves via `URL(fileURLWithPath:)` to a phantom junk row.
+        var text = text
+        if text.hasPrefix("\u{FEFF}") {
+            text.removeFirst()
+        }
+        return text.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
             .compactMap { line in

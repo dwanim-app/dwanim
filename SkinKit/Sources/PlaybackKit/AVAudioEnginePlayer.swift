@@ -161,6 +161,30 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         if !playerNode.isPlaying {
             scheduleSegmentIfNeeded()
         }
+
+        // A PAUSED seek to/past the last frame parks with the seek base at the
+        // duration and NOTHING scheduled (`scheduleSegment`'s `remaining > 0`
+        // guard), so playing the node here would run an EMPTY queue: `isPlaying`
+        // would read true, the position would pin at the duration, and no
+        // completion would EVER fire — a permanent silent "playing" state with
+        // no auto-advance/repeat and no recovery short of another manual
+        // transport press. Treat this play() as an immediate NATURAL FINISH
+        // instead, through the same async, generation-gated end path the
+        // while-playing seek-to-end uses, so repeat/advance semantics apply.
+        let baseFrame = PlaybackMath.frame(forTime: seekBaseTime, sampleRate: sampleRate)
+        if file != nil, baseFrame >= totalFrames, !hasPendingSegment {
+            reachedEnd = true
+            wantsToPlay = false
+            let token = generation
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, token == self.generation else { return }
+                    self.onPlaybackFinished?()
+                }
+            }
+            return
+        }
+
         playerNode.play()
     }
 
@@ -211,7 +235,9 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         // Treat it as an immediate NATURAL FINISH instead, through the same
         // async, generation-gated end path a real drain uses, so repeat/advance
         // semantics apply. (A PAUSED seek-to-end just parks at the end — the
-        // finish fires only when the seek happened while playing.)
+        // finish fires only when the seek happened while playing; a subsequent
+        // play() over the parked-at-end state synthesizes the finish itself,
+        // see the matching branch in `play()`.)
         let startFrame = PlaybackMath.frame(forTime: clamped, sampleRate: sampleRate)
         if wasPlaying, startFrame >= totalFrames {
             reachedEnd = true

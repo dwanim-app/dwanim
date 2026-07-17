@@ -164,12 +164,19 @@ public final class PlayerCore {
     // itself moves the selection (to the first surviving row after the removal
     // point) and stops playback, because the followed track is gone.
 
-    /// Append `tracks` to the end of the playlist. The selection is untouched
-    /// (`nil` stays `nil` — adding never auto-selects or auto-plays), playback
-    /// keeps running, and appending nothing is a no-op.
+    /// Append `tracks` to the end of the playlist. An existing selection is
+    /// untouched, playback keeps running, and appending nothing is a no-op.
+    /// Appending to an EMPTY list (no selection) selects the first new row —
+    /// SELECT ONLY, never auto-play: without a selection, `play()`/`next()`/
+    /// `previous()` (which guard on `currentIndex`) would all be dead over a
+    /// visibly non-empty list. The engine/`loadedIndex` are untouched — a
+    /// later `play()` loads the track through the normal path.
     public func append(_ tracks: [Track]) {
         guard !tracks.isEmpty else { return }
         playlist.append(contentsOf: tracks)
+        if currentIndex == nil {
+            currentIndex = 0
+        }
     }
 
     /// Remove the rows at `indices` (out-of-range members are ignored).
