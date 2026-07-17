@@ -308,10 +308,12 @@ public enum ControlHitTest {
     // derived from the SAME single-source-of-truth tables — `MainWindowLayout`'s
     // `volume.bmp`/`level27` static element (the draw origin) plus the `level27`
     // sprite size from `SpriteCoordinates` — so a layout/sprite tune follows
-    // automatically. The 28 stacked frames (`level0`..`level27`) bake the knob into
-    // each frame, so there is no separate thumb sprite: the value is reflected by
-    // SWAPPING which level frame is drawn (`volumeLevelFrame(forVolume:)`), and a
-    // press/drag maps the cursor x to a `0...1` volume (`volumeFraction`).
+    // automatically. The 28 stacked frames (`level0`..`level27`) are the COLOURED
+    // TRACK (green->red by level); the DRAGGABLE THUMB is a separate 14x11 sprite
+    // (`thumb`/`thumbPressed`) overlaid on top at the level-derived x. The value is
+    // reflected BOTH by swapping the level frame (`volumeLevelFrame(forVolume:)`)
+    // AND by the thumb's position (`volumeThumbOrigin(forVolume:)`); a press/drag
+    // maps the cursor x to a `0...1` volume (`volumeFraction`).
 
     /// Number of volume level frames (`level0`..`level(count-1)`). The 28-frame
     /// classic volume sheet.
@@ -349,6 +351,15 @@ public enum ControlHitTest {
     /// frame to this one so the baked knob reflects the live volume.
     public static func volumeLevelFrame(forVolume volume: Double) -> String {
         "level\(levelIndex(forFraction: volume, count: volumeLevelCount))"
+    }
+
+    /// The thumb sprite's draw origin (top-left, skin space) for a `0...1` volume,
+    /// the inverse of `volumeFraction`: the 14px-wide thumb travels `width - 14`
+    /// across the track (so it seats flush at both ends, never spilling past), and
+    /// is centred vertically in the track. `nil` when the region is absent; a
+    /// non-finite volume is treated as `0` (silent, thumb hard-left).
+    public static func volumeThumbOrigin(forVolume volume: Double) -> (x: Int, y: Int)? {
+        sliderThumbOrigin(rect: volumeRect(), fraction: volume)
     }
 
     // MARK: - Balance slider (public)
@@ -398,6 +409,15 @@ public enum ControlHitTest {
         return "level\(levelIndex(forFraction: fraction, count: balanceLevelCount))"
     }
 
+    /// The thumb sprite's draw origin for a `-1...1` pan, inverse of
+    /// `balanceFraction`: the pan maps to a `0...1` track fraction (`(pan+1)/2`) and
+    /// the 14px thumb travels `width - 14` (so centred pan seats the thumb mid-track,
+    /// the ends seat it flush). `nil` when absent; a non-finite pan is centred.
+    public static func balanceThumbOrigin(forBalance pan: Double) -> (x: Int, y: Int)? {
+        let safePan = pan.isFinite ? min(max(pan, -1), 1) : 0
+        return sliderThumbOrigin(rect: balanceRect(), fraction: (safePan + 1) / 2)
+    }
+
     // MARK: - Slider helpers (private, shared by volume + balance)
 
     /// A slider's track rect from its static layout element (draw origin) + the
@@ -440,6 +460,26 @@ public enum ControlHitTest {
         let offset = Double(skinX - rect.x)
         let fraction = offset / Double(travel)
         return min(max(fraction, 0), 1)
+    }
+
+    /// The shared slider THUMB (`thumb`/`thumbPressed`) size, in skin pixels — the
+    /// classic 14x11 knob. The thumb travels `trackWidth - sliderThumbWidth` so it
+    /// seats flush at both track ends; it is centred vertically in the track.
+    public static let sliderThumbWidth = 14
+    public static let sliderThumbHeight = 11
+
+    /// The thumb draw origin (top-left) for a `0...1` `fraction` over a slider rect:
+    /// left edge at `x + round(fraction * (width - thumbWidth))`, y centred. `nil`
+    /// when the rect is absent; a non-finite fraction is treated as `0`.
+    private static func sliderThumbOrigin(
+        rect: (x: Int, y: Int, width: Int, height: Int)?, fraction: Double
+    ) -> (x: Int, y: Int)? {
+        guard let rect else { return nil }
+        let travel = max(0, rect.width - sliderThumbWidth)
+        let safe = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        let x = rect.x + Int((safe * Double(travel)).rounded())
+        let y = rect.y + max(0, (rect.height - sliderThumbHeight) / 2)
+        return (x: x, y: y)
     }
 
     /// The level-frame INDEX for a `0...1` fraction over `count` frames:
