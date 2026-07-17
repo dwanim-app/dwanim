@@ -72,6 +72,38 @@ public enum MainWindowLayout {
     // provisional — tune at render
     public static let khzDisplayDigits = 2
 
+    // MARK: - Clutter / window-button origins (HIT-ONLY, not composited)
+    //
+    // The EQ / PL window-toggle buttons, the eject button, and the title-bar
+    // minimize button are drawn as part of the baked `main.bmp` background art (the
+    // classic format bakes these button graphics into the window face), so they are
+    // NOT in `elements` — the static composer must NOT overlay a separate sprite
+    // for them (doing so would change the composited output). They live here as
+    // standalone HIT origins: `ControlHitTest` reads each origin + the matching
+    // `SpriteCoordinates` sprite SIZE to derive a click rect, and the interactive
+    // controller overlays a PRESSED / ON sprite at the origin only while the button
+    // is held / lit. Clean-room from the public title-bar / transport layout.
+    //
+    // Positions (top-left, window pixels) per the public classic layout:
+    //   * EQ / PL toggles: the clutter at the right of the slider row. The EQ
+    //     toggle sits at (225, 58); the PL toggle immediately right at (248, 58)
+    //     (23px wide each, 12px tall — see the titlebar.bmp sprites). These are
+    //     placed just RIGHT of the balance slider's right edge so their hit rects do
+    //     NOT overlap the balance scrub region (the balance frame is 47px wide,
+    //     ending at x=224, so EQ starts at 225). PL's right edge (248+23=271) stays
+    //     inside the 275px window.
+    //   * eject: bottom transport row, right of the five transport buttons, at
+    //     (136, 89) (22x16) — clear of the shuffle toggle (x>=164).
+    //   * minimize: the title-bar window button, upper-right at (244, 3) (9x9). The
+    //     close button sits to its right (handled by the OS chrome / a later wire);
+    //     minimize is the one we hit-test in-window so the borderless region skin
+    //     can be miniaturized.
+    // provisional — tune at render.
+    public static let eqButtonOrigin = (x: 225, y: 58)
+    public static let plButtonOrigin = (x: 248, y: 58)
+    public static let ejectOrigin = (x: 136, y: 89)
+    public static let minimizeOrigin = (x: 244, y: 3)
+
     /// The classic main-window visualization (spectrum/oscilloscope) area: the
     /// rectangular region the player draws the live spectrum into, just below the
     /// title bar and to the left of the title display. `(x, y)` is the top-left

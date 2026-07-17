@@ -56,6 +56,10 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
     private var processingFormat: AVAudioFormat?
     private var totalFrames: AVAudioFramePosition = 0
     private var sampleRate: Double = 0
+    /// The loaded file's channel count (1 = mono, 2 = stereo, …), captured
+    /// synchronously from the processing format on `load`. `0` before any load.
+    /// Surfaced via `TrackFormatProviding` for the mono/stereo indicator.
+    private var loadedChannelCount: Int = 0
     /// The loaded file's bitrate in kbps. Deferred: always `0` for now.
     /// Surfaced via `TrackFormatProviding` for the kbps number box. The accurate
     /// compressed-audio bitrate needs the async `AVAsset.load(.estimatedDataRate)`
@@ -119,6 +123,10 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         processingFormat = format
         totalFrames = loaded.length
         sampleRate = format.sampleRate
+        // Channel count is exposed by the processing format synchronously, so
+        // (unlike kbps) it is accurate immediately — the mono/stereo indicator
+        // reads it right after load.
+        loadedChannelCount = Int(format.channelCount)
         // Bitrate stays 0 (deferred to M5): the accurate value needs the async
         // `AVAsset.load(.estimatedDataRate)` API. `sampleRate` above is accurate
         // and synchronous, so kHz is reported now and kbps reads blank.
@@ -236,6 +244,22 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
     public var volume: Float {
         get { engine.mainMixerNode.outputVolume }
         set { engine.mainMixerNode.outputVolume = min(max(newValue, 0), 1) }
+    }
+
+    // MARK: - Pan / balance
+
+    /// Stereo balance via the player node's built-in `pan` (-1 left … +1 right).
+    /// Clamped on the way in (a non-finite value from `PlayerCore.setBalance` is
+    /// already filtered out there, but the clamp keeps a stray value in range).
+    ///
+    /// Applied on `playerNode` (the source) rather than the mixer so it is
+    /// independent of the EQ/tap chain and survives a `reconnect(using:)` — the
+    /// node identity is stable across track-change re-wires, so the pan persists
+    /// (and `PlayerCore.playCurrent` re-applies it on each load as a belt-and-
+    /// suspenders against any node reset).
+    public var pan: Float {
+        get { playerNode.pan }
+        set { playerNode.pan = min(max(newValue, -1), 1) }
     }
 
     // MARK: - Scheduling
@@ -403,6 +427,12 @@ extension AVAudioEnginePlayer: TrackFormatProviding {
         // Deferred to M5 (async asset loading): always 0 for now. See
         // `loadedBitrateKbps`.
         loadedBitrateKbps
+    }
+
+    public var channelCount: Int {
+        // Captured synchronously in `load` from the processing format; 0 before
+        // any load.
+        loadedChannelCount
     }
 }
 

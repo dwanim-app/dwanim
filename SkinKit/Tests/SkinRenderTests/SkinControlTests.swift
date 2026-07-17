@@ -22,7 +22,13 @@ final class SkinControlTests: XCTestCase {
         .stop:          ("cbuttons.bmp", "stop"),
         .next:          ("cbuttons.bmp", "next"),
         .toggleShuffle: ("shufrep.bmp", "shuffleOff"),
-        .toggleRepeat:  ("shufrep.bmp", "repeatOff")
+        .toggleRepeat:  ("shufrep.bmp", "repeatOff"),
+        // Host-action buttons: EQ / PL default to their OFF art; eject / minimize
+        // have a single released state.
+        .eqButton:      ("titlebar.bmp", "eqButtonOff"),
+        .plButton:      ("titlebar.bmp", "plButtonOff"),
+        .eject:         ("cbuttons.bmp", "eject"),
+        .minimize:      ("titlebar.bmp", "minimize")
     ]
 
     func testReleasedSpriteNamesMatchExpected() {
@@ -139,9 +145,10 @@ final class SkinControlTests: XCTestCase {
     }
 
     /// Every on/off, released/pressed toggle name must resolve to a real sprite —
-    /// otherwise the on-state overlay would silently draw nothing.
+    /// otherwise the on-state overlay would silently draw nothing. Covers the
+    /// shuffle/repeat AND the EQ/PL on-state toggles.
     func testEveryToggleStateSpriteExists() {
-        for control in [SkinControl.toggleShuffle, .toggleRepeat] {
+        for control in [SkinControl.toggleShuffle, .toggleRepeat, .eqButton, .plButton] {
             for active in [false, true] {
                 for pressed in [false, true] {
                     let key = control.spriteName(pressed: pressed, active: active)
@@ -155,5 +162,38 @@ final class SkinControlTests: XCTestCase {
                 }
             }
         }
+    }
+
+    // MARK: - Control kind (transport vs host-action)
+
+    /// Each control reports the right kind: the five transport buttons + two
+    /// toggles are `.transport`; the EQ / PL / eject / minimize buttons are
+    /// `.hostAction`. This is what the controller uses to decide whether a click
+    /// drives `PlayerControl.apply` or an injected host callback.
+    func testControlKindClassification() {
+        let transport: Set<SkinControl> = [.previous, .play, .pause, .stop, .next, .toggleShuffle, .toggleRepeat]
+        let hostAction: Set<SkinControl> = [.eqButton, .plButton, .eject, .minimize]
+        // The two sets partition allCases (no control is unclassified or in both).
+        XCTAssertEqual(transport.union(hostAction), Set(SkinControl.allCases))
+        XCTAssertTrue(transport.isDisjoint(with: hostAction))
+        for control in transport {
+            XCTAssertEqual(control.kind, .transport, "\(control) should be transport")
+        }
+        for control in hostAction {
+            XCTAssertEqual(control.kind, .hostAction, "\(control) should be hostAction")
+        }
+    }
+
+    // MARK: - EQ / PL on-state art (spriteName(pressed:active:))
+
+    /// The EQ / PL buttons select their `*On` / `*OnPressed` art when active (their
+    /// window is open) and `*Off` / `*OffPressed` otherwise — the same on/off
+    /// pattern as shuffle/repeat, so the button lights while its window is open.
+    func testEQPLActiveSelectsOnOffArt() {
+        XCTAssertEqual(SkinControl.eqButton.spriteName(pressed: false, active: true).name, "eqButtonOn")
+        XCTAssertEqual(SkinControl.eqButton.spriteName(pressed: true, active: true).name, "eqButtonOnPressed")
+        XCTAssertEqual(SkinControl.eqButton.spriteName(pressed: false, active: false).name, "eqButtonOff")
+        XCTAssertEqual(SkinControl.plButton.spriteName(pressed: false, active: true).name, "plButtonOn")
+        XCTAssertEqual(SkinControl.plButton.spriteName(pressed: true, active: false).name, "plButtonOffPressed")
     }
 }

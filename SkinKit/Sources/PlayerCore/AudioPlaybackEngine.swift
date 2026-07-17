@@ -30,6 +30,12 @@ public protocol AudioPlaybackEngine: AnyObject {
     var isPlaying: Bool { get }
     /// Output volume in the range `0...1`.
     var volume: Float { get set }
+    /// Stereo balance / pan in the range `-1...1`: `-1` is hard left, `0` is
+    /// centered (the default), `+1` is hard right. Platform-neutral (`Float`)
+    /// like `volume`; `PlayerCore.setBalance` is the clamping, finite-guarded
+    /// path that writes through here, and the concrete engine applies it to its
+    /// output node's pan.
+    var pan: Float { get set }
 
     /// Invoked by the engine when the current track plays to its natural end.
     ///

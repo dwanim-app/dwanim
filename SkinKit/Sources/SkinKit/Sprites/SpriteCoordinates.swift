@@ -249,11 +249,17 @@ public enum SpriteCoordinates {
         SpriteRect(name: "background", x: 0, y: 0, width: 275, height: 116)
     ]
 
-    // MARK: - cbuttons.bmp (transport buttons)
+    // MARK: - cbuttons.bmp (transport buttons + eject)
     //
     // Five transport buttons, each 23x18, in two rows: the top row holds the
     // normal (released) state and the bottom row the pressed state. Play and
     // pause share the same column footprint in the format; both are modelled.
+    //
+    // EJECT: the small open-file button sits to the RIGHT of the five transport
+    // buttons in the same sheet — a 22x16 button (clean-room from the public
+    // cbuttons.bmp layout), normal at x=114 and pressed just below at y=16. The
+    // five transport buttons occupy x 0..114 (5 * 23 = 115), so eject at x=114 sits
+    // immediately past them and stays inside the canonical 136-wide cbuttons.bmp.
 
     private static let controlButtons: [SpriteRect] = [
         // Released states (top row).
@@ -267,13 +273,28 @@ public enum SpriteCoordinates {
         SpriteRect(name: "playPressed",     x: 23, y: 18, width: 23, height: 18),
         SpriteRect(name: "pausePressed",    x: 46, y: 18, width: 23, height: 18),
         SpriteRect(name: "stopPressed",     x: 69, y: 18, width: 23, height: 18),
-        SpriteRect(name: "nextPressed",     x: 92, y: 18, width: 23, height: 18)
+        SpriteRect(name: "nextPressed",     x: 92, y: 18, width: 23, height: 18),
+        // Eject (open-file): normal + pressed, right of the transport row.
+        SpriteRect(name: "eject",        x: 114, y: 0,  width: 22, height: 16),
+        SpriteRect(name: "ejectPressed", x: 114, y: 16, width: 22, height: 16)
     ]
 
     // MARK: - titlebar.bmp (title bar + window buttons)
     //
-    // Holds the active/inactive title bars and the small window-chrome buttons
-    // (close, minimize, shade/unshade) in their normal and pressed states.
+    // Holds the active/inactive title bars, the small window-chrome buttons
+    // (close, minimize, shade/unshade) in their normal and pressed states, and the
+    // EQ / PL (playlist) window-toggle buttons (each off + on + their pressed
+    // variants).
+    //
+    // EQ / PL TOGGLE PACKING (clean-room from the public title-bar layout): the EQ
+    // and PL toggles live in the title-bar clutter, RIGHT of the title display.
+    // Each is ~23x12 with an off, on, off-pressed, and on-pressed state. The
+    // canonical title-bar sheet packs the title bars in the top rows (y 0..29) and
+    // the clutter/toggle art in the band below; we place the four EQ states and the
+    // four PL states in the y=42 band so they (a) clear the title bars and the
+    // close/min/shade buttons above, and (b) stay inside the real titlebar.bmp,
+    // which is wider/taller than the 275x14 face (it carries these very toggles).
+    // provisional — tune at render.
 
     private static let titlebar: [SpriteRect] = [
         SpriteRect(name: "titleBarActive",   x: 27, y: 0,  width: 275, height: 14),
@@ -283,7 +304,17 @@ public enum SpriteCoordinates {
         SpriteRect(name: "minimize",         x: 9,  y: 0,  width: 9,   height: 9),
         SpriteRect(name: "minimizePressed",  x: 9,  y: 9,  width: 9,   height: 9),
         SpriteRect(name: "shade",            x: 0,  y: 18, width: 9,   height: 9),
-        SpriteRect(name: "shadePressed",     x: 9,  y: 18, width: 9,   height: 9)
+        SpriteRect(name: "shadePressed",     x: 9,  y: 18, width: 9,   height: 9),
+        // EQ toggle: off / on / off-pressed / on-pressed (each 23x12).
+        SpriteRect(name: "eqButtonOff",         x: 0,  y: 42, width: 23, height: 12),
+        SpriteRect(name: "eqButtonOn",          x: 0,  y: 54, width: 23, height: 12),
+        SpriteRect(name: "eqButtonOffPressed",  x: 46, y: 42, width: 23, height: 12),
+        SpriteRect(name: "eqButtonOnPressed",   x: 46, y: 54, width: 23, height: 12),
+        // PL (playlist) toggle: off / on / off-pressed / on-pressed (each 23x12).
+        SpriteRect(name: "plButtonOff",         x: 23, y: 42, width: 23, height: 12),
+        SpriteRect(name: "plButtonOn",          x: 23, y: 54, width: 23, height: 12),
+        SpriteRect(name: "plButtonOffPressed",  x: 69, y: 42, width: 23, height: 12),
+        SpriteRect(name: "plButtonOnPressed",   x: 69, y: 54, width: 23, height: 12)
     ]
 
     // MARK: - shufrep.bmp (shuffle + repeat toggles)

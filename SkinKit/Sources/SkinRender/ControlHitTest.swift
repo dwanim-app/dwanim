@@ -130,17 +130,24 @@ public enum ControlHitTest {
 
     // MARK: - Hit rect (public, for tests/debug)
 
-    /// The hit rect for a control: its `MainWindowLayout` draw position plus the
-    /// matching sprite's size from `SpriteCoordinates`. Returns `nil` if either
-    /// the layout element or the sprite is absent (so the rect cannot be derived).
+    /// The hit rect for a control: its draw origin plus the matching sprite's size
+    /// from `SpriteCoordinates`. Returns `nil` if either the origin or the sprite is
+    /// absent (so the rect cannot be derived).
+    ///
+    /// ORIGIN SOURCE: TRANSPORT controls (and the two toggles) draw a composited
+    /// sprite, so their origin is read from `MainWindowLayout.elements` (the static
+    /// composite table). HOST-ACTION controls (EQ / PL / eject / minimize) are baked
+    /// into the `main.bmp` background art and are NOT composited as separate
+    /// sprites, so they have NO `elements` entry — their origin comes from the
+    /// standalone hit-only origins on `MainWindowLayout` (`eqButtonOrigin`, …). Both
+    /// flavors take the sprite SIZE from `SpriteCoordinates`, so the rect still
+    /// follows a sprite tune in one place.
     public static func hitRect(
         for control: SkinControl
     ) -> (x: Int, y: Int, width: Int, height: Int)? {
         let key = layoutKey(for: control)
 
-        guard let element = MainWindowLayout.elements.first(where: {
-            $0.sheet == key.sheet && $0.sprite == key.sprite
-        }) else {
+        guard let origin = origin(for: control, key: key) else {
             return nil
         }
 
@@ -150,7 +157,35 @@ public enum ControlHitTest {
             return nil
         }
 
-        return (x: element.x, y: element.y, width: sprite.width, height: sprite.height)
+        return (x: origin.x, y: origin.y, width: sprite.width, height: sprite.height)
+    }
+
+    /// The draw origin for a control. Transport/toggle controls read their origin
+    /// from `MainWindowLayout.elements` (they are composited); host-action controls
+    /// read it from the standalone hit-only origins (they are baked into the
+    /// background, not composited). `nil` when a transport control has no `elements`
+    /// entry (a sparse layout).
+    private static func origin(
+        for control: SkinControl,
+        key: (sheet: String, sprite: String)
+    ) -> (x: Int, y: Int)? {
+        switch control.kind {
+        case .transport:
+            guard let element = MainWindowLayout.elements.first(where: {
+                $0.sheet == key.sheet && $0.sprite == key.sprite
+            }) else {
+                return nil
+            }
+            return (x: element.x, y: element.y)
+        case .hostAction:
+            switch control {
+            case .eqButton:  return MainWindowLayout.eqButtonOrigin
+            case .plButton:  return MainWindowLayout.plButtonOrigin
+            case .eject:     return MainWindowLayout.ejectOrigin
+            case .minimize:  return MainWindowLayout.minimizeOrigin
+            default:         return nil // unreachable: all host actions handled above
+            }
+        }
     }
 
     // MARK: - Position / seek bar (public)
@@ -231,5 +266,156 @@ public enum ControlHitTest {
         let safeFraction = fraction.isFinite ? min(max(fraction, 0), 1) : 0
         let x = rect.x + Int((safeFraction * Double(travel)).rounded())
         return (x: x, y: rect.y)
+    }
+
+    // MARK: - Volume slider (public)
+    //
+    // The volume slider, like the posbar, is a SCRUBBABLE REGION, not a button:
+    // it is NOT a `SkinControl` case and not in `control(atX:y:)`. Its geometry is
+    // derived from the SAME single-source-of-truth tables — `MainWindowLayout`'s
+    // `volume.bmp`/`level27` static element (the draw origin) plus the `level27`
+    // sprite size from `SpriteCoordinates` — so a layout/sprite tune follows
+    // automatically. The 28 stacked frames (`level0`..`level27`) bake the knob into
+    // each frame, so there is no separate thumb sprite: the value is reflected by
+    // SWAPPING which level frame is drawn (`volumeLevelFrame(forVolume:)`), and a
+    // press/drag maps the cursor x to a `0...1` volume (`volumeFraction`).
+
+    /// Number of volume level frames (`level0`..`level(count-1)`). The 28-frame
+    /// classic volume sheet.
+    public static let volumeLevelCount = 28
+
+    /// The volume slider's track rect (skin space, top-left origin, unscaled),
+    /// derived from the `volume.bmp`/`level27` static layout element + that
+    /// sprite's size. `nil` when either the element or the sprite is absent.
+    /// `level27` is the frame `MainWindowLayout` pins as the static default, so it
+    /// is the canonical footprint (all 28 frames share the same 68x15 box).
+    public static func volumeRect() -> (x: Int, y: Int, width: Int, height: Int)? {
+        sliderRect(sheet: "volume.bmp", frame: "level27")
+    }
+
+    /// Whether a skin-space point lands on the volume slider region. `false` when
+    /// the region cannot be derived. Half-open, like the posbar.
+    public static func hitsVolume(skinX: Int, skinY: Int) -> Bool {
+        hits(rect: volumeRect(), skinX: skinX, skinY: skinY)
+    }
+
+    /// Map a skin-space x (a press/drag on the volume slider) to a volume in
+    /// `0...1`: the left edge of the track is `0` (silent) and the right edge is
+    /// `1` (full). Clamps to the endpoints so a drag past either edge maps to
+    /// `0` / `1`. `nil` when the region cannot be derived or has non-positive
+    /// usable travel. The fraction is intended to flow into the finite-guarded
+    /// `PlayerCore.setVolume`; this stays a pure integer/Double mapping.
+    public static func volumeFraction(skinX: Int) -> Double? {
+        sliderFraction(rect: volumeRect(), skinX: skinX)
+    }
+
+    /// The level frame name (`level0`..`level27`) to draw for a `0...1` volume:
+    /// `round(volume * (count - 1))`, clamped, so `0` -> `level0`, `1` -> `level27`,
+    /// `0.5` -> the middle frame. A non-finite volume is treated as `0`. This is the
+    /// render-side inverse of `volumeFraction` — the controller swaps the composited
+    /// frame to this one so the baked knob reflects the live volume.
+    public static func volumeLevelFrame(forVolume volume: Double) -> String {
+        "level\(levelIndex(forFraction: volume, count: volumeLevelCount))"
+    }
+
+    // MARK: - Balance slider (public)
+    //
+    // The balance slider mirrors the volume slider's baked-frame model, but its
+    // value is a stereo PAN in `-1...1` centered at `0`, not a `0...1` magnitude.
+    // 28 frames map across the range with the CENTER frame (`level13`/`level14`)
+    // representing balanced; the left edge is full-left (`-1`), the right edge
+    // full-right (`+1`). Geometry derives from the `balance.bmp`/`level13` static
+    // element + the `level13` sprite size (47 wide, 15 tall — narrower than volume).
+
+    /// Number of balance level frames. Same 28-frame shape as volume.
+    public static let balanceLevelCount = 28
+
+    /// The balance slider's track rect, derived from the `balance.bmp`/`level13`
+    /// static layout element + that sprite's size. `level13` is the centered frame
+    /// `MainWindowLayout` pins as the static default. `nil` when absent.
+    public static func balanceRect() -> (x: Int, y: Int, width: Int, height: Int)? {
+        sliderRect(sheet: "balance.bmp", frame: "level13")
+    }
+
+    /// Whether a skin-space point lands on the balance slider region. Half-open.
+    public static func hitsBalance(skinX: Int, skinY: Int) -> Bool {
+        hits(rect: balanceRect(), skinX: skinX, skinY: skinY)
+    }
+
+    /// Map a skin-space x (a press/drag on the balance slider) to a pan in
+    /// `-1...1`: the left edge is `-1` (hard left), the CENTER is `0` (balanced),
+    /// the right edge is `+1` (hard right). Computed as `2 * fraction - 1` over the
+    /// `0...1` track fraction, clamped. `nil` when the region cannot be derived.
+    /// Intended to flow into the finite-guarded `PlayerCore.setBalance`.
+    public static func balanceFraction(skinX: Int) -> Double? {
+        guard let fraction = sliderFraction(rect: balanceRect(), skinX: skinX) else {
+            return nil
+        }
+        return min(max(2 * fraction - 1, -1), 1)
+    }
+
+    /// The level frame name (`level0`..`level27`) to draw for a `-1...1` pan: the
+    /// pan is mapped back to a `0...1` fraction (`(pan + 1) / 2`) and then to a
+    /// frame index, so `0` (centered) -> the middle frame, `-1` -> `level0`, `+1` ->
+    /// `level27`. A non-finite pan is treated as centered (`0`). Render-side inverse
+    /// of `balanceFraction`.
+    public static func balanceLevelFrame(forBalance pan: Double) -> String {
+        let safePan = pan.isFinite ? min(max(pan, -1), 1) : 0
+        let fraction = (safePan + 1) / 2
+        return "level\(levelIndex(forFraction: fraction, count: balanceLevelCount))"
+    }
+
+    // MARK: - Slider helpers (private, shared by volume + balance)
+
+    /// A slider's track rect from its static layout element (draw origin) + the
+    /// matching sprite size. `nil` when either is absent.
+    private static func sliderRect(
+        sheet: String, frame: String
+    ) -> (x: Int, y: Int, width: Int, height: Int)? {
+        guard let element = MainWindowLayout.elements.first(where: {
+            $0.sheet == sheet && $0.sprite == frame
+        }) else {
+            return nil
+        }
+        guard let sprite = SpriteCoordinates.mainWindow[sheet]?.first(where: {
+            $0.name == frame
+        }) else {
+            return nil
+        }
+        return (x: element.x, y: element.y, width: sprite.width, height: sprite.height)
+    }
+
+    /// Half-open containment against an optional rect.
+    private static func hits(
+        rect: (x: Int, y: Int, width: Int, height: Int)?, skinX: Int, skinY: Int
+    ) -> Bool {
+        guard let rect else { return false }
+        return skinX >= rect.x && skinX < rect.x + rect.width
+            && skinY >= rect.y && skinY < rect.y + rect.height
+    }
+
+    /// Map a skin-space x to a `0...1` fraction across a slider rect's width. The
+    /// left edge is `0`, the right edge is `1`; the usable travel is `width - 1` so
+    /// the last in-bounds column maps to `1`. Clamps to the endpoints. `nil` when
+    /// the rect is absent or its travel is non-positive.
+    private static func sliderFraction(
+        rect: (x: Int, y: Int, width: Int, height: Int)?, skinX: Int
+    ) -> Double? {
+        guard let rect else { return nil }
+        let travel = rect.width - 1
+        guard travel > 0 else { return nil }
+        let offset = Double(skinX - rect.x)
+        let fraction = offset / Double(travel)
+        return min(max(fraction, 0), 1)
+    }
+
+    /// The level-frame INDEX for a `0...1` fraction over `count` frames:
+    /// `round(fraction * (count - 1))`, clamped to `0...(count-1)`. A non-finite
+    /// fraction is treated as `0`. Shared by volume/balance frame selection.
+    private static func levelIndex(forFraction fraction: Double, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        let safe = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        let index = Int((safe * Double(count - 1)).rounded())
+        return min(max(index, 0), count - 1)
     }
 }

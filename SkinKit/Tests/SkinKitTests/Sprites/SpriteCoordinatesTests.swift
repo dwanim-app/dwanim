@@ -61,21 +61,28 @@ final class SpriteCoordinatesTests: XCTestCase {
         let cbuttons = try! XCTUnwrap(table["cbuttons.bmp"])
         let names = Set(cbuttons.map(\.name))
 
-        let expected: Set<String> = [
+        // The five transport buttons (released + pressed) plus the eject button
+        // (released + pressed) share the cbuttons.bmp sheet.
+        let transportNames: Set<String> = [
             "previous", "previousPressed",
             "play", "playPressed",
             "pause", "pausePressed",
             "stop", "stopPressed",
             "next", "nextPressed"
         ]
-        XCTAssertEqual(names, expected)
-        XCTAssertEqual(cbuttons.count, 10)
+        let ejectNames: Set<String> = ["eject", "ejectPressed"]
+        XCTAssertEqual(names, transportNames.union(ejectNames))
+        XCTAssertEqual(cbuttons.count, 12)
 
-        // The five main transport buttons share one footprint; the eject button
-        // is a different size and is intentionally not part of this set.
-        for rect in cbuttons {
+        // The five main transport buttons share one 23x18 footprint.
+        for rect in cbuttons where transportNames.contains(rect.name) {
             XCTAssertEqual(rect.width, 23, "\(rect.name) width")
             XCTAssertEqual(rect.height, 18, "\(rect.name) height")
+        }
+        // The eject button is a distinct 22x16 footprint, right of the transport row.
+        for rect in cbuttons where ejectNames.contains(rect.name) {
+            XCTAssertEqual(rect.width, 22, "\(rect.name) width")
+            XCTAssertEqual(rect.height, 16, "\(rect.name) height")
         }
     }
 

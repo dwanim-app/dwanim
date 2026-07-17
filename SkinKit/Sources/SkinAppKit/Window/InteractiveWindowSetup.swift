@@ -75,7 +75,13 @@ public func showInteractiveWindow(
     externalFeed: SpectrumFeed? = nil,
     terminatesAppOnClose: Bool = true,
     onClose: (() -> Void)? = nil,
-    onFileDrop: (([URL]) -> Void)? = nil
+    onFileDrop: (([URL]) -> Void)? = nil,
+    onToggleEQ: (() -> Void)? = nil,
+    onTogglePlaylist: (() -> Void)? = nil,
+    onEject: (() -> Void)? = nil,
+    onMinimize: (() -> Void)? = nil,
+    isEQWindowOpen: @escaping () -> Bool = { false },
+    isPlaylistWindowOpen: @escaping () -> Bool = { false }
 ) throws -> InteractiveWindowHandle {
     // Compose an initial frame just to size the window (the controller will keep
     // it updated).
@@ -104,23 +110,39 @@ public func showInteractiveWindow(
         )
     }
 
-    // Build the controller first so it can serve as the window delegate: closing
-    // the window then routes through `windowWillClose` → `tearDown()` (timer + tap
-    // teardown) → clean app termination.
-    let controller = InteractiveController(
-        skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format,
-        externalFeed: externalFeed,
-        terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
-    )
-
     // The shared region-window builder applies the same borderless/masked vs
-    // titled chrome the static window path uses.
+    // titled chrome the static window path uses. Built BEFORE the controller so the
+    // controller's default minimize action can miniaturize THIS window — important
+    // for the BORDERLESS region skin, which has no OS minimize button, so the
+    // in-window minimize sprite is the only way to miniaturize it.
     let window = RegionWindowBuilder.make(
         contentRect: contentRect,
         contentView: contentView,
         maskLayer: maskLayer,
         title: title
     )
+
+    // Default minimize action: miniaturize this window. A host may inject its own
+    // `onMinimize`; otherwise the classic minimize button still works (it
+    // miniaturizes the window directly). Captured weakly so the closure never keeps
+    // the window alive beyond its owner's hold.
+    let minimizeAction: () -> Void = onMinimize ?? { [weak window] in window?.miniaturize(nil) }
+
+    // Build the controller so it can serve as the window delegate: closing the
+    // window then routes through `windowWillClose` → `tearDown()` (timer + tap
+    // teardown) → clean app termination.
+    let controller = InteractiveController(
+        skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format,
+        externalFeed: externalFeed,
+        terminatesAppOnClose: terminatesAppOnClose, onClose: onClose,
+        onToggleEQ: onToggleEQ,
+        onTogglePlaylist: onTogglePlaylist,
+        onEject: onEject,
+        onMinimize: minimizeAction,
+        isEQWindowOpen: isEQWindowOpen,
+        isPlaylistWindowOpen: isPlaylistWindowOpen
+    )
+
     // Both window paths get the delegate: the titled fallback so its close button
     // tears down cleanly, and the borderless region window (no close button) so a
     // programmatic close/terminate is still correct teardown.

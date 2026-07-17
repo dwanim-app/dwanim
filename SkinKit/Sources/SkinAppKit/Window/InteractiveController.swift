@@ -53,6 +53,40 @@ public final class InteractiveController: SkinWindowController {
     /// `EQController.draggingSlider`'s gesture latch.
     private var isSeeking = false
 
+    /// Which slider, if any, a mouse-down latched for a continuous scrub (volume
+    /// or balance). Like `isSeeking`, it is kept across drags so the cursor can
+    /// wander vertically off the slider and still scrub, and cleared on mouse-up.
+    /// `nil` when the gesture did not start on a slider. Volume and balance are
+    /// mutually exclusive (their rects do not overlap), so one latch covers both.
+    private enum DraggingSlider { case volume, balance }
+    private var draggingSlider: DraggingSlider?
+
+    // MARK: Host-action callbacks (injected)
+    //
+    // The EQ / PL / eject / minimize buttons are HOST/window actions, not
+    // `PlayerCore` transport, so the controller routes their clicks to these
+    // injected closures rather than `PlayerControl.apply`. Each defaults to `nil`
+    // (the harness path, where these buttons are inert), and the app supplies them
+    // via `showInteractiveWindow` (toggle the EQ / playlist window, open a file,
+    // miniaturize the window).
+
+    /// Toggle the equalizer window (the EQ button). `nil` -> the button is inert.
+    private let onToggleEQ: (() -> Void)?
+    /// Toggle the playlist window (the PL button). `nil` -> inert.
+    private let onTogglePlaylist: (() -> Void)?
+    /// Open the audio open-file panel (the eject button). `nil` -> inert.
+    private let onEject: (() -> Void)?
+    /// Miniaturize the window (the title-bar minimize button). `nil` -> inert.
+    private let onMinimize: (() -> Void)?
+
+    /// Live "is the EQ window open?" / "is the playlist window open?" queries, so
+    /// the EQ / PL buttons can light their ON sprite while their window is open.
+    /// Default to `{ false }` (the harness path: the buttons never light). The app
+    /// supplies closures reading the presenter's `eqHandle != nil` /
+    /// `playlistHandle != nil`.
+    private let isEQWindowOpen: () -> Bool
+    private let isPlaylistWindowOpen: () -> Bool
+
     /// The shared ~25 Hz redraw cadence + audio-tap wiring (timer + tap install /
     /// remove + the `SpectrumFeed` write). Built in `init` and started/stopped by
     /// `start()` / `tearDown()`.
@@ -128,13 +162,25 @@ public final class InteractiveController: SkinWindowController {
         format: TrackFormatProviding?,
         externalFeed: SpectrumFeed? = nil,
         terminatesAppOnClose: Bool = true,
-        onClose: (() -> Void)? = nil
+        onClose: (() -> Void)? = nil,
+        onToggleEQ: (() -> Void)? = nil,
+        onTogglePlaylist: (() -> Void)? = nil,
+        onEject: (() -> Void)? = nil,
+        onMinimize: (() -> Void)? = nil,
+        isEQWindowOpen: @escaping () -> Bool = { false },
+        isPlaylistWindowOpen: @escaping () -> Bool = { false }
     ) {
         self.skin = skin
         self.core = core
         self.view = view
         self.scale = scale
         self.format = format
+        self.onToggleEQ = onToggleEQ
+        self.onTogglePlaylist = onTogglePlaylist
+        self.onEject = onEject
+        self.onMinimize = onMinimize
+        self.isEQWindowOpen = isEQWindowOpen
+        self.isPlaylistWindowOpen = isPlaylistWindowOpen
         // SHARED mode reads the injected feed; OWNED mode makes its own.
         self.latestSamples = externalFeed ?? SpectrumFeed()
 
@@ -219,43 +265,110 @@ public final class InteractiveController: SkinWindowController {
 
     // MARK: Mouse
 
-    /// A press routes to either a button or the posbar. A button hit applies its
-    /// action via the pure `PlayerControl` and records the pressed control for
-    /// feedback; a press on the posbar track latches a seek drag and seeks to the
-    /// pressed position. Buttons take precedence (a press is a button or the
-    /// posbar, never both — they do not overlap). The view-space point is mapped to
-    /// skin space by the pure `ControlHitTest` (undo scale + y-flip).
+    /// A press routes to a button, a slider, or the posbar. A button hit either
+    /// applies its transport action via the pure `PlayerControl` (transport
+    /// buttons + toggles) or fires its injected host callback (EQ / PL / eject /
+    /// minimize), and records the pressed control for feedback; a press on a slider
+    /// (volume / balance) latches a scrub drag and applies the pressed value; a
+    /// press on the posbar latches a seek drag and seeks. Buttons take precedence
+    /// (the control rects do not overlap the sliders / posbar). The view-space
+    /// point is mapped to skin space by the pure `ControlHitTest` (undo scale +
+    /// y-flip).
     private func handleMouseDown(viewX: Double, viewY: Double, viewHeight: Double) {
         if let control = ControlHitTest.control(
             atViewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
         ) {
-            pressedControl = control
-            PlayerControl.apply(control, to: core)
+            switch control.kind {
+            case .transport:
+                // Held-pressed feedback: the pressed sprite shows until mouse-up.
+                pressedControl = control
+                PlayerControl.apply(control, to: core)
+            case .hostAction:
+                // One-shot host/window action. We do NOT latch a held-pressed state:
+                // a host action may open a MODAL panel (eject) that swallows the
+                // matching mouse-up, which would otherwise leave the button stuck in
+                // its pressed art. The EQ / PL on-state is reflected separately by
+                // `overlayActiveToggles` (window-open), so no pressed latch is needed.
+                pressedControl = nil
+                applyHostAction(control)
+            }
             redraw()
             return
         }
 
-        // Not a button: a press on the posbar track begins a seek drag.
         let point = ControlHitTest.skinPoint(
             viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
         )
+
+        // Not a button: a press on the volume / balance slider begins a scrub.
+        if ControlHitTest.hitsVolume(skinX: point.x, skinY: point.y) {
+            draggingSlider = .volume
+            scrubVolume(toSkinX: point.x)
+            return
+        }
+        if ControlHitTest.hitsBalance(skinX: point.x, skinY: point.y) {
+            draggingSlider = .balance
+            scrubBalance(toSkinX: point.x)
+            return
+        }
+
+        // Else a press on the posbar track begins a seek drag.
         if ControlHitTest.hitsPosbar(skinX: point.x, skinY: point.y) {
             isSeeking = true
             seek(toSkinX: point.x)
         }
     }
 
-    /// A drag only acts while a posbar seek is latched (set on mouse-down): map the
-    /// cursor x to a seek and redraw the thumb. The drag y is intentionally ignored
-    /// so the cursor can wander vertically off the track and still scrub, mirroring
-    /// the EQ slider drag. Transport/toggle buttons are click-only, so a drag that
-    /// did not start on the posbar is a no-op.
+    /// Fire the injected host callback for a host-action control. A `nil` callback
+    /// (the harness path) leaves the button inert. The EQ / PL toggles re-light
+    /// their ON sprite on the next redraw (driven by the window-open queries), so
+    /// no extra state is tracked here.
+    private func applyHostAction(_ control: SkinControl) {
+        switch control {
+        case .eqButton:  onToggleEQ?()
+        case .plButton:  onTogglePlaylist?()
+        case .eject:     onEject?()
+        case .minimize:  onMinimize?()
+        default:         break // transport controls never reach here
+        }
+    }
+
+    /// A drag continues whichever gesture a mouse-down latched: a posbar seek, a
+    /// volume scrub, or a balance scrub. The drag y is intentionally ignored so the
+    /// cursor can wander vertically off the slider/track and still scrub, mirroring
+    /// the EQ slider drag. Buttons are click-only, so a drag that did not latch a
+    /// slider/posbar is a no-op.
     private func handleMouseDragged(viewX: Double, viewY: Double, viewHeight: Double) {
-        guard isSeeking else { return }
         let point = ControlHitTest.skinPoint(
             viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
         )
-        seek(toSkinX: point.x)
+        if isSeeking {
+            seek(toSkinX: point.x)
+        } else if draggingSlider == .volume {
+            scrubVolume(toSkinX: point.x)
+        } else if draggingSlider == .balance {
+            scrubBalance(toSkinX: point.x)
+        }
+    }
+
+    /// Map a skin-space x on the volume slider to a `0...1` volume and push it to
+    /// the core. Routes through the pure `ControlHitTest.volumeFraction` (clamps to
+    /// `0...1`) and `PlayerCore.setVolume` (finite-guarded + clamped), so no
+    /// non-finite value reaches the audio unit. Redraws so the baked-knob frame
+    /// tracks the cursor.
+    private func scrubVolume(toSkinX skinX: Int) {
+        guard let fraction = ControlHitTest.volumeFraction(skinX: skinX) else { return }
+        core.setVolume(Float(fraction))
+        redraw()
+    }
+
+    /// Map a skin-space x on the balance slider to a `-1...1` pan and push it to the
+    /// core via the pure `ControlHitTest.balanceFraction` + `PlayerCore.setBalance`
+    /// (finite-guarded + clamped). Redraws so the baked-knob frame tracks the cursor.
+    private func scrubBalance(toSkinX skinX: Int) {
+        guard let pan = ControlHitTest.balanceFraction(skinX: skinX) else { return }
+        core.setBalance(Float(pan))
+        redraw()
     }
 
     /// Map a skin-space x on the posbar to a seek time and apply it. Routes through
@@ -274,9 +387,10 @@ public final class InteractiveController: SkinWindowController {
     }
 
     private func handleMouseUp() {
-        let wasInteracting = pressedControl != nil || isSeeking
+        let wasInteracting = pressedControl != nil || isSeeking || draggingSlider != nil
         pressedControl = nil
         isSeeking = false
+        draggingSlider = nil
         if wasInteracting { redraw() }
     }
 
@@ -393,6 +507,23 @@ public final class InteractiveController: SkinWindowController {
             palette: skin.visColors
         )
 
+        // Volume / balance frames: the static composer draws ONE default frame
+        // (volume `level27`, balance `level13`). Overlay the frame chosen from the
+        // live `core.volume` / `core.balance` at the same origin so the baked knob
+        // reflects the actual value (the same-size opaque frame fully covers the
+        // default). Drawn before the pressed overlay so a future pressed slider art
+        // could still read on top.
+        overlayVolumeFrame(onto: &composed)
+        overlayBalanceFrame(onto: &composed)
+
+        // Mono / stereo indicator: the static composer lights BOTH indicators
+        // (always-on art). Overlay the correct lit/dim pair from the live track's
+        // channel count so the display reflects the model — mono lit for a 1-channel
+        // file, stereo lit for >= 2 channels. With nothing loaded (channelCount 0)
+        // the static both-lit art is left as-is. Done in the LIVE redraw only, so
+        // the static composer / harness snapshots are unchanged.
+        overlayMonoStereo(onto: &composed)
+
         // Posbar thumb: draw the draggable knob at the live playback position so
         // the bar shows progress and a grabbable handle. Position comes from the
         // pure SeekMath fraction (currentTime/duration, finite/zero-duration safe)
@@ -401,10 +532,11 @@ public final class InteractiveController: SkinWindowController {
         // loaded (duration 0) the fraction is 0, so the thumb seats at the left.
         overlayPosbarThumb(onto: &composed)
 
-        // Toggle on-state: shuffle/repeat are composited in their OFF art by the
-        // static composer; when a toggle is live (shuffle on, or repeat != off)
+        // Toggle / button on-state: shuffle/repeat and the EQ/PL window-toggle
+        // buttons are composited in their OFF art (or baked off into main.bmp); when
+        // one is live (shuffle on, repeat != off, the EQ / playlist window open)
         // overlay its ON sprite so the button visibly lights up. Drawn before the
-        // pressed overlay so a held toggle still reads its pressed art on top.
+        // pressed overlay so a held button still reads its pressed art on top.
         overlayActiveToggles(onto: &composed)
 
         // Pressed-button feedback: while a transport/toggle button is held, draw
@@ -439,13 +571,16 @@ public final class InteractiveController: SkinWindowController {
         SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
     }
 
-    /// Overlay the ON sprite for each toggle that is live (shuffle on, or repeat
-    /// != off) at its hit-rect origin, so an active toggle visibly lights up over
-    /// the static OFF art the composer drew. The released (not pressed) on sprite
-    /// is used here; a press is layered on top by `overlayPressedSprite`. A toggle
-    /// that is off, or whose on sprite is missing, is left as the composed off art.
+    /// Overlay the ON sprite for each toggle/button that is live — shuffle on,
+    /// repeat != off, the EQ window open, or the playlist window open — at its
+    /// hit-rect origin, so an active control visibly lights up over the static OFF
+    /// art (composited for shuffle/repeat, baked into `main.bmp` for EQ/PL). The
+    /// released (not pressed) on sprite is used here; a press is layered on top by
+    /// `overlayPressedSprite`. A control that is off, or whose on sprite is missing,
+    /// is left as the composed/baked off art.
     private func overlayActiveToggles(onto base: inout DecodedBitmap) {
-        for control in [SkinControl.toggleShuffle, .toggleRepeat] where isToggleActive(control) {
+        let toggles: [SkinControl] = [.toggleShuffle, .toggleRepeat, .eqButton, .plButton]
+        for control in toggles where isToggleActive(control) {
             guard let rect = ControlHitTest.hitRect(for: control) else { continue }
             let key = control.spriteName(pressed: false, active: true)
             guard let sprite = skin.sprite(sheet: key.sheet, name: key.name) else { continue }
@@ -456,11 +591,16 @@ public final class InteractiveController: SkinWindowController {
     /// Whether a control's live toggle state is "on": shuffle reflects
     /// `core.isShuffle`; repeat is on for any mode other than `.off` (both `.all`
     /// and `.one` light the button — a distinct repeat-one indicator is a later
-    /// refinement). Transport buttons are never "active" (no on/off state).
+    /// refinement, deferred); the EQ / PL buttons light while their window is open
+    /// (the injected `isEQWindowOpen` / `isPlaylistWindowOpen` queries). The other
+    /// host actions (eject / minimize) and the transport buttons have no on/off
+    /// state, so they are never "active".
     private func isToggleActive(_ control: SkinControl) -> Bool {
         switch control {
         case .toggleShuffle: return core.isShuffle
         case .toggleRepeat:  return core.repeatMode != .off
+        case .eqButton:      return isEQWindowOpen()
+        case .plButton:      return isPlaylistWindowOpen()
         default:             return false
         }
     }
@@ -478,5 +618,73 @@ public final class InteractiveController: SkinWindowController {
         let name = isSeeking ? "thumbPressed" : "thumb"
         guard let sprite = skin.sprite(sheet: "posbar.bmp", name: name) else { return }
         SkinCanvas.overlay(sprite, onto: &base, x: origin.x, y: origin.y)
+    }
+
+    /// Overlay the volume slider frame chosen from the live `core.volume` at the
+    /// slider's draw origin, replacing the static default frame (`level27`). The
+    /// frame name comes from the pure `ControlHitTest.volumeLevelFrame(forVolume:)`
+    /// (`level0`..`level27`); the same-size opaque frame fully covers the default.
+    /// Skipped if the region or the chosen frame sprite is absent (a sparse skin),
+    /// leaving the static frame in place.
+    private func overlayVolumeFrame(onto base: inout DecodedBitmap) {
+        guard let rect = ControlHitTest.volumeRect() else { return }
+        let name = ControlHitTest.volumeLevelFrame(forVolume: Double(core.volume))
+        guard let sprite = skin.sprite(sheet: "volume.bmp", name: name) else { return }
+        SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+    }
+
+    /// Overlay the balance slider frame chosen from the live `core.balance` pan
+    /// (`-1...1`, center = balanced) at the slider's draw origin, replacing the
+    /// static default frame (`level13`). The frame name comes from the pure
+    /// `ControlHitTest.balanceLevelFrame(forBalance:)`. Skipped if the region or the
+    /// chosen frame sprite is absent.
+    private func overlayBalanceFrame(onto base: inout DecodedBitmap) {
+        guard let rect = ControlHitTest.balanceRect() else { return }
+        let name = ControlHitTest.balanceLevelFrame(forBalance: Double(core.balance))
+        guard let sprite = skin.sprite(sheet: "balance.bmp", name: name) else { return }
+        SkinCanvas.overlay(sprite, onto: &base, x: rect.x, y: rect.y)
+    }
+
+    /// Overlay the correct mono / stereo indicator pair from the live track's
+    /// channel count, so the display reflects the model instead of the static
+    /// always-both-lit art:
+    ///   • mono (1 channel)   -> mono lit + stereo dim
+    ///   • stereo (>= 2)      -> stereo lit + mono dim
+    ///   • nothing loaded (0) -> leave the static both-lit art (no overlay)
+    /// Each lit/dim sprite is overlaid at its own static layout origin (read from
+    /// `MainWindowLayout.elements`), so the indicators stay pinned to the same spot
+    /// the composer drew them. A missing sprite for a given state is simply skipped.
+    /// This runs ONLY in the live redraw — the static composer keeps drawing both
+    /// lit, so the harness snapshots are unchanged.
+    private func overlayMonoStereo(onto base: inout DecodedBitmap) {
+        guard let format, core.currentTrack != nil else { return }
+        let channels = format.channelCount
+        guard channels > 0 else { return }
+        let isStereo = channels >= 2
+        overlayMonoStereoSprite(name: isStereo ? "stereoActive" : "stereoInactive", onto: &base)
+        overlayMonoStereoSprite(name: isStereo ? "monoInactive" : "monoActive", onto: &base)
+    }
+
+    /// Overlay one `monoster.bmp` sprite at the layout origin of its sheet/state.
+    /// The origin is read from the matching `MainWindowLayout.elements` entry: the
+    /// lit `monoActive` / `stereoActive` states each have a static element, and the
+    /// dim `monoInactive` / `stereoInactive` states reuse the SAME origin as their
+    /// lit counterpart (the indicator does not move, only its lit/dim art changes).
+    private func overlayMonoStereoSprite(name: String, onto base: inout DecodedBitmap) {
+        // The lit element name a given state draws at: a dim state reuses its lit
+        // counterpart's origin (same on-window slot).
+        let originName: String
+        switch name {
+        case "monoActive", "monoInactive":     originName = "monoActive"
+        case "stereoActive", "stereoInactive": originName = "stereoActive"
+        default:                                originName = name
+        }
+        guard let element = MainWindowLayout.elements.first(where: {
+            $0.sheet == "monoster.bmp" && $0.sprite == originName
+        }) else {
+            return
+        }
+        guard let sprite = skin.sprite(sheet: "monoster.bmp", name: name) else { return }
+        SkinCanvas.overlay(sprite, onto: &base, x: element.x, y: element.y)
     }
 }

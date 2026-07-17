@@ -35,6 +35,7 @@ final class FakePlaybackEngine: AudioPlaybackEngine {
     var duration: TimeInterval = 0
     var isPlaying = false
     var volume: Float = 1.0
+    var pan: Float = 0.0
     var onPlaybackFinished: (@Sendable @MainActor () -> Void)?
 
     // MARK: - Errors
