@@ -81,31 +81,21 @@ struct WindowAccessor: NSViewRepresentable {
         /// the captured window. Guards against re-running on every `updateNSView`.
         private var didForceCompact = false
 
-        /// Report the window to the session, and on the FIRST sighting force the
-        /// window compact (defeat frame restoration) so it opens hugging the panel.
+        /// Report the window to the session, and on the FIRST sighting disable frame
+        /// autosave/restore so a stale large frame can never win again. The window's
+        /// actual SIZE is driven by the scene's pure-SwiftUI content-SIZE report
+        /// (`onContentSizeChange` -> `session.setDefaultContentSize`): a SwiftUI
+        /// `Window` hosted in an `NSHostingView` reports `fittingSize == 0` (measured
+        /// on every layout pass), so AppKit cannot shrink-to-fit on its own — the
+        /// scene measures its intrinsic panel size in SwiftUI and the session applies
+        /// it. This method only stops frame restoration from fighting that.
         func handle(_ window: NSWindow, report: (NSWindow) -> Void) {
             report(window)
             guard !didForceCompact else { return }
             didForceCompact = true
-            forceCompact(window)
-        }
-
-        /// Disable frame autosave/restore and, if the window is larger than its
-        /// content's fitting size, shrink it to fit and re-center. Runs once.
-        private func forceCompact(_ window: NSWindow) {
-            // Stop macOS from restoring / persisting a stale large frame.
+            // Stop macOS from restoring / persisting a stale large frame so the
+            // content-size report path is the single source of truth for the size.
             window.setFrameAutosaveName("")
-
-            guard let contentView = window.contentView else { return }
-            let fitting = contentView.fittingSize
-            // Only shrink — never grow past what the content wants. A zero fitting
-            // size (content not laid out yet) is ignored so we never collapse it.
-            guard fitting.width > 0, fitting.height > 0 else { return }
-            let current = contentView.frame.size
-            if current.width > fitting.width + 1 || current.height > fitting.height + 1 {
-                window.setContentSize(fitting)
-                window.center()
-            }
         }
     }
 }
