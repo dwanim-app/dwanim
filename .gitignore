@@ -44,8 +44,10 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
-# Project working notes — not part of the published repo
-md_files/
+# Project working notes — not part of the published repo, EXCEPT BACKLOG.md
+# (the backlog is tracked so its history lives in git; the rest stay local).
+md_files/*
+!md_files/BACKLOG.md
 
 # Local third-party skin samples for dev/testing only — never committed (PRD §8.3)
 local_skins/
