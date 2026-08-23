@@ -13,6 +13,16 @@
 
 ---
 
+## 產品命名 —— dwanim →「dwanim it」（product backlog,user 2026-07-21）
+
+- [ ] **全面改名 dwanim →「dwanim it」——顯示名 + bundle id + 程式碼識別名,全部改**(2026-07-21 user 拍板)。
+  - **顯示名定案:全小寫「dwanim it」**。
+  - **⚠️ 推翻既有決定**:M5「bundle id `app.dwanim.Dwanim` 永久」**不再成立**——user 決定 bundle id 也改。尚未出貨,現在改可行(= 新 app 身分;portal App ID / App Store Connect 紀錄、憑證/描述檔關聯需重建)。
+  - **① 顯示/品牌名**:`Info.plist` `CFBundleDisplayName`/`CFBundleName` →「dwanim it」;idle 標題(`DefaultPlayerView.titleText` 無曲時的 "Dwanim")、視窗標題、選單列、App Store 上架名 + `SHIPPING.md`「Name: Dwanim」、README/文件/所有 UI 文案。
+  - **② bundle id 定案:`app.dwanim.Dwanim` → `app.dwanim.dwanimit`**(2026-07-21)。連動 `Dwanim.entitlements`、`ExportOptions-AppStore/DeveloperID.plist`、portal App ID、容器路徑 `~/Library/Containers/app.dwanim.dwanimit`(舊容器資料不遷移)。
+  - **③ 程式碼識別名定案:全部 `Dwanim*` 前綴 → `DwanimIt*`**(2026-07-21,PascalCase code-safe 形式,**全前綴一起**):app target/scheme/`Dwanim.xcodeproj` → `DwanimIt*`、模組 `DwanimUI` → `DwanimItUI`、所有 `Dwanim*` 型別(`DwanimApp`/`DwanimPlayerScene`/`DwanimTheme`/`DwanimBackdrop`…)→ `DwanimIt*`、`project.yml`、工具路徑 `~/dwanim-build` → `~/dwanimit-build`、`run.sh`、目錄名。**大範圍機械重命名**。注意:`SkinKit`/`PlayerCore`/`SkinRender`/`SkinAppKit`/`SpectrumKit` 等**非** `Dwanim` 命名的模組**不動**;`Dwennimmen`(mark 名、文化元素)是不同字,**不在**此 rename 範圍。
+  - **實作前唯一待確認**:idle 標題(`DefaultPlayerView.titleText` 無曲時的 "Dwanim"——`DefaultPlayerView` 無 `Dwanim` 前綴故型別名不改,只改字串)要顯示 "dwanim it" 還是保留;icon/emblem 純圖無字,應不受影響。(bundle id 與程式碼名皆已定案,見上。)
+
 ## 預設皮膚清單 加入/移除 UX（2026-07-18，user-reported「預設皮膚無法移除歌曲」→ 已實作,待 GUI 驗收）
 
 - [ ] **(延後,非缺陷)金色選取**:唯一可行路徑是把 App 的 **AccentColor 資產設成金色**,但會全 App 影響其他 accent 控制項 —— 當成獨立的視覺主題任務再評估。
