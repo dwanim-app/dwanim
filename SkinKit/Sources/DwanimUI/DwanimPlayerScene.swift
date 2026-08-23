@@ -54,6 +54,17 @@ public struct DwanimPlayerScene: View {
     /// App-layer "Open Skin…" action; the app wires it to
     /// `session.presentOpenSkinPanel()`.
     private let onOpenSkin: (() -> Void)?
+    /// App-layer "Add Songs…" action: APPEND picked audio files to the queue. The
+    /// app wires it to `session.presentAddFilesPanel()`; the gear menu hides the
+    /// item when it is nil (the headless harness). Forwarded to `DefaultPlayerView`.
+    private let onAddFiles: (() -> Void)?
+    /// App-layer "Add Folder…" action: APPEND a folder's audio files to the queue
+    /// (`session.presentAddFolderPanel()`). Same nil-hides-the-item rule as above.
+    private let onAddFolder: (() -> Void)?
+    /// App-layer hook: RE-PERSIST the live queue after an in-UI edit (e.g. a
+    /// context-menu Remove or the gear "Clear Queue"), wired to
+    /// `session.persistCurrentPlaylist()`. Forwarded down to `PlaylistPanel`.
+    private let onPlaylistEdited: (() -> Void)?
     /// Reports the PANEL's intrinsic content SIZE (in points) whenever it changes
     /// — e.g. when the in-scene EQ or queue expands or collapses. The App layer
     /// wires this to a window content-size resize so the window grows/shrinks to
@@ -74,12 +85,18 @@ public struct DwanimPlayerScene: View {
         model: PlayerViewModel,
         onOpenAudio: (() -> Void)? = nil,
         onOpenSkin: (() -> Void)? = nil,
+        onAddFiles: (() -> Void)? = nil,
+        onAddFolder: (() -> Void)? = nil,
+        onPlaylistEdited: (() -> Void)? = nil,
         onContentSizeChange: ((CGSize) -> Void)? = nil
     ) {
         self.core = core
         self.model = model
         self.onOpenAudio = onOpenAudio
         self.onOpenSkin = onOpenSkin
+        self.onAddFiles = onAddFiles
+        self.onAddFolder = onAddFolder
+        self.onPlaylistEdited = onPlaylistEdited
         self.onContentSizeChange = onContentSizeChange
     }
 
@@ -94,7 +111,10 @@ public struct DwanimPlayerScene: View {
             core: core,
             model: model,
             onOpenAudio: onOpenAudio,
-            onOpenSkin: onOpenSkin
+            onOpenSkin: onOpenSkin,
+            onAddFiles: onAddFiles,
+            onAddFolder: onAddFolder,
+            onPlaylistEdited: onPlaylistEdited
         )
         .fixedSize()
         // Measure the panel's intrinsic size (pure SwiftUI) and report it up so the

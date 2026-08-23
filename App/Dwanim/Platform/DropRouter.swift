@@ -4,12 +4,13 @@ import UniformTypeIdentifiers
 // MARK: - DropRouter
 //
 // The pure, side-effect-free CLASSIFIER for a set of dropped file URLs. It splits
-// the dropped `[URL]` into the two surfaces the app can open — `.wsz` SKINS and
-// AUDIO files — and discards everything else. It performs NO I/O beyond the cheap
-// UTType / extension probes and mints NO bookmarks: the app layer (`AudioSession`)
-// owns the actual open + security-scoped bookmarking, exactly as the open-panel
-// paths do. Keeping classification pure makes it trivially testable and keeps the
-// drop policy in one readable place.
+// the dropped `[URL]` into the three surfaces the app can open — `.wsz` SKINS,
+// `.m3u`/`.m3u8` PLAYLISTS, and AUDIO files — and discards everything else. It
+// performs NO I/O beyond the cheap UTType / extension probes and mints NO
+// bookmarks: the app layer (`AudioSession`) owns the actual open + security-scoped
+// bookmarking (and the playlist parse), exactly as the open-panel paths do.
+// Keeping classification pure makes it trivially testable and keeps the drop
+// policy in one readable place.
 //
 // ## Classification rules (mirrors the open panels)
 //   - SKIN: a `.wsz` filename extension (case-insensitive). A `.wsz` carries no
@@ -17,6 +18,10 @@ import UniformTypeIdentifiers
 //     type — see project.yml), so the extension IS the signal. A `.zip` whose name
 //     ends in `.wsz` is a skin; a plain `.zip` is NOT treated as a skin (we only
 //     adopt the explicit skin extension to avoid swallowing arbitrary archives).
+//   - PLAYLIST: a `.m3u` / `.m3u8` filename extension (case-insensitive). Like
+//     `.wsz` these carry no reliable system UTI, so the extension IS the signal.
+//     The dropped playlist FILE is parsed to its listed tracks by the caller — a
+//     `.m3u` is NOT audio, so it is checked BEFORE the audio probe.
 //   - AUDIO: a URL whose type conforms to one of the audio UTTypes the open panel
 //     accepts (the broad `.audio` umbrella plus the common concrete types), OR
 //     whose extension matches a known audio extension when the type can't be
@@ -24,26 +29,34 @@ import UniformTypeIdentifiers
 //     how the engine opens it).
 //   - Anything else is UNSUPPORTED and ignored gracefully.
 //
-// A drop that MIXES a skin + audio yields both buckets populated; the caller
-// applies the skin AND loads the audio. Multiple audio files become the playlist
-// (their drop ORDER is preserved). Multiple skins: only the FIRST is opened (a
-// single skin is the active face — see `skins.first` at the call site); the rest
-// are ignored.
+// A drop that MIXES a skin + playlist + audio yields every populated bucket; the
+// caller applies the skin AND loads the playlist's tracks + the loose audio.
+// Multiple audio files become the playlist (their drop ORDER is preserved), and
+// playlist files keep their drop order too. Multiple skins: only the FIRST is
+// opened (a single skin is the active face — see `skins.first` at the call site);
+// the rest are ignored.
 enum DropRouter {
 
     /// The split result of classifying a dropped `[URL]`: the skin URLs (usually
-    /// zero or one) and the audio URLs (in drop order), with everything else
-    /// dropped. Empty buckets mean "nothing of that kind was dropped".
+    /// zero or one), the playlist (`.m3u`/`.m3u8`) URLs, and the audio URLs (each
+    /// in drop order), with everything else dropped. Empty buckets mean "nothing of
+    /// that kind was dropped".
     struct Classification: Equatable {
         var skins: [URL]
+        var playlists: [URL]
         var audio: [URL]
 
         /// True when the drop contained nothing the app can open.
-        var isEmpty: Bool { skins.isEmpty && audio.isEmpty }
+        var isEmpty: Bool { skins.isEmpty && audio.isEmpty && playlists.isEmpty }
     }
 
     /// The `.wsz` skin extension (lowercased for a case-insensitive compare).
     private static let skinExtension = "wsz"
+
+    /// The `.m3u` / `.m3u8` playlist extensions (lowercased for a case-insensitive
+    /// compare). Like `.wsz`, a playlist file carries no reliable system UTI, so
+    /// the extension IS the signal.
+    private static let playlistExtensions: Set<String> = ["m3u", "m3u8"]
 
     /// Known audio filename extensions used as the fallback when a URL exposes no
     /// resolvable content type. Mirrors the concrete types the open panel lists.
@@ -62,21 +75,27 @@ enum DropRouter {
         return types
     }()
 
-    /// Classify `urls` into skins + audio, dropping unsupported types. Order is
-    /// preserved within each bucket (so a multi-file audio drop keeps its drop
-    /// order when it becomes the playlist).
+    /// Classify `urls` into skins + playlists + audio, dropping unsupported types.
+    /// Order is preserved within each bucket (so a multi-file audio drop keeps its
+    /// drop order when it becomes the playlist, and playlist files keep theirs).
     static func classify(_ urls: [URL]) -> Classification {
         var skins: [URL] = []
+        var playlists: [URL] = []
         var audio: [URL] = []
         for url in urls {
+            // Check order per URL: skin → playlist → audio. A `.m3u` is not audio,
+            // but classifying playlists BEFORE the audio probe keeps the intent
+            // explicit (independent of the audio type/extension sets).
             if isSkin(url) {
                 skins.append(url)
+            } else if isPlaylist(url) {
+                playlists.append(url)
             } else if isAudio(url) {
                 audio.append(url)
             }
             // else: unsupported — ignored gracefully.
         }
-        return Classification(skins: skins, audio: audio)
+        return Classification(skins: skins, playlists: playlists, audio: audio)
     }
 
     // MARK: Probes
@@ -85,6 +104,12 @@ enum DropRouter {
     /// declared UTI, so the extension is the signal).
     private static func isSkin(_ url: URL) -> Bool {
         url.pathExtension.lowercased() == skinExtension
+    }
+
+    /// A `.m3u` / `.m3u8` playlist file (by case-insensitive extension — like
+    /// `.wsz`, a playlist has no declared UTI, so the extension is the signal).
+    private static func isPlaylist(_ url: URL) -> Bool {
+        playlistExtensions.contains(url.pathExtension.lowercased())
     }
 
     /// An audio file: its resolved content type conforms to a known audio UTType,

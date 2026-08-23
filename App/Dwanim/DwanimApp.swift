@@ -67,6 +67,13 @@ struct DwanimApp: App {
                 // closures so DwanimUI never imports AppKit.
                 onOpenAudio: { session.presentOpenPanel() },
                 onOpenSkin: { session.presentOpenSkinPanel() },
+                // The gear menu's "Add Songs…" / "Add Folder…" APPEND to the queue
+                // (never replace) and "Clear Queue" empties it — all routing to the
+                // same session calls, then re-persisting the live queue. Plumbed as
+                // closures so DwanimUI never imports AppKit.
+                onAddFiles: { session.presentAddFilesPanel() },
+                onAddFolder: { session.presentAddFolderPanel() },
+                onPlaylistEdited: { session.persistCurrentPlaylist() },
                 // fix-5 dynamic size: the scene measures its panel's intrinsic SIZE
                 // (pure SwiftUI) and reports it here whenever it changes (first
                 // layout + EQ/queue expand/collapse). The session resizes the
@@ -144,10 +151,14 @@ struct DwanimApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             // Replace the standard "New" item with the app's open commands, so
-            // File ▸ Open Audio… (⌘O) presents the audio NSOpenPanel and
+            // File ▸ Open Audio… (⌘O) presents the audio NSOpenPanel,
             // File ▸ Open Skin… (⌘⇧O) presents the .wsz skin panel that hosts the
             // classic main window (driven by the same shared core; closing it does
-            // NOT quit the app).
+            // NOT quit the app), and File ▸ Open Playlist… (⌘⌥O) presents the .m3u
+            // playlist panel that REPLACES the queue (load-only; nothing auto-plays)
+            // — the SAME session call the playlist window's LIST OPTS > Open List…
+            // uses (one source of truth). File ▸ Save Playlist… (⌘S) writes the live
+            // queue out as a `.m3u` (the same LIST OPTS > Save List… call).
             CommandGroup(replacing: .newItem) {
                 Button("Open Audio…") {
                     session.presentOpenPanel()
@@ -158,6 +169,22 @@ struct DwanimApp: App {
                     session.presentOpenSkinPanel()
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Button("Open Playlist…") {
+                    session.presentOpenPlaylistPanel()
+                }
+                .keyboardShortcut("o", modifiers: [.command, .option])
+
+                // Save Playlist… writes the live queue as a `.m3u` (the SAME session
+                // call the playlist window's LIST OPTS > "Save List…" uses — one
+                // source of truth). ⌘S is free here (this is not a document-based
+                // app, so there is no standard Save item to collide with). Disabled
+                // on an empty queue (saving an empty queue would write an empty m3u).
+                Button("Save Playlist…") {
+                    session.presentSaveListPanel()
+                }
+                .keyboardShortcut("s", modifiers: [.command])
+                .disabled(session.core.playlist.isEmpty)
             }
 
             // Add the two auxiliary-window toggles into the STANDARD View menu (the
@@ -197,9 +224,10 @@ struct DwanimApp: App {
             // quitting: "Default Skin" (⌘⇧D) closes the classic cluster and restores
             // the default SwiftUI face. The cluster close is programmatic, so the
             // presenter's close→quit guard (an internal switching flag) keeps it from
-            // terminating. "Open Skin…" / "Open Audio…" are mirrored here for one
-            // coherent home for the skin commands (same session calls the File menu
-            // uses — one source of truth). NO brand words (§12).
+            // terminating. "Open Skin…" / "Open Audio…" / "Open Playlist…" / "Save
+            // Playlist…" are mirrored here for one coherent home for the skin commands
+            // (same session calls the File menu uses — one source of truth). NO brand
+            // words (§12).
             CommandMenu("Skin") {
                 Button("Default Skin") {
                     session.switchToDefaultSkin()
@@ -211,11 +239,12 @@ struct DwanimApp: App {
 
                 Divider()
 
-                // "Open Skin…" / "Open Audio…" are mirrored here as clickable items
-                // for a coherent Skin-menu home, but their accelerators (⌘⇧O / ⌘O)
-                // live on the File-menu items above (the conventional home) — declared
-                // there ONCE. Declaring the same chord on these duplicates too would be
-                // an accelerator ambiguity, so these carry NO `.keyboardShortcut`.
+                // "Open Skin…" / "Open Audio…" / "Open Playlist…" / "Save Playlist…"
+                // are mirrored here as clickable items for a coherent Skin-menu home,
+                // but their accelerators (⌘⇧O / ⌘O / ⌘⌥O / ⌘S) live on the File-menu
+                // items above (the conventional home) — declared there ONCE. Declaring
+                // the same chord on these duplicates too would be an accelerator
+                // ambiguity, so these carry NO `.keyboardShortcut`.
                 Button("Open Skin…") {
                     session.presentOpenSkinPanel()
                 }
@@ -223,6 +252,18 @@ struct DwanimApp: App {
                 Button("Open Audio…") {
                     session.presentOpenPanel()
                 }
+
+                Button("Open Playlist…") {
+                    session.presentOpenPlaylistPanel()
+                }
+
+                // Mirror of File ▸ Save Playlist… — its ⌘S accelerator lives on the
+                // File-menu item above (declared ONCE), so this carries none, like
+                // the other Skin-menu mirrors. Same empty-queue guard.
+                Button("Save Playlist…") {
+                    session.presentSaveListPanel()
+                }
+                .disabled(session.core.playlist.isEmpty)
             }
         }
     }

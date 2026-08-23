@@ -222,7 +222,7 @@ final class AudioSession {
             self?.presentAddFolderPanel()
         }
         classicSkin.onPlaylistOpenList = { [weak self] in
-            self?.presentOpenListPanel()
+            self?.presentOpenPlaylistPanel()
         }
         classicSkin.onPlaylistSaveList = { [weak self] in
             self?.presentSaveListPanel()
@@ -432,14 +432,26 @@ final class AudioSession {
     /// are recorded + opened through the SAME paths as the open panels (mint +
     /// persist a security-scoped bookmark, then play / apply).
     ///
+    /// ## A drop ADDS (append, non-interrupting)
+    /// A drop APPENDS its audio to the END of the live queue — it does NOT replace
+    /// the queue and does NOT interrupt the currently-playing track. Only when the
+    /// queue was EMPTY before the drop does playback auto-start (from the first
+    /// added track). This handler is SHARED by the default SwiftUI window's
+    /// `.dropDestination` (`DwanimApp.swift`) AND every hosted classic window's
+    /// `onFileDrop`, so a drop on EITHER face now appends rather than replaces.
+    ///
     /// Routing (see `DropRouter`):
     ///   - `.wsz` skin(s): apply the FIRST as the classic skin (`.lastSkin`). A
     ///     single skin is the active face, so trailing skins in one drop are ignored.
-    ///   - audio file(s): play them. ONE audio file plays; MULTIPLE become the
-    ///     ordered playlist (drop order preserved) — identical to a multi-select in
-    ///     the audio open panel.
-    ///   - a MIXED drop (skin + audio): both are handled — the skin is applied AND
-    ///     the audio is loaded/played.
+    ///   - `.m3u` / `.m3u8` playlist file(s): read + parse each (pure `M3UPlaylist`)
+    ///     and expand into its listed tracks. A dropped playlist is EXPANDED into its
+    ///     tracks and APPENDED to the queue (with any loose audio). Each listed file
+    ///     plays only where the sandbox already reaches it (the drop grants access to
+    ///     the `.m3u`, not to its tracks).
+    ///   - audio file(s): APPEND them to the queue (drop order preserved) — one or
+    ///     many, identical order to a multi-select in the audio open panel.
+    ///   - a MIXED drop (skin + playlist + audio): all are handled — the skin is
+    ///     applied AND the playlist's tracks + any loose audio are appended.
     ///   - unsupported types: ignored gracefully (an empty classification is a no-op).
     func handleDroppedURLs(_ urls: [URL]) {
         let classification = DropRouter.classify(urls)
@@ -449,8 +461,20 @@ final class AudioSession {
         if let skin = classification.skins.first {
             classicSkin.openDropped(url: skin)
         }
-        if !classification.audio.isEmpty {
-            openAndPlay(urls: classification.audio)
+        // Expand any dropped playlist files into their listed tracks — each read +
+        // parsed inside a security-scoped bracket (like `recordPlaylist`). Then
+        // APPEND the playlist-expanded tracks (in playlist-file order) followed by
+        // any loose dropped audio. A drop ADDS to the queue (append, non-interrupting)
+        // rather than replacing it; only an empty-queue drop auto-plays from the top.
+        var playlistTracks: [URL] = []
+        for listURL in classification.playlists {
+            playlistTracks.append(contentsOf: expandPlaylist(at: listURL))
+        }
+        let combined = playlistTracks + classification.audio
+        if !combined.isEmpty {
+            let wasEmpty = core.playlist.isEmpty
+            appendToPlaylist(urls: combined)   // appends to the queue + persists; never auto-plays / never moves selection
+            if wasEmpty { core.play() }        // start playback ONLY when the queue was empty before the drop
         }
     }
 
@@ -578,6 +602,12 @@ final class AudioSession {
             current = (try? access.withAccess(to: first) {
                 try resolver.record(url: first, as: .lastAudio, in: current)
             }) ?? current
+        } else {
+            // Queue emptied (Clear Queue / Remove All): drop the single
+            // `.lastAudio` slot too, so a cleared queue does NOT resurrect the
+            // last track on the next launch — with an empty playlist it would
+            // otherwise be the launch-resolve fallback.
+            current.clearBookmark(for: .lastAudio)
         }
         store.save(current)
     }
@@ -587,7 +617,7 @@ final class AudioSession {
     /// Show an NSOpenPanel filtered to audio files (multi-select) and APPEND the
     /// pick to the queue — the playlist bar's "Add File(s)…" / mini eject flow,
     /// vs `presentOpenPanel`'s replace-everything.
-    private func presentAddFilesPanel() {
+    func presentAddFilesPanel() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -604,7 +634,7 @@ final class AudioSession {
     /// (recursive scan, path-sorted for a stable order) to the queue — the
     /// playlist bar's "Add Directory…" flow. The directory pick grants sandbox
     /// access to everything under it for this launch.
-    private func presentAddFolderPanel() {
+    func presentAddFolderPanel() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = true
@@ -640,7 +670,7 @@ final class AudioSession {
     /// tracks' session scopes are open, so minting succeeds; removed URLs simply
     /// drop out of the store (their scopes stay open until the next
     /// `beginSession`/`endSession` — bounded and balanced).
-    private func persistCurrentPlaylist() {
+    func persistCurrentPlaylist() {
         recordPlaylist(core.playlist.map(\.url))
     }
 
@@ -666,7 +696,7 @@ final class AudioSession {
         return found.sorted { $0.path < $1.path }
     }
 
-    // MARK: Playlist files (.m3u — the LIST OPTS menu)
+    // MARK: Playlist files (.m3u — LIST OPTS + File/Skin menu)
 
     /// The `.m3u` playlist types the open/save panels accept. Derived from the
     /// filename extension (like `.wsz`); `.m3u8` is accepted on open for
@@ -678,13 +708,27 @@ final class AudioSession {
         return m3u.isEmpty ? [.plainText] : m3u
     }()
 
-    /// LIST OPTS > "Open List…": pick a `.m3u`, parse it (pure `M3UPlaylist`),
-    /// and REPLACE the queue with its entries — the classic Open-list behavior
-    /// (`core.load` stops playback; nothing auto-plays). The panel grants access
-    /// to the `.m3u` itself; each listed FILE plays only where the sandbox
-    /// already reaches it (a previously granted location) — an unreachable entry
-    /// is skipped by the engine's unplayable-track policy at play time.
-    private func presentOpenListPanel() {
+    /// Read a `.m3u` playlist file and parse it to its listed track URLs. The read
+    /// runs INSIDE a security-scoped access bracket (uniform with `recordPlaylist`)
+    /// so it works for both a panel-granted URL and a dropped URL; the pure
+    /// `M3UPlaylist.parse` does the rest. Returns `[]` if the file can't be read
+    /// (unreadable / unauthorized) — the caller guards against an empty result.
+    private func expandPlaylist(at url: URL) -> [URL] {
+        guard let text = try? access.withAccess(to: url, perform: {
+            try String(contentsOf: url, encoding: .utf8)
+        }) else { return [] }
+        return M3UPlaylist.parse(text)
+    }
+
+    /// Open a `.m3u` playlist: pick one, parse it (pure `M3UPlaylist`), and REPLACE
+    /// the queue with its entries — the classic Open-list behavior (`core.load`
+    /// stops playback; nothing auto-plays). The SINGLE source of truth for opening a
+    /// playlist file: the playlist window's LIST OPTS > "Open List…" and the File /
+    /// Skin menu's "Open Playlist…" both route here. The panel grants access to the
+    /// `.m3u` itself; each listed FILE plays only where the sandbox already reaches
+    /// it (a previously granted location) — an unreachable entry is skipped by the
+    /// engine's unplayable-track policy at play time.
+    func presentOpenPlaylistPanel() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -694,19 +738,19 @@ final class AudioSession {
         panel.message = "Choose a playlist file (.m3u) to open."
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
-        let urls = M3UPlaylist.parse(text)
+        let urls = expandPlaylist(at: url)
         guard !urls.isEmpty else { return }
         recordPlaylist(urls)
         beginSession(for: urls)
         core.load(urls.map(trackForURL))
     }
 
-    /// LIST OPTS > "Save List…": write the live queue as `.m3u` (pure
-    /// `M3UPlaylist.serialize` — absolute paths, `#EXTM3U` header) wherever the
-    /// save panel granted. A write failure is silently dropped (the queue
-    /// itself is unaffected).
-    private func presentSaveListPanel() {
+    /// LIST OPTS > "Save List…" AND File / Skin ▸ "Save Playlist…": write the live
+    /// queue as `.m3u` (pure `M3UPlaylist.serialize` — absolute paths, `#EXTM3U`
+    /// header) wherever the save panel granted. A write failure is silently dropped
+    /// (the queue itself is unaffected). Internal (not private) so the menu commands
+    /// in `DwanimApp` can route here — one source of truth for saving the playlist.
+    func presentSaveListPanel() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = AudioSession.playlistContentTypes
         panel.nameFieldStringValue = "Playlist.m3u"

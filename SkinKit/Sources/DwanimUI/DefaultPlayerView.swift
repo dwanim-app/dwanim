@@ -66,6 +66,21 @@ public struct DefaultPlayerView: View {
     /// rule as `onOpenAudio` (`session.presentOpenSkinPanel()`).
     private let onOpenSkin: (() -> Void)?
 
+    /// App-layer action: present the "Add Songs…" panel, which APPENDS the picked
+    /// audio files to the queue (never replaces). Plumbed as a closure so `DwanimUI`
+    /// stays AppKit-free; the gear menu hides the item when it is nil (the headless
+    /// harness), exactly like `onOpenAudio` (`session.presentAddFilesPanel()`).
+    private let onAddFiles: (() -> Void)?
+    /// App-layer action: present the "Add Folder…" panel, which APPENDS a folder's
+    /// audio files to the queue (`session.presentAddFolderPanel()`). Same
+    /// nil-hides-the-item rule as `onAddFiles`.
+    private let onAddFolder: (() -> Void)?
+    /// App-layer hook: RE-PERSIST the live queue after an in-UI edit — a
+    /// context-menu Remove in `PlaylistPanel` or the gear "Clear Queue". Wired to
+    /// `session.persistCurrentPlaylist()`; nil in the headless harness (edits then
+    /// simply don't persist). Forwarded into `PlaylistPanel(core:onPlaylistEdited:)`.
+    private let onPlaylistEdited: (() -> Void)?
+
     /// The definite compact width of the dock-bar panel (excluding the scene's
     /// gradient margin). A fixed width — not a min/ideal/max range — so the
     /// scene's `fittingSize` is compact and the window opens hugging the panel
@@ -99,12 +114,18 @@ public struct DefaultPlayerView: View {
         core: PlayerCore,
         model: PlayerViewModel,
         onOpenAudio: (() -> Void)? = nil,
-        onOpenSkin: (() -> Void)? = nil
+        onOpenSkin: (() -> Void)? = nil,
+        onAddFiles: (() -> Void)? = nil,
+        onAddFolder: (() -> Void)? = nil,
+        onPlaylistEdited: (() -> Void)? = nil
     ) {
         self._core = Bindable(core)
         self._model = Bindable(model)
         self.onOpenAudio = onOpenAudio
         self.onOpenSkin = onOpenSkin
+        self.onAddFiles = onAddFiles
+        self.onAddFolder = onAddFolder
+        self.onPlaylistEdited = onPlaylistEdited
     }
 
     // MARK: - Body
@@ -161,7 +182,7 @@ public struct DefaultPlayerView: View {
                     .overlay(DwanimTheme.glassStroke)
                     .padding(.top, 12)
 
-                PlaylistPanel(core: core)
+                PlaylistPanel(core: core, onPlaylistEdited: onPlaylistEdited)
                     .padding(.top, 6)
                     .transition(.opacity)
             }
@@ -237,14 +258,41 @@ public struct DefaultPlayerView: View {
 
     // MARK: - Queue + overflow controls
 
-    /// The unobtrusive right-edge column: the queue disclosure chevron above the
-    /// gear/overflow menu. Sits at the right of the transport row so the
-    /// transport buttons stay centred-left as before.
+    /// The unobtrusive right-edge column: the always-visible Add button, then the
+    /// EQ / queue disclosure chevrons above the gear/overflow menu. Sits at the
+    /// right of the transport row so the transport buttons stay centred-left as
+    /// before.
     private var controlsColumn: some View {
         VStack(spacing: 8) {
+            addButton
             eqDisclosure
             queueDisclosure
             gearMenu
+        }
+    }
+
+    /// An always-visible "+" that APPENDS songs to the queue (routes to the same
+    /// `onAddFiles` closure as the gear-menu "Add Songs…"). Shown only when that
+    /// closure is wired (hidden in the headless harness, like the gear item). This
+    /// is the visible affordance to add music even when the queue is EMPTY — the
+    /// `PlaylistPanel` unmounts on an empty queue, so without this the first-run
+    /// user has no obvious way to add tracks. Deliberately NOT an empty-state panel
+    /// (which would fight the compact-empty-window design).
+    @ViewBuilder
+    private var addButton: some View {
+        if onAddFiles != nil {
+            Button {
+                onAddFiles?()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 22, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Add songs")
+            .accessibilityLabel(Text("Add songs"))
         }
     }
 
@@ -291,10 +339,14 @@ public struct DefaultPlayerView: View {
     }
 
     /// The gear/overflow menu (P2-2): the discoverable home for "Open Audio…" /
-    /// "Open Skin…" and a queue toggle that mirrors the disclosure. Each open
-    /// item runs the app-supplied closure (the SAME call as the File menu); when
-    /// no closure is wired (e.g. the headless harness) the item is hidden so it
-    /// is never a dead control.
+    /// "Open Skin…", the queue-editing actions ("Add Songs…" / "Add Folder…" —
+    /// which APPEND — and a destructive "Clear Queue"), the queue-REORDERING group
+    /// ("Sort by Title" / "Sort by Filename" / "Reverse" / "Randomize", each
+    /// disabled with ≤1 track), and the EQ / queue show-hide toggles that mirror the
+    /// disclosures. Each open / add item runs the
+    /// app-supplied closure (the SAME call as the File menu); when no closure is
+    /// wired (e.g. the headless harness) that item is hidden so it is never a dead
+    /// control. "Clear Queue" is always present but disabled on an empty queue.
     private var gearMenu: some View {
         Menu {
             if let onOpenAudio {
@@ -306,6 +358,49 @@ public struct DefaultPlayerView: View {
             if onOpenAudio != nil || onOpenSkin != nil {
                 Divider()
             }
+            // Queue edits: "Add Songs…" / "Add Folder…" APPEND to the queue (never
+            // replace), and "Clear Queue" empties it. The two Add items are hidden
+            // when their closure is nil (the headless harness), exactly like the
+            // Open items above; Clear Queue is always present but disabled on an
+            // empty queue, and re-persists the (now empty) queue via
+            // `onPlaylistEdited`.
+            if let onAddFiles {
+                Button("Add Songs…", systemImage: "plus") { onAddFiles() }
+            }
+            if let onAddFolder {
+                Button("Add Folder…", systemImage: "folder.badge.plus") { onAddFolder() }
+            }
+            Button("Clear Queue", systemImage: "trash", role: .destructive) {
+                core.removeAll()
+                onPlaylistEdited?()
+            }
+            .disabled(core.playlist.isEmpty)
+            Divider()
+            // Queue REORDERING: sort / reverse / randomize the live queue in place.
+            // Each keeps selection-follows-track + playback untouched (PlayerCore
+            // does the reorder) and re-persists via `onPlaylistEdited`, the same
+            // pattern as Clear Queue. Disabled with 0 or 1 track — nothing to reorder.
+            Button("Sort by Title", systemImage: "textformat.abc") {
+                core.sortByTitle()
+                onPlaylistEdited?()
+            }
+            .disabled(core.playlist.count <= 1)
+            Button("Sort by Filename", systemImage: "doc.text") {
+                core.sortByFilename()
+                onPlaylistEdited?()
+            }
+            .disabled(core.playlist.count <= 1)
+            Button("Reverse", systemImage: "arrow.up.arrow.down") {
+                core.reverse()
+                onPlaylistEdited?()
+            }
+            .disabled(core.playlist.count <= 1)
+            Button("Randomize", systemImage: "shuffle") {
+                core.randomize()
+                onPlaylistEdited?()
+            }
+            .disabled(core.playlist.count <= 1)
+            Divider()
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) {
                     isEQExpanded.toggle()
