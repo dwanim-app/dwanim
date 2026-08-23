@@ -4,7 +4,7 @@
 
   Consumed by:
     xcodebuild -exportArchive \
-      -archivePath build/Dwanim.xcarchive \
+      -archivePath build/DwanimIt.xcarchive \
       -exportPath build/export-appstore \
       -exportOptionsPlist App/ExportOptions-AppStore.plist
 
@@ -12,7 +12,7 @@
   │ The <teamID> below is a PLACEHOLDER. The account owner MUST replace          │
   │ REPLACE_WITH_YOUR_TEAM_ID with the 10-character Apple Developer Team ID      │
   │ (Apple Developer portal -> Membership -> Team ID), and the bundle id        │
-  │ app.dwanim.Dwanim must already be registered in the portal + App Store      │
+  │ app.dwanim.dwanimit must already be registered in the portal + App Store    │
   │ Connect, before this export can succeed. Nothing here works without an      │
   │ Apple Developer Program membership and a Mac App Distribution signing        │
   │ identity / provisioning profile available to the toolchain.                 │

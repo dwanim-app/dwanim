@@ -8,7 +8,7 @@
 
   Consumed by:
     xcodebuild -exportArchive \
-      -archivePath build/Dwanim.xcarchive \
+      -archivePath build/DwanimIt.xcarchive \
       -exportPath build/export-developerid \
       -exportOptionsPlist App/ExportOptions-DeveloperID.plist
 

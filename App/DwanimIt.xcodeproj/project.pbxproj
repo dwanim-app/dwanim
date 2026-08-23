@@ -1,0 +1,460 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0F6E70F57BAE6358FE8871AA /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88959338971C569718784169 /* BookmarkStore.swift */; };
+		174B6C052A3200CA10A62ECC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 345014DA6B29E81C78724A57 /* Assets.xcassets */; };
+		1D45EEE336011CBAAE96FDA2 /* SkinAppKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3F52AE2C0E81D4DF620D92DD /* SkinAppKit */; };
+		3CCDF99FC645AABCA7B03473 /* AudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC4F231F7B7936205B9F05E /* AudioSession.swift */; };
+		4FD451133BB73C0C54203526 /* PlayerControl in Frameworks */ = {isa = PBXBuildFile; productRef = 0EA5EFE4797FE1B1184A1537 /* PlayerControl */; };
+		591796A3DBB1818C861FF71B /* PlaybackKit in Frameworks */ = {isa = PBXBuildFile; productRef = A5C8673990E84EE874839191 /* PlaybackKit */; };
+		5BB067CC42F7CC209CE9D20F /* SecurityScopedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */; };
+		5CEB8EB7F227B2ACE2D1BA27 /* ClassicSkinPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64D97B8B8AE9FE4963213058 /* ClassicSkinPresenter.swift */; };
+		697ABCBACCE2DA7D7F4E9585 /* DwanimItApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C87EF84C87D1F53083532DB6 /* DwanimItApp.swift */; };
+		7FA078E98D9828E5CFFCF9F8 /* DropRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F39C5CC79A1DA4285A38835 /* DropRouter.swift */; };
+		83B095E3AA9F350C53EE87D8 /* SkinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 090842812690C2E45A80E383 /* SkinKit */; };
+		A2719D54F75A12E44D43AAB6 /* PlayerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 44D5666FED81ADFF9353455E /* PlayerCore */; };
+		A7698DD348B8C62FF396BE69 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */; };
+		BE84E7454A3F38B84D03016B /* SkinRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0159AB74B541644A2F7407C9 /* SkinRender */; };
+		E7AF16046C18820C0B05821A /* DwanimItUI in Frameworks */ = {isa = PBXBuildFile; productRef = B88EACC74230D16FD3718B43 /* DwanimItUI */; };
+		F14427448890A9535000FA59 /* SkinKitImageIO in Frameworks */ = {isa = PBXBuildFile; productRef = 6E1363065C6BEA8BB2BD5889 /* SkinKitImageIO */; };
+		F5B60E80EDAF05624910C7A0 /* SpectrumKit in Frameworks */ = {isa = PBXBuildFile; productRef = EB61D652ECD2812AB677B5F1 /* SpectrumKit */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		345014DA6B29E81C78724A57 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4F39C5CC79A1DA4285A38835 /* DropRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropRouter.swift; sourceTree = "<group>"; };
+		5860F9A2D3412EF67FAA8D30 /* SkinKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SkinKit; path = ../SkinKit; sourceTree = SOURCE_ROOT; };
+		617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
+		64D97B8B8AE9FE4963213058 /* ClassicSkinPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassicSkinPresenter.swift; sourceTree = "<group>"; };
+		88959338971C569718784169 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
+		8B22EBF96972CBC44217AE60 /* DwanimIt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DwanimIt.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C87EF84C87D1F53083532DB6 /* DwanimItApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwanimItApp.swift; sourceTree = "<group>"; };
+		DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityScopedFileAccess.swift; sourceTree = "<group>"; };
+		FAC4F231F7B7936205B9F05E /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C1B8CE5B26CF65C9CEE14DF2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E7AF16046C18820C0B05821A /* DwanimItUI in Frameworks */,
+				1D45EEE336011CBAAE96FDA2 /* SkinAppKit in Frameworks */,
+				A2719D54F75A12E44D43AAB6 /* PlayerCore in Frameworks */,
+				591796A3DBB1818C861FF71B /* PlaybackKit in Frameworks */,
+				F14427448890A9535000FA59 /* SkinKitImageIO in Frameworks */,
+				83B095E3AA9F350C53EE87D8 /* SkinKit in Frameworks */,
+				BE84E7454A3F38B84D03016B /* SkinRender in Frameworks */,
+				4FD451133BB73C0C54203526 /* PlayerControl in Frameworks */,
+				F5B60E80EDAF05624910C7A0 /* SpectrumKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		09D48F714E41FFF208B9BC95 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				345014DA6B29E81C78724A57 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		2B3F5DEC9C360D14BB35DAED /* DwanimIt */ = {
+			isa = PBXGroup;
+			children = (
+				C87EF84C87D1F53083532DB6 /* DwanimItApp.swift */,
+				617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */,
+				EF1D4FE23ECBE3161EE4D688 /* Audio */,
+				F7CB1BAF0DED2C08E5A06D3E /* Platform */,
+				09D48F714E41FFF208B9BC95 /* Resources */,
+				5A01425D993B115516749DAB /* Skin */,
+			);
+			path = DwanimIt;
+			sourceTree = "<group>";
+		};
+		5A01425D993B115516749DAB /* Skin */ = {
+			isa = PBXGroup;
+			children = (
+				64D97B8B8AE9FE4963213058 /* ClassicSkinPresenter.swift */,
+			);
+			path = Skin;
+			sourceTree = "<group>";
+		};
+		78F97DA7EAC47868C9BBB265 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				5860F9A2D3412EF67FAA8D30 /* SkinKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		9A844BD89DB74AEEEF7491BE = {
+			isa = PBXGroup;
+			children = (
+				2B3F5DEC9C360D14BB35DAED /* DwanimIt */,
+				78F97DA7EAC47868C9BBB265 /* Packages */,
+				FD3BCA978D790DD1A365E5FB /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		EF1D4FE23ECBE3161EE4D688 /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				FAC4F231F7B7936205B9F05E /* AudioSession.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		F7CB1BAF0DED2C08E5A06D3E /* Platform */ = {
+			isa = PBXGroup;
+			children = (
+				88959338971C569718784169 /* BookmarkStore.swift */,
+				4F39C5CC79A1DA4285A38835 /* DropRouter.swift */,
+				DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */,
+			);
+			path = Platform;
+			sourceTree = "<group>";
+		};
+		FD3BCA978D790DD1A365E5FB /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8B22EBF96972CBC44217AE60 /* DwanimIt.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E567B3AAFEB1ED5D0989D72C /* DwanimIt */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 723A828A2B74C5DA4F193400 /* Build configuration list for PBXNativeTarget "DwanimIt" */;
+			buildPhases = (
+				0309E580EBB07500A35D7610 /* Sources */,
+				7744F7C8A2F1B3C6F7973D42 /* Resources */,
+				C1B8CE5B26CF65C9CEE14DF2 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DwanimIt;
+			packageProductDependencies = (
+				B88EACC74230D16FD3718B43 /* DwanimItUI */,
+				3F52AE2C0E81D4DF620D92DD /* SkinAppKit */,
+				44D5666FED81ADFF9353455E /* PlayerCore */,
+				A5C8673990E84EE874839191 /* PlaybackKit */,
+				6E1363065C6BEA8BB2BD5889 /* SkinKitImageIO */,
+				090842812690C2E45A80E383 /* SkinKit */,
+				0159AB74B541644A2F7407C9 /* SkinRender */,
+				0EA5EFE4797FE1B1184A1537 /* PlayerControl */,
+				EB61D652ECD2812AB677B5F1 /* SpectrumKit */,
+			);
+			productName = DwanimIt;
+			productReference = 8B22EBF96972CBC44217AE60 /* DwanimIt.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BA02DDD28F0A5D7DF21FB667 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 75EAB690D801A920E8729709 /* Build configuration list for PBXProject "DwanimIt" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9A844BD89DB74AEEEF7491BE;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2CF66979E641B9E1D5079C56 /* XCLocalSwiftPackageReference "../SkinKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = FD3BCA978D790DD1A365E5FB /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E567B3AAFEB1ED5D0989D72C /* DwanimIt */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7744F7C8A2F1B3C6F7973D42 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				174B6C052A3200CA10A62ECC /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0309E580EBB07500A35D7610 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3CCDF99FC645AABCA7B03473 /* AudioSession.swift in Sources */,
+				0F6E70F57BAE6358FE8871AA /* BookmarkStore.swift in Sources */,
+				5CEB8EB7F227B2ACE2D1BA27 /* ClassicSkinPresenter.swift in Sources */,
+				7FA078E98D9828E5CFFCF9F8 /* DropRouter.swift in Sources */,
+				697ABCBACCE2DA7D7F4E9585 /* DwanimItApp.swift in Sources */,
+				5BB067CC42F7CC209CE9D20F /* SecurityScopedFileAccess.swift in Sources */,
+				A7698DD348B8C62FF396BE69 /* WindowAccessor.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		915B508F3AAACC16899A2772 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BDB495093ED80C48033A0C92 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = DwanimIt/Resources/DwanimIt.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DwanimIt/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.dwanim.dwanimit;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Release;
+		};
+		F063EA753A464043F1FD4F85 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		F2C179620EF2F2BBEB0D94F8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = DwanimIt/Resources/DwanimIt.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DwanimIt/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.dwanim.dwanimit;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		723A828A2B74C5DA4F193400 /* Build configuration list for PBXNativeTarget "DwanimIt" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F2C179620EF2F2BBEB0D94F8 /* Debug */,
+				BDB495093ED80C48033A0C92 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		75EAB690D801A920E8729709 /* Build configuration list for PBXProject "DwanimIt" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				915B508F3AAACC16899A2772 /* Debug */,
+				F063EA753A464043F1FD4F85 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		2CF66979E641B9E1D5079C56 /* XCLocalSwiftPackageReference "../SkinKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../SkinKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0159AB74B541644A2F7407C9 /* SkinRender */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SkinRender;
+		};
+		090842812690C2E45A80E383 /* SkinKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SkinKit;
+		};
+		0EA5EFE4797FE1B1184A1537 /* PlayerControl */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PlayerControl;
+		};
+		3F52AE2C0E81D4DF620D92DD /* SkinAppKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SkinAppKit;
+		};
+		44D5666FED81ADFF9353455E /* PlayerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PlayerCore;
+		};
+		6E1363065C6BEA8BB2BD5889 /* SkinKitImageIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SkinKitImageIO;
+		};
+		A5C8673990E84EE874839191 /* PlaybackKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PlaybackKit;
+		};
+		B88EACC74230D16FD3718B43 /* DwanimItUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DwanimItUI;
+		};
+		EB61D652ECD2812AB677B5F1 /* SpectrumKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SpectrumKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = BA02DDD28F0A5D7DF21FB667 /* Project object */;
+}

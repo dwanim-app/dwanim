@@ -1,5 +1,5 @@
 import AppKit
-import DwanimUI
+import DwanimItUI
 import Foundation
 import PlaybackKit
 import PlayerCore
@@ -8,7 +8,7 @@ import SpectrumKit
 import SwiftUI
 
 // SkinHarness default-skin mode: the app's OWN face when no `.wsz` is loaded —
-// the Liquid Glass dock-bar player (`DwanimUI.DwanimPlayerScene`) hosted in an
+// the Liquid Glass dock-bar player (`DwanimItUI.DwanimItPlayerScene`) hosted in an
 // NSWindow, wired to a live `PlayerCore` + `AVAudioEnginePlayer`.
 //
 // Usage:
@@ -18,15 +18,15 @@ import SwiftUI
 // SwiftUI instead of a composed bitmap):
 //   1. Build a PlayerCore over AVAudioEnginePlayer; load the audio files as a
 //      playlist (Track.title = file-name stem — the user's own file).
-//   2. Build a DwanimUI.PlayerViewModel for the live clock + spectrum levels.
-//   3. Host `DwanimPlayerScene(core:model:)` in an NSHostingView inside an
+//   2. Build a DwanimItUI.PlayerViewModel for the live clock + spectrum levels.
+//   3. Host `DwanimItPlayerScene(core:model:)` in an NSHostingView inside an
 //      NSWindow. The scene already paints the colourful backdrop behind the
 //      glass, so the materials have something to blur.
 //   4. Install the engine's PCM tap -> SpectrumAnalyzer (main thread) -> model.levels.
 //   5. A ~22 Hz main-thread timer copies the engine clock into the model and
 //      runs the analyzer on the latest stashed samples.
 //
-// The ONLY text shown is the live track title (or the quiet "Dwanim" the view
+// The ONLY text shown is the live track title (or the quiet "dwanim it" the view
 // falls back to) — no brand names.
 
 // MARK: - Argument parsing
@@ -175,7 +175,7 @@ func runDefaultSkinMode() -> Never {
     openDefaultSkinWindow(core: core, model: model, tap: engine, scale: arguments.scale)
 }
 
-/// Build and show the default-skin window hosting `DwanimPlayerScene`, then start
+/// Build and show the default-skin window hosting `DwanimItPlayerScene`, then start
 /// the timer and run the app. Never returns.
 @MainActor
 private func openDefaultSkinWindow(
@@ -198,7 +198,7 @@ private func openDefaultSkinWindow(
         height: baseHeight * Double(scale)
     )
 
-    let scene = DwanimPlayerScene(core: core, model: model)
+    let scene = DwanimItPlayerScene(core: core, model: model)
     let hostingView = NSHostingView(rootView: scene)
     hostingView.frame = contentRect
 
@@ -211,7 +211,7 @@ private func openDefaultSkinWindow(
         backing: .buffered,
         defer: false
     )
-    window.title = "Dwanim"
+    window.title = "dwanim it"
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
     window.isMovableByWindowBackground = true

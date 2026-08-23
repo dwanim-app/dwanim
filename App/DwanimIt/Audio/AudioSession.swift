@@ -1,0 +1,846 @@
+import AppKit
+import DwanimItUI
+import Foundation
+import PlaybackKit
+import PlayerCore
+import SkinAppKit
+import SpectrumKit
+import UniformTypeIdentifiers
+
+// MARK: - AudioSession
+//
+// The app-layer coordinator that turns the default-skin scene into a REAL
+// sandboxed audio player. It owns the live wiring the seed (DwanimItApp) only
+// hinted at:
+//
+//   • the PlayerCore + AVAudioEnginePlayer transport (created here, observed by
+//     the SwiftUI scene),
+//   • the PlayerViewModel the scene reads for the live clock + spectrum levels,
+//   • the security-scoped bookmark machinery (mint / persist / resolve) via the
+//     injected `SecurityScopedFileAccess` + `BookmarkStore` + pure
+//     `BookmarkResolver`,
+//   • the RedrawLoop feed (engine tap -> SpectrumFeed -> analyzer -> model),
+//   • the "Open Audio…" panel flow, and
+//   • launch-resolve (reopen the last song, ready/paused).
+//
+// It mirrors SkinHarness's `DefaultSkinController` pattern for the feed, but is
+// driven by the SwiftUI App lifecycle rather than an AppKit window controller.
+//
+// ## Security-scope lifetime (documented)
+// A file is playable only inside an open security scope. We keep scopes open for
+// the *currently loaded playlist* (the "session scopes"): `beginSession(for:)`
+// takes the loaded URLs, calls `startAccessingSecurityScopedResource()` once per
+// URL, and stashes each (with whether it actually opened a scope). The scopes
+// stay open while that playlist is loaded — so the playlist window can select +
+// play ANY queued track, not just the first — and are closed (matching
+// `stopAccessing…`) only when we replace the playlist or the app quits
+// (`endSession()`). A single-file open is just a one-element playlist. Short,
+// self-contained touches (minting a bookmark at open time) use the transient
+// `withAccess` bracket instead. This avoids re-opening/closing scopes on every
+// transport tick while still keeping every bracket balanced.
+@MainActor
+final class AudioSession {
+
+    /// The live transport. Created with the real engine so the wiring is honest;
+    /// the SwiftUI scene observes this for `isPlaying` / `currentTrack` / actions.
+    let core: PlayerCore
+
+    /// The presentation bridge for the live clock + spectrum levels. The scene
+    /// observes this for `progress` / `levels`.
+    let model: PlayerViewModel
+
+    /// The concrete audio engine, retained both as the transport's engine and as
+    /// the `AudioTapProviding` source the RedrawLoop installs its PCM tap on.
+    private let engine: AVAudioEnginePlayer
+
+    /// Platform seams: security-scoped access + the JSON/UserDefaults store, and
+    /// the pure resolve/record/refresh policy that sits on top of them.
+    private let access: SecurityScopedFileAccess
+    private let store: BookmarkStore
+    private let resolver: BookmarkResolver
+
+    /// The optional classic `.wsz` skin window coordinator. It drives the SAME
+    /// shared `core` (and the same engine tap/format sources + bookmark seams), so
+    /// the classic main window — when opened via "Open Skin…" — is just a second
+    /// face on this one transport. Created here so the shared dependencies are
+    /// injected once; the window itself is opened on demand.
+    private let classicSkin: ClassicSkinPresenter
+
+    /// The spectrum pipeline: the lock-guarded latest-PCM box the tap writes and
+    /// the analyzer the tick reads it through, plus the shared redraw cadence.
+    private let analyzer: SpectrumAnalyzer
+    private let latestSamples = SpectrumFeed()
+    private var redrawLoop: RedrawLoop?
+
+    /// The default SwiftUI scene's backing `NSWindow`, captured at launch by the
+    /// `WindowAccessor` attached to the scene content (`setDefaultWindow(_:)`).
+    /// Held WEAK: SwiftUI / AppKit own the window's lifetime; this is only a
+    /// back-reference so the classic-skin presenter can HIDE the default face when
+    /// a classic `.wsz` main window is shown and RESTORE it when that window
+    /// closes. `nil` until the accessor reports it (and again if the window is
+    /// ever torn down) — every use guards for `nil`, so a not-yet-captured window
+    /// is a safe no-op (the default simply stays visible).
+    private weak var defaultWindow: NSWindow?
+
+    /// The last panel content SIZE the scene reported (fix-5, extended to width for
+    /// the 3-up default), CACHED on EVERY report — even while the default window is
+    /// hidden behind a classic skin. The cache is the source of truth for the
+    /// restore-on-show path: a content-size change that happens WHILE a classic skin
+    /// is up (e.g. a different-length playlist replaces the queue, or the EQ is
+    /// toggled) cannot resize the hidden window then, and on a ⌘⇧D switch-back the
+    /// unchanged SwiftUI size preference does not re-fire — so without this cache the
+    /// restored window would keep its STALE size (clipped content / empty gradient
+    /// strip). `showDefaultWindow()` re-applies this value after `makeKeyAndOrderFront`
+    /// so the default face restores at the correct size. `nil` until the scene first
+    /// reports a size. See `setDefaultContentSize` / `showDefaultWindow`.
+    private var lastReportedContentSize: CGSize?
+
+    /// The URLs whose security scopes are currently held open for the session
+    /// (the loaded playlist — one element for a single-file open), each paired with
+    /// whether the matching `startAccessingSecurityScopedResource()` actually opened
+    /// a scope. We only issue the balancing `stop…` for the ones that did — mirroring
+    /// the `withAccess` bracket discipline (don't decrement a scope another owner
+    /// holds, e.g. the live panel grant for a freshly-picked URL). Empty when nothing
+    /// is loaded. See the lifetime note above.
+    private var sessionScopes: [(url: URL, didStart: Bool)] = []
+
+    /// Whether `start()` has run without a matching `stop()`. Guards against a
+    /// second `.onAppear` double-starting the shared `@State` session (and a stray
+    /// `.onDisappear` double-stopping it) — the feed start/stop is paired with this.
+    private var started = false
+
+    /// Whether the once-per-process launch resolve has already run. SEPARATE from
+    /// `started` on purpose: `started` is paired with the feed (start/stop), but the
+    /// launch-resolve of the last playlist / skin must happen EXACTLY ONCE for the
+    /// lifetime of the process — never again if `start()` is somehow re-entered (e.g.
+    /// SwiftUI re-creating the scene window). Re-running resolve would reset the live
+    /// playlist + transport position back to the last-saved song; this flag prevents
+    /// that. Belt-and-suspenders alongside the `started` idempotency guard.
+    private var didLaunchResolve = false
+
+    /// True once genuine app TERMINATION has begun (set by `stop()`, which runs from
+    /// `applicationWillTerminate`). Checked in `showDefaultWindow()` so the default
+    /// face never flashes back while the app is tearing down (P2-7). One-way:
+    /// termination never reverses. The presenter holds its own mirror of this
+    /// (`prepareForTermination`) to suppress its close→quit on the teardown close.
+    private var isTerminating = false
+
+    /// Spectrum bar count for the compact default-skin row (matches the harness).
+    private static let barCount = 24
+    /// ~22 Hz feed cadence (matches the harness default-skin player).
+    private static let tickInterval: TimeInterval = 0.045
+
+    // MARK: Init
+
+    init() {
+        let engine = AVAudioEnginePlayer()
+        self.engine = engine
+        self.core = PlayerCore(engine: engine)
+        self.model = PlayerViewModel()
+        let access = SecurityScopedFileAccess()
+        let store = BookmarkStore()
+        let resolver = BookmarkResolver(access: access)
+        self.access = access
+        self.store = store
+        self.resolver = resolver
+        self.analyzer = SpectrumAnalyzer(barCount: AudioSession.barCount)
+
+        // The classic-skin coordinator shares this session's transport + engine
+        // (the engine is both the PCM-tap and track-format source, exactly as the
+        // harness passes it) and the one set of bookmark seams, so "Open Skin…"
+        // hosts a classic main window driven by the SAME core the default scene
+        // plays through.
+        //
+        // SINGLE-TAP RULE: this session owns THE one engine tap (installed by the
+        // RedrawLoop below, writing `latestSamples`). The shared feed is injected so
+        // the hosted classic MAIN window reads THIS already-fed snapshot rather than
+        // installing its own tap. AVAudioEngine allows only one tap per node bus, so
+        // a second tap would steal it (freezing the default scene) and removing it on
+        // window close would kill it permanently. With the feed injected the hosted
+        // window's redraw loop is timer-only and touches no tap.
+        self.classicSkin = ClassicSkinPresenter(
+            core: core, tap: engine, format: engine,
+            sharedFeed: latestSamples,
+            access: access, store: store, resolver: resolver
+        )
+
+        // ONE-FACE-AT-A-TIME (P2-6/P2-7): the classic MAIN window opens / closes; the
+        // default `NSWindow` and the app-terminate call live HERE, so the presenter
+        // (which owns the classic cluster) is handed three closures (captured weak to
+        // avoid a retain cycle):
+        //   • hideDefaultWindow — when the classic main is SHOWN, hide the default.
+        //   • showDefaultWindow — on the explicit "Default Skin" switch-back, restore
+        //     the default (guards an uncaptured window AND a terminating teardown).
+        //   • quitApp — when the user CLOSES the classic main window, QUIT the app
+        //     (P2-7: closing the classic face closes the app, NOT restore the
+        //     default). Routed through `NSApp.terminate`, which drives
+        //     `applicationWillTerminate` → `stop()` → clean teardown.
+        classicSkin.hideDefaultWindow = { [weak self] in self?.hideDefaultWindow() }
+        classicSkin.showDefaultWindow = { [weak self] in self?.showDefaultWindow() }
+        classicSkin.quitApp = { NSApp.terminate(nil) }
+
+        // The feed: install the engine's PCM tap (audio thread stashes into the
+        // feed) and run a main-thread tick that copies the clock + spectrum into
+        // the model. `assumeIsolated` is sound because RedrawLoop fires onTick on
+        // the main run loop (same pattern as DefaultSkinController).
+        redrawLoop = RedrawLoop(
+            interval: AudioSession.tickInterval,
+            tap: engine,
+            feed: latestSamples
+        ) { [weak self] in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+
+        // Route a file drop onto ANY hosted classic window (main / playlist / EQ)
+        // through THIS session's one drop handler — the same handler the default
+        // SwiftUI scene uses — so dropping onto any window behaves identically.
+        // Set after the stored properties are initialized so the closure can
+        // capture `self`.
+        classicSkin.onFileDrop = { [weak self] urls in
+            self?.handleDroppedURLs(urls)
+        }
+
+        // EJECT: the classic main window's open-file button opens the AUDIO open
+        // panel through THIS session — the same flow as the menu-bar / ⌘O
+        // "Open Audio…". The presenter cannot reach the audio panel on its own (it
+        // owns only the SKIN panel), so the host supplies the hook, mirroring
+        // `onFileDrop`.
+        classicSkin.onEject = { [weak self] in
+            self?.presentOpenPanel()
+        }
+
+        // PLAYLIST BOTTOM BAR: the classic playlist window's ADD / LIST OPTS
+        // menus (and its mini-transport eject) need the audio panels + `.m3u`
+        // file panels + bookmark persistence, all owned HERE — the same seam
+        // shape as `onEject`. Add-file(s)/folder APPEND to the queue (additive
+        // session scopes, merged persistence); Open List REPLACES it; the edit
+        // hook re-persists after an in-window remove / crop / clear / reorder.
+        classicSkin.onPlaylistAddFiles = { [weak self] in
+            self?.presentAddFilesPanel()
+        }
+        classicSkin.onPlaylistAddFolder = { [weak self] in
+            self?.presentAddFolderPanel()
+        }
+        classicSkin.onPlaylistOpenList = { [weak self] in
+            self?.presentOpenPlaylistPanel()
+        }
+        classicSkin.onPlaylistSaveList = { [weak self] in
+            self?.presentSaveListPanel()
+        }
+        classicSkin.onPlaylistEdited = { [weak self] in
+            self?.persistCurrentPlaylist()
+        }
+    }
+
+    // MARK: Lifecycle
+
+    /// Start the feed and (on the genuine first start of the process) reopen the last
+    /// song (ready/paused). Call when the app's main window appears. Idempotent: a
+    /// repeated `.onAppear` on the shared session returns early rather than
+    /// double-starting the feed.
+    ///
+    /// The launch-resolve is gated SEPARATELY (`didLaunchResolve`) so that even if
+    /// `start()` ran a full start/stop/start cycle (the feed legitimately restarts),
+    /// the last-song / last-skin resolve never runs a second time and so never resets
+    /// the live playlist + transport position back to the saved song.
+    func start() {
+        guard !started else { return }
+        started = true
+        redrawLoop?.start()
+
+        // ONCE PER PROCESS: reopen the last playlist + remember the last skin. Guarded
+        // independently of `started` so a re-entry of start() never re-resolves (which
+        // would clobber the live playlist/position with the saved one).
+        guard !didLaunchResolve else { return }
+        didLaunchResolve = true
+        resolveLastAudioOnLaunch()
+        // Remember (but do NOT auto-open) the last classic skin — see
+        // ClassicSkinPresenter.resolveLastSkinOnLaunch for why auto-open is
+        // deliberately deferred.
+        classicSkin.resolveLastSkinOnLaunch()
+    }
+
+    /// Tear the session down on genuine app TERMINATION: stop the feed, release the
+    /// session security scope, and close the hosted classic-window cluster. Mirrors
+    /// `DefaultSkinController.tearDown`. Idempotent.
+    ///
+    /// Driven from `applicationWillTerminate(_:)` (NOT a window's `.onDisappear`), so
+    /// it runs exactly once when the process is actually quitting — closing the single
+    /// main window quits the app (see `applicationShouldTerminateAfterLastWindowClosed`),
+    /// which then tears down here. Because this only runs at real termination, the
+    /// `closeAllWindows()` below never fires from a mere window-disappear path; the
+    /// classic cluster windows otherwise manage their own close.
+    func stop() {
+        guard started else { return }
+        started = false
+        // P2-7: latch termination BEFORE closing the cluster, on BOTH faces. Setting
+        // it here (and on the presenter) means the classic main window's `onClose` —
+        // fired by the `closeAllWindows()` below — neither re-enters
+        // `NSApp.terminate` (no double-terminate) nor restores the default face (no
+        // flash during teardown).
+        isTerminating = true
+        classicSkin.prepareForTermination()
+        redrawLoop?.stop()
+        endSession()
+        // Close every hosted classic window (main + playlist + EQ) too, so a hosted
+        // window never outlives the session that drives it. Safe here because `stop()`
+        // now runs ONLY at real app termination, and the termination latch above makes
+        // the resulting main-window close a no-op (no quit, no restore).
+        classicSkin.closeAllWindows()
+    }
+
+    // MARK: Default-window capture + visibility (P2-6)
+
+    /// Store the default SwiftUI scene's backing `NSWindow`, reported by the
+    /// `WindowAccessor` attached to the scene content. Called (possibly more than
+    /// once) on the main actor as the accessor view settles into / re-reports its
+    /// window; storing the same reference again is harmless. Held weak — this is
+    /// only used to hide / restore the default face while a classic skin is active.
+    ///
+    /// Applies any already-cached content size here too: the scene's first size
+    /// report can fire BEFORE the window is captured/visible (so `setDefaultContentSize`
+    /// only cached it without resizing), and the unchanged SwiftUI size preference does
+    /// not re-fire once the window appears — so without this the window would open at
+    /// its large platform default. `applyContentSize`'s 0.5pt tolerance makes this a
+    /// no-op when the size already matches.
+    func setDefaultWindow(_ window: NSWindow) {
+        defaultWindow = window
+        if let cached = lastReportedContentSize, window.isVisible {
+            applyContentSize(cached, to: window)
+        }
+    }
+
+    /// Resize the default SwiftUI window's CONTENT SIZE to `size` (both width AND
+    /// height), reported by the scene's `onContentSizeChange` whenever the panel's
+    /// intrinsic size changes — at first layout, and when the in-scene EQ
+    /// (EqualizerPanel) or queue (PlaylistPanel) expands or collapses (fix-5,
+    /// extended to width for the 3-up default). A SwiftUI `Window` hosted in an
+    /// `NSHostingView` does not expose its fitting/intrinsic size to AppKit
+    /// (`fittingSize == 0`, measured), so it opens at a large platform default
+    /// (~900×450) with the panel floating inside and never shrinks itself — so the
+    /// sizing is driven here from the App layer. The window uses
+    /// `.windowResizability(.contentMinSize)` so this resize is honoured rather than
+    /// snapped back. No-ops until the window is captured, while it is hidden behind a
+    /// classic skin (avoid fighting a hidden window), or when the size already
+    /// matches (avoids redundant resizes / feedback). The top anchor is kept fixed so
+    /// the window grows/shrinks DOWNWARD, matching sections expanding below the
+    /// now-playing row.
+    func setDefaultContentSize(_ size: CGSize) {
+        // CACHE FIRST, on every report (visible OR hidden): the cache is the source
+        // of truth the restore-on-show path re-applies. A change reported while the
+        // default is hidden behind a classic skin must not be dropped — it is
+        // re-applied on the ⌘⇧D switch-back (see `showDefaultWindow`). Round here so
+        // the cache matches the value `applyContentSize` compares against (keeps the
+        // re-apply from looping against its own rounding).
+        let rounded = CGSize(width: size.width.rounded(), height: size.height.rounded())
+        guard rounded.width > 0, rounded.height > 0 else { return }
+        lastReportedContentSize = rounded
+        // Only resize when the window is actually visible — fighting a hidden window
+        // is pointless (and the restore-on-show re-applies the cached value anyway).
+        guard let window = defaultWindow, window.isVisible else { return }
+        applyContentSize(rounded, to: window)
+    }
+
+    /// Resize `window`'s CONTENT SIZE to `rounded` (already rounded), pinning the
+    /// TOP-LEFT so it grows/shrinks DOWNWARD (and from the right edge for width).
+    /// No-ops when the size already matches (within 0.5pt on both axes) so re-applying
+    /// the cached value on a switch-back does not loop against the SwiftUI preference
+    /// re-report. Shared by the live `setDefaultContentSize` report path and the
+    /// `showDefaultWindow` restore path so both resize identically.
+    private func applyContentSize(_ rounded: CGSize, to window: NSWindow) {
+        let currentContent = window.contentRect(forFrameRect: window.frame).size
+        guard abs(currentContent.width - rounded.width) > 0.5
+            || abs(currentContent.height - rounded.height) > 0.5 else { return }
+
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        window.setContentSize(rounded)
+        // Keep the top-left fixed so the window grows/shrinks downward (and to the
+        // right), keeping the title-bar corner anchored.
+        window.setFrameTopLeftPoint(topLeft)
+    }
+
+    /// Hide the default SwiftUI face. Called by the classic-skin presenter when the
+    /// classic MAIN window is shown (the one-face-at-a-time rule: showing a classic
+    /// skin hides the default window). `orderOut(nil)` removes the window from the
+    /// screen WITHOUT closing it (no `windowWillClose`, so the SwiftUI scene stays
+    /// alive and `applicationShouldTerminateAfterLastWindowClosed` is NOT triggered)
+    /// — `makeKeyAndOrderFront` restores it later. A no-op when the default window
+    /// has not been captured yet (`defaultWindow` nil): the default just stays
+    /// visible, no crash.
+    private func hideDefaultWindow() {
+        guard let window = defaultWindow else { return }
+        // Harden against a miniaturized window: `orderOut` on a window that is in the
+        // Dock (miniaturized) does not reliably remove it from the screen, so
+        // deminiaturize first when needed. `deminiaturize(nil)` is a no-op for a
+        // window that is not miniaturized.
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.orderOut(nil)
+    }
+
+    /// Restore the default SwiftUI face. Called by the classic-skin presenter ONLY
+    /// on the explicit "Default Skin" switch-back command (`switchToDefaultSkin`) —
+    /// NOT on a plain user close of the classic main window, which quits the app
+    /// instead (P2-7). Re-orders the captured default window to the front and makes
+    /// it key. A no-op when the default window was never captured (`defaultWindow`
+    /// nil), or once termination has begun (`isTerminating`) so the default never
+    /// flashes back during quit-teardown — no crash either way.
+    private func showDefaultWindow() {
+        guard !isTerminating, let window = defaultWindow else { return }
+        window.makeKeyAndOrderFront(nil)
+        // fix-5 stale-size restore: a content-size change reported WHILE the window
+        // was hidden (e.g. a different-length playlist replaced the queue, or the EQ
+        // was toggled) could not resize the hidden window, and the unchanged SwiftUI
+        // size preference does not re-fire on this re-order — so re-apply the cached
+        // size now that the window is visible again. `applyContentSize`'s 0.5pt
+        // tolerance makes this a no-op when the size already matches, so it does not
+        // loop.
+        if let cached = lastReportedContentSize {
+            applyContentSize(cached, to: window)
+        }
+    }
+
+    // MARK: Open Skin…
+
+    /// Present the "Open Skin…" panel and host the picked classic `.wsz` window,
+    /// driven by THIS session's shared core. Pass-through to the classic-skin
+    /// coordinator (which owns the panel + load + window-hosting). Closing that
+    /// window does NOT quit the app (it is hosted, not the harness's single
+    /// window).
+    func presentOpenSkinPanel() {
+        classicSkin.presentOpenPanel()
+    }
+
+    // MARK: Default Skin (return without quitting — P2-7)
+
+    /// RETURN to the default face WITHOUT quitting: close the classic cluster and
+    /// restore the default SwiftUI window. The menu-bar "Default Skin" command
+    /// (⌘⇧D) routes here. This is the counterpart to the close→quit rule — closing
+    /// the classic main window quits the app, while THIS leaves the app running on
+    /// the default face. Pass-through to the presenter, which guards its own
+    /// close→quit so this programmatic cluster close does not terminate.
+    func switchToDefaultSkin() {
+        classicSkin.switchToDefaultSkin()
+    }
+
+    // MARK: Drag-and-drop
+
+    /// Handle a set of file URLs DROPPED onto any app window (the default SwiftUI
+    /// scene or any hosted classic window). The drop grants sandbox access to each
+    /// URL for this launch — exactly like an `NSOpenPanel` pick — so dropped files
+    /// are recorded + opened through the SAME paths as the open panels (mint +
+    /// persist a security-scoped bookmark, then play / apply).
+    ///
+    /// ## A drop ADDS (append, non-interrupting)
+    /// A drop APPENDS its audio to the END of the live queue — it does NOT replace
+    /// the queue and does NOT interrupt the currently-playing track. Only when the
+    /// queue was EMPTY before the drop does playback auto-start (from the first
+    /// added track). This handler is SHARED by the default SwiftUI window's
+    /// `.dropDestination` (`DwanimItApp.swift`) AND every hosted classic window's
+    /// `onFileDrop`, so a drop on EITHER face now appends rather than replaces.
+    ///
+    /// Routing (see `DropRouter`):
+    ///   - `.wsz` skin(s): apply the FIRST as the classic skin (`.lastSkin`). A
+    ///     single skin is the active face, so trailing skins in one drop are ignored.
+    ///   - `.m3u` / `.m3u8` playlist file(s): read + parse each (pure `M3UPlaylist`)
+    ///     and expand into its listed tracks. A dropped playlist is EXPANDED into its
+    ///     tracks and APPENDED to the queue (with any loose audio). Each listed file
+    ///     plays only where the sandbox already reaches it (the drop grants access to
+    ///     the `.m3u`, not to its tracks).
+    ///   - audio file(s): APPEND them to the queue (drop order preserved) — one or
+    ///     many, identical order to a multi-select in the audio open panel.
+    ///   - a MIXED drop (skin + playlist + audio): all are handled — the skin is
+    ///     applied AND the playlist's tracks + any loose audio are appended.
+    ///   - unsupported types: ignored gracefully (an empty classification is a no-op).
+    func handleDroppedURLs(_ urls: [URL]) {
+        let classification = DropRouter.classify(urls)
+        guard !classification.isEmpty else { return }
+        // Apply the skin first (a re-skin rebuilds the cluster), then start audio so
+        // a mixed drop ends with the freshly-applied skin showing the dropped song.
+        if let skin = classification.skins.first {
+            classicSkin.openDropped(url: skin)
+        }
+        // Expand any dropped playlist files into their listed tracks — each read +
+        // parsed inside a security-scoped bracket (like `recordPlaylist`). Then
+        // APPEND the playlist-expanded tracks (in playlist-file order) followed by
+        // any loose dropped audio. A drop ADDS to the queue (append, non-interrupting)
+        // rather than replacing it; only an empty-queue drop auto-plays from the top.
+        var playlistTracks: [URL] = []
+        for listURL in classification.playlists {
+            playlistTracks.append(contentsOf: expandPlaylist(at: listURL))
+        }
+        let combined = playlistTracks + classification.audio
+        if !combined.isEmpty {
+            let wasEmpty = core.playlist.isEmpty
+            appendToPlaylist(urls: combined)   // appends to the queue + persists; never auto-plays / never moves selection
+            if wasEmpty { core.play() }        // start playback ONLY when the queue was empty before the drop
+        }
+    }
+
+    // MARK: View menu (Playlist / Equalizer toggles)
+
+    /// Whether a classic skin is currently loaded — i.e. whether the View-menu
+    /// Playlist / Equalizer toggles can host anything. The SwiftUI `.commands`
+    /// reads this to gate (and, when absent, redirect to "Open Skin…") those items.
+    var isSkinLoaded: Bool { classicSkin.isSkinLoaded }
+
+    /// Whether any hosted classic window (main / playlist / EQ) is currently open.
+    /// The `AppDelegate` queries this from
+    /// `applicationShouldTerminateAfterLastWindowClosed(_:)` so closing the single
+    /// default `Window` does NOT quit the app while a classic window is still up.
+    var isAnyClassicWindowOpen: Bool { classicSkin.isAnyClassicWindowOpen }
+
+    /// Toggle the hosted classic PLAYLIST window. When no skin is loaded yet, fall
+    /// back to presenting "Open Skin…" (the playlist is a face of a loaded skin, so
+    /// there is nothing to show without one) — the menu item stays usable rather
+    /// than dead.
+    func togglePlaylistWindow() {
+        guard classicSkin.isSkinLoaded else {
+            classicSkin.presentOpenPanel()
+            return
+        }
+        classicSkin.togglePlaylistWindow()
+    }
+
+    /// Toggle the hosted classic EQ window. Same no-skin fallback as the playlist
+    /// toggle (present "Open Skin…" when nothing is loaded yet).
+    func toggleEQWindow() {
+        guard classicSkin.isSkinLoaded else {
+            classicSkin.presentOpenPanel()
+            return
+        }
+        classicSkin.toggleEQWindow()
+    }
+
+    /// Toggle the hosted classic MAIN window: close it if open, else reopen it (when
+    /// a skin is loaded). The chromeless main window's own skin CLOSE button also
+    /// dismisses it (routing through the same close funnel); this menu toggle
+    /// remains the keyboard/menu affordance. Same no-skin fallback as the other
+    /// toggles (present "Open Skin…" when nothing is loaded yet).
+    func toggleMainWindow() {
+        guard classicSkin.isSkinLoaded else {
+            classicSkin.presentOpenPanel()
+            return
+        }
+        classicSkin.toggleMainWindow()
+    }
+
+    // MARK: One tick (the feed)
+
+    /// Copy the live engine clock into the model and push fresh spectrum levels.
+    /// Main thread, so the `@MainActor` model mutations are safe and SwiftUI
+    /// re-renders from the observable changes.
+    private func tick() {
+        model.updateClock(currentTime: core.currentTime, duration: core.duration)
+        let snapshot = latestSamples.latest()
+        model.levels = analyzer.process(snapshot.samples, sampleRate: snapshot.sampleRate)
+    }
+
+    // MARK: Open + play
+
+    /// Show an NSOpenPanel filtered to audio files, allowing MULTIPLE selection; on
+    /// pick, record the whole selection as the ordered playlist + play it.
+    ///
+    /// The panel grants access to the picked URLs for this launch, so we can mint a
+    /// bookmark per file directly (a transient `withAccess` bracket guards each
+    /// mint). We persist them as the ordered `PersistedBookmarks.playlist` (and keep
+    /// `.lastAudio` pointing at the first file for coherence), then open the
+    /// long-lived session scopes and load + play the whole queue.
+    func presentOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = AudioSession.audioContentTypes
+        panel.prompt = "Open"
+        panel.message = "Choose one or more audio files to play."
+
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        guard !urls.isEmpty else { return }
+        openAndPlay(urls: urls)
+    }
+
+    /// Record `urls` as the ordered playlist (minting + persisting a bookmark per
+    /// file, plus the first as `.lastAudio` for coherence), open the session scopes,
+    /// then load the queue and play from the top.
+    ///
+    /// ## `.lastAudio` vs the playlist (coherence)
+    /// The playlist SUPERSEDES the single `.lastAudio` slot: whenever we open a
+    /// selection we also re-point `.lastAudio` at the first file, so the two never
+    /// disagree, and launch-resolve prefers the playlist (falling back to
+    /// `.lastAudio` only when the playlist is empty — e.g. a store written by an
+    /// older build). The single-file open is just a one-element playlist.
+    private func openAndPlay(urls: [URL]) {
+        recordPlaylist(urls)
+        beginSession(for: urls)
+        core.load(urls.map(trackForURL))
+        core.play()
+    }
+
+    /// Mint a bookmark per `url` (each inside its own live panel-grant bracket) and
+    /// persist them as the ordered playlist, plus re-point `.lastAudio` at the first
+    /// file. A per-file mint failure simply drops that file from the persisted
+    /// playlist (it still plays THIS launch via the session scope); a file with no
+    /// bookmark just won't reopen on the next launch.
+    private func recordPlaylist(_ urls: [URL]) {
+        var current = store.load()
+        var playlistData: [Data] = []
+        for url in urls {
+            // Belt-and-suspenders bracket: the panel already grants access, but
+            // bracketing the mint keeps the contract uniform with the resolve path.
+            if let data = try? access.withAccess(to: url, perform: {
+                try access.bookmarkData(for: url)
+            }) {
+                playlistData.append(data)
+            }
+        }
+        current.setPlaylist(playlistData)
+        // Keep the single-slot `.lastAudio` coherent with the playlist head.
+        if let first = urls.first {
+            current = (try? access.withAccess(to: first) {
+                try resolver.record(url: first, as: .lastAudio, in: current)
+            }) ?? current
+        } else {
+            // Queue emptied (Clear Queue / Remove All): drop the single
+            // `.lastAudio` slot too, so a cleared queue does NOT resurrect the
+            // last track on the next launch — with an empty playlist it would
+            // otherwise be the launch-resolve fallback.
+            current.clearBookmark(for: .lastAudio)
+        }
+        store.save(current)
+    }
+
+    // MARK: Append (the playlist window's ADD menu + mini eject)
+
+    /// Show an NSOpenPanel filtered to audio files (multi-select) and APPEND the
+    /// pick to the queue — the playlist bar's "Add File(s)…" / mini eject flow,
+    /// vs `presentOpenPanel`'s replace-everything.
+    func presentAddFilesPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = AudioSession.audioContentTypes
+        panel.prompt = "Add"
+        panel.message = "Choose one or more audio files to add to the playlist."
+
+        guard panel.runModal() == .OK else { return }
+        appendToPlaylist(urls: panel.urls)
+    }
+
+    /// Show an NSOpenPanel picking ONE directory and APPEND its audio files
+    /// (recursive scan, path-sorted for a stable order) to the queue — the
+    /// playlist bar's "Add Directory…" flow. The directory pick grants sandbox
+    /// access to everything under it for this launch.
+    func presentAddFolderPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Add"
+        panel.message = "Choose a folder whose audio files to add to the playlist."
+
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        appendToPlaylist(urls: AudioSession.audioFiles(under: folder))
+    }
+
+    /// APPEND `urls` to the live queue: persist the MERGED playlist's bookmarks,
+    /// open ADDITIVE session scopes for just the new URLs (no `endSession` —
+    /// the already-loaded tracks keep their scopes; each `start…` gets its
+    /// balancing stop at the next `endSession`, and a duplicate URL is safe
+    /// because the brackets are counted), then `core.append` (which never
+    /// auto-plays and never moves the selection).
+    private func appendToPlaylist(urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        sessionScopes += urls.map { url in
+            (url: url, didStart: url.startAccessingSecurityScopedResource())
+        }
+        core.append(urls.map(trackForURL))
+        // Persist the WHOLE merged queue (the append above included) so the
+        // next launch reopens exactly what is loaded now. The pre-existing
+        // tracks' scopes are open, so re-minting their bookmarks succeeds.
+        persistCurrentPlaylist()
+    }
+
+    /// Re-persist the LIVE queue's bookmarks — after an append here or any edit
+    /// made inside the playlist window (remove / crop / clear / sort / reverse /
+    /// randomize), so the persisted playlist follows the visible one. The loaded
+    /// tracks' session scopes are open, so minting succeeds; removed URLs simply
+    /// drop out of the store (their scopes stay open until the next
+    /// `beginSession`/`endSession` — bounded and balanced).
+    func persistCurrentPlaylist() {
+        recordPlaylist(core.playlist.map(\.url))
+    }
+
+    /// The audio files under `folder`, recursively, path-sorted for a stable,
+    /// user-predictable order. Hidden files are skipped; a file counts as audio
+    /// when its content type conforms to `.audio` (falling back to the panel's
+    /// concrete extension list for files with no type metadata).
+    private static func audioFiles(under folder: URL) -> [URL] {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .contentTypeKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        var found: [URL] = []
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true else { continue }
+            if let type = values.contentType, type.conforms(to: .audio) {
+                found.append(url)
+            }
+        }
+        return found.sorted { $0.path < $1.path }
+    }
+
+    // MARK: Playlist files (.m3u — LIST OPTS + File/Skin menu)
+
+    /// The `.m3u` playlist types the open/save panels accept. Derived from the
+    /// filename extension (like `.wsz`); `.m3u8` is accepted on open for
+    /// convenience. Falls back to `.plainText` if the platform cannot
+    /// synthesize the type, so the panel is never unfiltered.
+    private static let playlistContentTypes: [UTType] = {
+        let m3u = [UTType(filenameExtension: "m3u"), UTType(filenameExtension: "m3u8")]
+            .compactMap { $0 }
+        return m3u.isEmpty ? [.plainText] : m3u
+    }()
+
+    /// Read a `.m3u` playlist file and parse it to its listed track URLs. The read
+    /// runs INSIDE a security-scoped access bracket (uniform with `recordPlaylist`)
+    /// so it works for both a panel-granted URL and a dropped URL; the pure
+    /// `M3UPlaylist.parse` does the rest. Returns `[]` if the file can't be read
+    /// (unreadable / unauthorized) — the caller guards against an empty result.
+    private func expandPlaylist(at url: URL) -> [URL] {
+        guard let text = try? access.withAccess(to: url, perform: {
+            try String(contentsOf: url, encoding: .utf8)
+        }) else { return [] }
+        return M3UPlaylist.parse(text)
+    }
+
+    /// Open a `.m3u` playlist: pick one, parse it (pure `M3UPlaylist`), and REPLACE
+    /// the queue with its entries — the classic Open-list behavior (`core.load`
+    /// stops playback; nothing auto-plays). The SINGLE source of truth for opening a
+    /// playlist file: the playlist window's LIST OPTS > "Open List…" and the File /
+    /// Skin menu's "Open Playlist…" both route here. The panel grants access to the
+    /// `.m3u` itself; each listed FILE plays only where the sandbox already reaches
+    /// it (a previously granted location) — an unreachable entry is skipped by the
+    /// engine's unplayable-track policy at play time.
+    func presentOpenPlaylistPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = AudioSession.playlistContentTypes
+        panel.prompt = "Open"
+        panel.message = "Choose a playlist file (.m3u) to open."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let urls = expandPlaylist(at: url)
+        guard !urls.isEmpty else { return }
+        recordPlaylist(urls)
+        beginSession(for: urls)
+        core.load(urls.map(trackForURL))
+    }
+
+    /// LIST OPTS > "Save List…" AND File / Skin ▸ "Save Playlist…": write the live
+    /// queue as `.m3u` (pure `M3UPlaylist.serialize` — absolute paths, `#EXTM3U`
+    /// header) wherever the save panel granted. A write failure is silently dropped
+    /// (the queue itself is unaffected). Internal (not private) so the menu commands
+    /// in `DwanimItApp` can route here — one source of truth for saving the playlist.
+    func presentSaveListPanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = AudioSession.playlistContentTypes
+        panel.nameFieldStringValue = "Playlist.m3u"
+        panel.prompt = "Save"
+        panel.message = "Save the current playlist as a .m3u file."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let text = M3UPlaylist.serialize(core.playlist.map(\.url))
+        try? text.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    // MARK: Launch resolve
+
+    /// On launch: reopen the last session **ready/paused** (do NOT auto-play). The
+    /// ordered PLAYLIST is preferred — if it resolves to one or more URLs we open
+    /// their session scopes and load the whole queue. When the playlist is empty
+    /// (e.g. a store written by an older single-file build) we fall back to the
+    /// `.lastAudio` slot. Either way the store is persisted when the resolver
+    /// refreshed (stale re-mint) or dropped (failed resolve) anything.
+    private func resolveLastAudioOnLaunch() {
+        let loaded = store.load()
+
+        // Prefer the playlist.
+        let playlist = resolver.resolvePlaylist(in: loaded)
+        if !playlist.urls.isEmpty {
+            if playlist.store != loaded {
+                store.save(playlist.store)
+            }
+            beginSession(for: playlist.urls)
+            // Load (selects index 0) WITHOUT play: the scene shows the reopened
+            // first title and a ready transport until the user presses play.
+            core.load(playlist.urls.map(trackForURL))
+            return
+        }
+
+        // No playlist — fall back to the single `.lastAudio` slot. Resolve over the
+        // playlist's possibly-updated store so a playlist drop is not lost.
+        let resolution = resolver.resolve(role: .lastAudio, in: playlist.store)
+        if resolution.store != loaded {
+            store.save(resolution.store)
+        }
+        guard let url = resolution.url else { return }
+        beginSession(for: [url])
+        core.load([trackForURL(url)])
+    }
+
+    // MARK: Session scope lifetime
+
+    /// Open the long-lived security scopes for `urls` (the loaded playlist; one
+    /// element for a single-file open), closing any previously held session scopes
+    /// first (so we never leak scopes across a playlist replacement). Holding a
+    /// scope for EVERY queued file — not just the first — is what lets the playlist
+    /// window select + play any track under the sandbox.
+    private func beginSession(for urls: [URL]) {
+        endSession()
+        // Start each scope for the duration the playlist is loaded. For a URL
+        // freshly picked in this launch this may return `false` (already
+        // accessible); stash that result so `endSession` issues a balancing stop
+        // only when we truly opened a scope. The resolved-from-bookmark case is the
+        // one that returns `true` and needs the matching stop.
+        sessionScopes = urls.map { url in
+            (url: url, didStart: url.startAccessingSecurityScopedResource())
+        }
+    }
+
+    /// Close every held session security scope, if any. Idempotent. Only issues the
+    /// balancing `stop…` for the scopes `beginSession` actually started.
+    private func endSession() {
+        for scope in sessionScopes where scope.didStart {
+            scope.url.stopAccessingSecurityScopedResource()
+        }
+        sessionScopes = []
+    }
+
+    // MARK: Helpers
+
+    /// Build a `Track` whose title is the file's own name stem (the user's file —
+    /// fine to display; NO brand title is invented), matching the harness.
+    private func trackForURL(_ url: URL) -> Track {
+        let stem = url.deletingPathExtension().lastPathComponent
+        return Track(url: url, title: stem)
+    }
+
+    /// The audio UTTypes the open panel accepts. `.audio` is the broad umbrella;
+    /// the common concrete types are listed so files that do not advertise the
+    /// umbrella conformance (and are still openable by the engine) are selectable.
+    private static let audioContentTypes: [UTType] = {
+        var types: [UTType] = [.audio, .mp3, .wav, .aiff, .mpeg4Audio]
+        if let flac = UTType("org.xiph.flac") { types.append(flac) }
+        if let m4a = UTType("com.apple.m4a-audio") { types.append(m4a) }
+        return types
+    }()
+}

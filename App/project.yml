@@ -1,16 +1,16 @@
 # XcodeGen spec for the real macOS app target.
 #
 # The lead runs `xcodegen generate` from this App/ directory to produce
-# Dwanim.xcodeproj, then `xcodebuild`. This file only DESCRIBES the project;
+# DwanimIt.xcodeproj, then `xcodebuild`. This file only DESCRIBES the project;
 # it is the single source of truth for the target, its settings, and the local
 # SkinKit package wiring.
 #
 # Locked decisions baked in here:
-#   - bundle id app.dwanim.Dwanim, display name Dwanim, min macOS 14.0
+#   - bundle id app.dwanim.dwanimit, display name dwanim it, min macOS 14.0
 #   - sandbox via the CODE_SIGN_ENTITLEMENTS file (3 keys; no network)
 #   - .wsz is NOT a document type (no CFBundleDocumentTypes / no UTI)
 
-name: Dwanim
+name: DwanimIt
 
 options:
   # Match the SkinKit package platform tier.
@@ -25,35 +25,35 @@ packages:
     path: ../SkinKit
 
 targets:
-  Dwanim:
+  DwanimIt:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
 
-    # The app's own Swift sources (DwanimApp.swift) and the asset catalog
+    # The app's own Swift sources (DwanimItApp.swift) and the asset catalog
     # (which carries the AppIcon set that CFBundleIconName references).
     #
-    # The whole Dwanim folder is taken as sources, then the Resources files
+    # The whole DwanimIt folder is taken as sources, then the Resources files
     # that must NOT be copied as loose bundle resources are excluded:
     #   - Info.plist            -> consumed via INFOPLIST_FILE
-    #   - Dwanim.entitlements   -> consumed via CODE_SIGN_ENTITLEMENTS
+    #   - DwanimIt.entitlements   -> consumed via CODE_SIGN_ENTITLEMENTS
     #   - AppIcon.icns          -> a standalone artifact from increment #3;
     #                              the bundle icon comes from the asset catalog,
     #                              so the loose .icns would be redundant bloat.
     sources:
-      - path: Dwanim
+      - path: DwanimIt
         excludes:
           - "Resources/Info.plist"
-          - "Resources/Dwanim.entitlements"
+          - "Resources/DwanimIt.entitlements"
           - "Resources/AppIcon.icns"
 
-    # Library products the app links from the local SkinKit package. DwanimUI +
-    # PlaybackKit + PlayerCore are what the seed (DwanimApp.swift) imports today;
+    # Library products the app links from the local SkinKit package. DwanimItUI +
+    # PlaybackKit + PlayerCore are what the seed (DwanimItApp.swift) imports today;
     # the rest are the products the full shell (#6) will pull in (classic-skin
     # rendering / windows), declared now so the link graph is complete.
     dependencies:
       - package: SkinKit
-        product: DwanimUI
+        product: DwanimItUI
       - package: SkinKit
         product: SkinAppKit
       - package: SkinKit
@@ -73,11 +73,11 @@ targets:
 
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.dwanim.Dwanim
+        PRODUCT_BUNDLE_IDENTIFIER: app.dwanim.dwanimit
         # We author Info.plist by hand; do not let Xcode synthesize one.
         GENERATE_INFOPLIST_FILE: NO
-        INFOPLIST_FILE: Dwanim/Resources/Info.plist
-        CODE_SIGN_ENTITLEMENTS: Dwanim/Resources/Dwanim.entitlements
+        INFOPLIST_FILE: DwanimIt/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: DwanimIt/Resources/DwanimIt.entitlements
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         # STRICT CONCURRENCY (M5 hardening): match the SkinKit package's
@@ -100,13 +100,13 @@ targets:
         # spec stays account-agnostic so any clone builds ad-hoc without secrets.
         ENABLE_HARDENED_RUNTIME: YES
 
-# A SHARED scheme so `xcodebuild -scheme Dwanim` works for any clone / CI
+# A SHARED scheme so `xcodebuild -scheme DwanimIt` works for any clone / CI
 # without relying on Xcode's per-user autocreated schemes (which are gitignored).
 schemes:
-  Dwanim:
+  DwanimIt:
     build:
       targets:
-        Dwanim: all
+        DwanimIt: all
     run:
       config: Debug
     archive:

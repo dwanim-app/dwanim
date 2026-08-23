@@ -30,7 +30,7 @@ let package = Package(
         .library(name: "PlayerControl", targets: ["PlayerControl"]),
         .library(name: "PlaybackKit", targets: ["PlaybackKit"]),
         .library(name: "SpectrumKit", targets: ["SpectrumKit"]),
-        .library(name: "DwanimUI", targets: ["DwanimUI"]),
+        .library(name: "DwanimItUI", targets: ["DwanimItUI"]),
         .library(name: "SkinAppKit", targets: ["SkinAppKit"])
     ],
     targets: [
@@ -93,7 +93,7 @@ let package = Package(
             swiftSettings: strictConcurrency
         ),
         .target(
-            name: "DwanimUI",
+            name: "DwanimItUI",
             dependencies: ["PlayerCore"],
             // The in-window emblem renders the SAME bitmap as the app icon
             // (a copy of the committed icon_256x256.png) so the glass-panel mark
@@ -104,13 +104,13 @@ let package = Package(
             // loose files; a loose PNG never resolves and renders blank). `.process`
             // runs the resource pipeline, which compiles the .xcassets into an
             // Assets.car inside `Bundle.module`. The emblem is a bundled asset, NOT
-            // an import: DwanimUI still imports only SwiftUI + PlayerCore (no AppKit).
+            // an import: DwanimItUI still imports only SwiftUI + PlayerCore (no AppKit).
             resources: [.process("Resources")],
             swiftSettings: strictConcurrency
         ),
         .testTarget(
-            name: "DwanimUITests",
-            dependencies: ["DwanimUI", "PlayerCore"],
+            name: "DwanimItUITests",
+            dependencies: ["DwanimItUI", "PlayerCore"],
             swiftSettings: strictConcurrency
         ),
         // The reusable AppKit tier (same platform tier as the harness: AppKit is
@@ -130,7 +130,7 @@ let package = Package(
             dependencies: [
                 "SkinKit", "SkinKitImageIO", "SkinRender",
                 "PlayerCore", "PlayerControl", "PlaybackKit", "SpectrumKit",
-                "DwanimUI", "SkinAppKit"
+                "DwanimItUI", "SkinAppKit"
             ],
             swiftSettings: strictConcurrency
         )

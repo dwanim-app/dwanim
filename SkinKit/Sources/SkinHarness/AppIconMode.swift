@@ -1,11 +1,11 @@
 import AppKit
 import CoreGraphics
-import DwanimUI
+import DwanimItUI
 import Foundation
 import SkinAppKit
 import SwiftUI
 
-// SkinHarness app-icon mode: render the deterministic `DwanimUI.AppIconView` at
+// SkinHarness app-icon mode: render the deterministic `DwanimItUI.AppIconView` at
 // each canonical `.iconset` pixel size via SwiftUI `ImageRenderer`, writing the
 // ten Apple-named PNGs into `<outDir>/AppIcon.iconset/`.
 //
@@ -19,7 +19,7 @@ import SwiftUI
 // fills a SOLID gradient plate (no `.ultraThinMaterial`), so the render is
 // deterministic off-screen and identical at every size.
 //
-// The size table (names -> pixels) lives in `DwanimUI.AppIconSizes`, shared with
+// The size table (names -> pixels) lives in `DwanimItUI.AppIconSizes`, shared with
 // the unit test that guards the slot list. This mode is harness-only; the pure
 // modules and the view stay untouched.
 
