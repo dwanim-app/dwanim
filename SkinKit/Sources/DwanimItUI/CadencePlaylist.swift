@@ -168,7 +168,14 @@ struct CadencePlaylist: View {
             core.select(first)
             return .handled
         }
-        .onChange(of: core.playlist) { selection.removeAll() }
+        // Clear the selection on STRUCTURAL changes only (add / remove / reorder),
+        // keyed on the track URLs rather than the whole `playlist` value: an async
+        // `setDuration` write-back mutates `playlist` in place to fill the Time
+        // column, and keying on the full value would wipe the user's selection every
+        // time a duration lands while a queue of files resolves. The URL list changes
+        // on add/remove/reorder (when the index-based selection genuinely goes stale)
+        // but not on a duration fill-in, so the selection now survives the resolve.
+        .onChange(of: core.playlist.map(\.url)) { selection.removeAll() }
         .frame(height: listHeight)
     }
 
@@ -181,7 +188,7 @@ struct CadencePlaylist: View {
     // MARK: Row
 
     private func row(index: Int, track: Track) -> some View {
-        let parts = Self.split(title: track.title, fallbackIndex: index)
+        let parts = Self.rowParts(title: track.title, index: index)
         return HStack(spacing: 0) {
             // Index / now-playing glyph.
             Group {
@@ -217,8 +224,9 @@ struct CadencePlaylist: View {
             .padding(.trailing, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Time.
-            Text(track.duration.map(CadenceTime.format) ?? "—")
+            // Time. `TrackTime.format` renders "—" until the async metadata read
+            // fills `track.duration` in (nil / non-finite / ≤ 0 → "—").
+            Text(TrackTime.format(track.duration))
                 .font(.system(size: 12))
                 .monospacedDigit()
                 .foregroundStyle(AppearanceTheme.secondary)
@@ -314,20 +322,15 @@ struct CadencePlaylist: View {
 
     // MARK: Title / artist split
 
-    /// Split a stored title into an inline `Artist - Title` pair when the filename
-    /// follows that convention (matching the design's inline-artist element); the
-    /// core `Track` carries no artist field, so this is a display-only derivation.
-    /// With no ` - ` separator the whole string is the title and no artist shows.
-    private static func split(title: String?, fallbackIndex: Int) -> (title: String, artist: String?) {
+    /// The row's display `(title, artist?)`: the `"Track N"` fallback for a blank
+    /// stored title stays HERE, then the shared `TrackTitle` seam does the inline
+    /// `Artist - Title` split (matching the design's inline-artist element). The core
+    /// `Track` carries no artist field, so the artist is a display-only derivation.
+    private static func rowParts(title: String?, index: Int) -> (title: String, artist: String?) {
         guard let raw = title, !raw.isEmpty else {
-            return ("Track \(fallbackIndex + 1)", nil)
+            return ("Track \(index + 1)", nil)
         }
-        let separators = raw.range(of: " - ")
-        guard let sep = separators else { return (raw, nil) }
-        let artist = String(raw[raw.startIndex..<sep.lowerBound])
-        let rest = String(raw[sep.upperBound...])
-        guard !artist.isEmpty, !rest.isEmpty else { return (raw, nil) }
-        return (rest, artist)
+        return TrackTitle.split(raw)
     }
 }
 

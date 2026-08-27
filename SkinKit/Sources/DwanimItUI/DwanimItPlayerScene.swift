@@ -19,7 +19,7 @@ import SwiftUI
 ///
 /// Now the gradient is simply the `.background` of the panel (ZERO surrounding
 /// margin — fix-5), so the scene's intrinsic size is exactly the panel size
-/// (definite width ~580 from `DefaultPlayerView`) by the panel's content height.
+/// (definite width 560 from `DefaultPlayerView`) by the panel's content height.
 /// The window thus HUGS the panel edge-to-edge: no surrounding gradient strip.
 /// `.fixedSize(horizontal: false, vertical: true)` pins the scene to its content
 /// height so the window opens compact. The look (gold panel on the teal-indigo
@@ -33,7 +33,7 @@ import SwiftUI
 /// fitting/intrinsic size to AppKit (measured: `fittingSize == 0` on EVERY layout
 /// pass, `intrinsicContentSize == noIntrinsicMetric`). So AppKit cannot shrink the
 /// window to hug the panel: with no saved frame it opens at a large platform
-/// default (~900×450) with the 580 panel floating inside, and `.contentSize` does
+/// default (~900×450) with the 560 panel floating inside, and `.contentSize` does
 /// NOT grow it when an in-scene section expands at runtime. The fix is to MEASURE
 /// the PANEL's intrinsic size here in pure SwiftUI — a `.background` `GeometryReader`
 /// on the `.fixedSize()`-pinned panel (so it reads the TRUE intrinsic size, not the
@@ -47,13 +47,6 @@ public struct DwanimItPlayerScene: View {
 
     private let core: PlayerCore
     private let model: PlayerViewModel
-    /// App-layer "Open Audio…" action, forwarded to the gear menu in
-    /// `DefaultPlayerView`. Optional so the headless harness can host the scene
-    /// without an AppKit panel; the app wires it to `session.presentOpenPanel()`.
-    private let onOpenAudio: (() -> Void)?
-    /// App-layer "Open Skin…" action; the app wires it to
-    /// `session.presentOpenSkinPanel()`.
-    private let onOpenSkin: (() -> Void)?
     /// App-layer "Add Songs…" action: APPEND picked audio files to the queue. The
     /// app wires it to `session.presentAddFilesPanel()`; the gear menu hides the
     /// item when it is nil (the headless harness). Forwarded to `DefaultPlayerView`.
@@ -70,20 +63,33 @@ public struct DwanimItPlayerScene: View {
     /// `session.handleDroppedURLs` the window-level drop uses. Optional so the
     /// headless harness can host the scene without it.
     private let onAddURLs: (([URL]) -> Void)?
-    /// App-layer "Open Skin…" action for the Appearance popover: present a
-    /// colour-theme (`.dwskin` / `.json`) file panel, read the picked file's text,
+    /// App-layer "Open Theme…" action for the Appearance popover: present a
+    /// colour-theme (`.dwtheme` / `.json`; legacy `.dwskin` still opens) file panel,
+    /// read the picked file's text,
     /// and hand `(text, filename)` back so the popover can load it into the
     /// `AppearanceStore`. The app wires it to `session.presentOpenAppearancePanel`;
-    /// nil in the headless harness (the Open Skin… row is then disabled). Forwarded to
-    /// `DefaultPlayerView`. Distinct from `onOpenSkin` (the classic `.wsz` bitmap
-    /// skin, ⌘⇧O) — this loads the nine-token COLOUR theme for the default face.
+    /// nil in the headless harness (the Open Theme… row is then disabled). Forwarded to
+    /// `DefaultPlayerView`. Distinct from the menu-bar "Open Skin…" (⌘⇧O) command,
+    /// which applies a classic `.wsz` bitmap skin — this loads the nine-token COLOUR
+    /// theme for the default face.
     private let onOpenAppearanceFile: OpenAppearanceFileAction?
+    /// App-layer "Open Skin…" action for the Appearance popover: open the classic
+    /// `.wsz` skin picker — the SAME command as File ▸ Open Skin… (⌘⇧O). The app wires
+    /// it to `session.presentOpenSkinPanel()`; a no-op `{}` default in the headless
+    /// harness. Fire-and-forget — loading a `.wsz` swaps the whole face, so no
+    /// completion is threaded back. Forwarded to `DefaultPlayerView`. Distinct from
+    /// `onOpenAppearanceFile` (the nine-token COLOUR theme for the default face).
+    private let onOpenSkin: () -> Void
 
-    /// The player's theme store. Owned here (as scene `@State`) so it outlives the
-    /// value-type views and is shared by the panel AND the backdrop — switching the
-    /// theme in the title-bar popover retints the whole scene at once. Kept internal
-    /// to the scene so the App / harness call sites are unchanged.
-    @State private var appearance = AppearanceStore()
+    /// The player's theme store, INJECTED by the owner (F16). The App tier creates it
+    /// wired to UserDefaults persistence (`restoring:` + `onPersist`) and owns it as
+    /// `@State`, then passes the one instance down here — it is held as a plain
+    /// reference and read in `body` (shared by the panel AND the backdrop), so
+    /// switching the theme in the title-bar popover retints the whole scene at once
+    /// and Observation still tracks it. The headless harness gets a fresh in-memory
+    /// `AppearanceStore()` with no persistence via the init default, so its call site
+    /// is unchanged.
+    private let appearance: AppearanceStore
     /// Reports the PANEL's intrinsic content SIZE (in points) whenever it changes
     /// — e.g. when the in-scene EQ or queue expands or collapses. The App layer
     /// wires this to a window content-size resize so the window grows/shrinks to
@@ -94,7 +100,7 @@ public struct DwanimItPlayerScene: View {
     /// Why a SIZE (not just height): a SwiftUI `Window` hosted in an `NSHostingView`
     /// reports `fittingSize == 0` (measured), so AppKit's own shrink-to-fit cannot
     /// derive the compact WIDTH either — without a saved frame the window opens at a
-    /// large platform default (~900×450) with the 580 panel floating inside. So the
+    /// large platform default (~900×450) with the 560 panel floating inside. So the
     /// scene measures the panel's intrinsic size in pure SwiftUI and the App layer
     /// sets the window content size to it.
     private let onContentSizeChange: ((CGSize) -> Void)?
@@ -102,24 +108,24 @@ public struct DwanimItPlayerScene: View {
     public init(
         core: PlayerCore,
         model: PlayerViewModel,
-        onOpenAudio: (() -> Void)? = nil,
-        onOpenSkin: (() -> Void)? = nil,
+        appearance: AppearanceStore = AppearanceStore(),
         onAddFiles: (() -> Void)? = nil,
         onAddFolder: (() -> Void)? = nil,
         onPlaylistEdited: (() -> Void)? = nil,
         onAddURLs: (([URL]) -> Void)? = nil,
         onOpenAppearanceFile: OpenAppearanceFileAction? = nil,
+        onOpenSkin: @escaping () -> Void = {},
         onContentSizeChange: ((CGSize) -> Void)? = nil
     ) {
         self.core = core
         self.model = model
-        self.onOpenAudio = onOpenAudio
-        self.onOpenSkin = onOpenSkin
+        self.appearance = appearance
         self.onAddFiles = onAddFiles
         self.onAddFolder = onAddFolder
         self.onPlaylistEdited = onPlaylistEdited
         self.onAddURLs = onAddURLs
         self.onOpenAppearanceFile = onOpenAppearanceFile
+        self.onOpenSkin = onOpenSkin
         self.onContentSizeChange = onContentSizeChange
     }
 
@@ -138,7 +144,8 @@ public struct DwanimItPlayerScene: View {
             onAddFolder: onAddFolder,
             onPlaylistEdited: onPlaylistEdited,
             onAddURLs: onAddURLs,
-            onOpenAppearanceFile: onOpenAppearanceFile
+            onOpenAppearanceFile: onOpenAppearanceFile,
+            onOpenSkin: onOpenSkin
         )
         .fixedSize()
         // Measure the panel's intrinsic size (pure SwiftUI) and report it up so the

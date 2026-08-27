@@ -3,8 +3,8 @@ import SwiftUI
 
 // MARK: - AppearanceParseError
 
-/// Why parsing a picked skin file into an `AppearanceTheme` failed. Both cases map
-/// to the SAME user-facing error hint (the file "isn't a readable skin"); they are
+/// Why parsing a picked theme file into an `AppearanceTheme` failed. Both cases map
+/// to the SAME user-facing error hint (the file "isn't a readable theme"); they are
 /// distinguished only so tests can assert the specific reason.
 public enum AppearanceParseError: Error, Equatable, Sendable {
     /// The text had no usable content at all (empty / whitespace only).
@@ -25,7 +25,7 @@ public extension AppearanceTheme {
         "accent", "glow", "glow2", "bg1", "bg2", "panel", "text", "muted", "lcd"
     ]
 
-    /// Parse a picked skin file's TEXT into a resolved `AppearanceTheme`, deterministic
+    /// Parse a picked theme file's TEXT into a resolved `AppearanceTheme`, deterministic
     /// and I/O-free.
     ///
     /// Accepted forms (tried in order):
@@ -135,9 +135,22 @@ enum AppearanceParser {
         }
 
         // `name` may sit at the top level (a sibling of the tokens / "colors") or,
-        // leniently, inside the chosen source dict.
-        let name = (top["name"] as? String) ?? (source["name"] as? String)
+        // leniently, inside the chosen source dict. Matched case-insensitively
+        // (`"Name"` / `"NAME"` both work), mirroring the case-insensitive token-key
+        // handling above and the line format's lower-cased keys.
+        let name = Self.caseInsensitiveString("name", in: top)
+            ?? Self.caseInsensitiveString("name", in: source)
         return RawFields(name: name, colors: colors)
+    }
+
+    /// The string value for `key` (already lower-cased) in `dict`, matched
+    /// case-insensitively — JSON keys are case-sensitive, but the token / `name`
+    /// keys are recognised regardless of case. `nil` when no matching string is found.
+    private static func caseInsensitiveString(_ key: String, in dict: [String: Any]) -> String? {
+        for (candidate, value) in dict where candidate.lowercased() == key {
+            if let string = value as? String { return string }
+        }
+        return nil
     }
 
     /// Lift fields from the plain-text line format: one `key: value` or `key = value`
@@ -191,7 +204,17 @@ extension Color {
             channels = AppearanceColorParsing.rgbaChannels(string)
         }
         guard let c = channels else { return nil }
-        self.init(rgba: c.r, c.g, c.b, c.a)
+        // Clamp each channel to its valid range (r/g/b 0–255, a 0–1) so a malformed
+        // token like `rgb(-5,999,0)` yields a sane in-gamut colour rather than an
+        // out-of-range component. Hex channels are already in range by construction;
+        // this only bites the `rgb()` / `rgba()` numeric forms, whose `Double`s can
+        // exceed the range.
+        self.init(
+            rgba: min(max(c.r, 0), 255),
+            min(max(c.g, 0), 255),
+            min(max(c.b, 0), 255),
+            min(max(c.a, 0), 1)
+        )
     }
 }
 

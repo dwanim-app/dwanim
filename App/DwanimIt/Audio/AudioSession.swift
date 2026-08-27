@@ -125,6 +125,14 @@ final class AudioSession {
     /// (`prepareForTermination`) to suppress its close→quit on the teardown close.
     private var isTerminating = false
 
+    /// Guards the modeless `NSOpenPanel` / `NSSavePanel` `begin { }` flows against
+    /// being STACKED. Every `begin` panel is modeless, so without this a user could
+    /// open a second Add / Open / Save panel while the first is still up. Set true
+    /// right before each `panel.begin` and cleared in the completion on EVERY path
+    /// (OK or cancel); each present-method early-returns while it is true, so at most
+    /// one of these panels is open at a time. Benign today but keeps the flows tidy.
+    private var isPresentingPanel = false
+
     /// Spectrum bar count for the compact default-skin row (matches the harness).
     private static let barCount = 24
     /// ~22 Hz feed cadence (matches the harness default-skin player).
@@ -313,7 +321,7 @@ final class AudioSession {
     /// Resize the default SwiftUI window's CONTENT SIZE to `size` (both width AND
     /// height), reported by the scene's `onContentSizeChange` whenever the panel's
     /// intrinsic size changes — at first layout, and when the in-scene EQ
-    /// (EqualizerPanel) or queue (PlaylistPanel) expands or collapses (fix-5,
+    /// (`CadenceEQDrawer`) or queue (`CadencePlaylist`) expands or collapses (fix-5,
     /// extended to width for the 3-up default). A SwiftUI `Window` hosted in an
     /// `NSHostingView` does not expose its fitting/intrinsic size to AppKit
     /// (`fittingSize == 0`, measured), so it opens at a large platform default
@@ -412,16 +420,17 @@ final class AudioSession {
         classicSkin.presentOpenPanel()
     }
 
-    // MARK: Open Skin… (colour theme — the Appearance popover)
+    // MARK: Open Theme… (colour theme — the Appearance popover)
 
-    /// Present the Appearance popover's "Open Skin…" panel: pick ONE `.dwskin` /
-    /// `.json` colour-theme file, read its TEXT inside the panel's security scope, and
+    /// Present the Appearance popover's "Open Theme…" panel: pick ONE `.dwtheme` /
+    /// `.json` colour-theme file (legacy `.dwskin` is still accepted for backward
+    /// compat), read its TEXT inside the panel's security scope, and
     /// hand `(text, filename)` back to `completion` — the popover then parses + applies
     /// it via the `AppearanceStore`. On cancel the completion gets `(nil, nil)`; on an
     /// unreadable pick `(nil, filename)` (so the popover can still surface the "isn't a
-    /// readable skin" hint).
+    /// readable theme" hint).
     ///
-    /// NON-BLOCKING `begin { }` (BUG-C): the "Open Skin…" row is a SwiftUI button
+    /// NON-BLOCKING `begin { }` (BUG-C): the "Open Theme…" row is a SwiftUI button
     /// inside a popover, so a nested `runModal()` would deadlock the SwiftUI
     /// transaction exactly like the audio / playlist panels; `begin` presents without a
     /// nested modal loop and runs the completion on the main actor at dismissal.
@@ -429,16 +438,19 @@ final class AudioSession {
     /// SEPARATE from `presentOpenSkinPanel()` (the classic `.wsz` bitmap skin, ⌘⇧O):
     /// this loads a nine-token COLOUR theme for the default face, not a skin cluster.
     func presentOpenAppearancePanel(_ completion: @escaping AppearanceFileCompletion) {
+        guard !isPresentingPanel else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = AudioSession.appearanceContentTypes
         panel.prompt = "Open"
-        panel.message = "Choose a color-theme file (.dwskin or .json)."
+        panel.message = "Choose a color-theme file (.dwtheme or .json)."
 
+        isPresentingPanel = true
         panel.begin { [weak self] response in
             MainActor.assumeIsolated {
+                self?.isPresentingPanel = false
                 guard let self, response == .OK, let url = panel.url else {
                     completion(nil, nil)
                     return
@@ -592,6 +604,7 @@ final class AudioSession {
     /// `.lastAudio` pointing at the first file for coherence), then open the
     /// long-lived session scopes and load + play the whole queue.
     func presentOpenPanel() {
+        guard !isPresentingPanel else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -611,12 +624,14 @@ final class AudioSession {
         // unaffected. The handler runs on the main run loop = the main actor's
         // executor, so `MainActor.assumeIsolated` is sound (same pattern as the
         // RedrawLoop tick above).
+        isPresentingPanel = true
         panel.begin { [weak self] response in
-            guard response == .OK else { return }
             MainActor.assumeIsolated {
+                self?.isPresentingPanel = false
+                guard response == .OK, let self else { return }
                 let urls = panel.urls
                 guard !urls.isEmpty else { return }
-                self?.openAndPlay(urls: urls)
+                self.openAndPlay(urls: urls)
             }
         }
     }
@@ -635,6 +650,7 @@ final class AudioSession {
         recordPlaylist(urls)
         beginSession(for: urls)
         core.load(urls.map(trackForURL))
+        loadDurations(for: urls)
         core.play()
     }
 
@@ -677,6 +693,7 @@ final class AudioSession {
     /// pick to the queue — the playlist bar's "Add File(s)…" / mini eject flow,
     /// vs `presentOpenPanel`'s replace-everything.
     func presentAddFilesPanel() {
+        guard !isPresentingPanel else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -690,10 +707,12 @@ final class AudioSession {
         // deadlocks the SwiftUI transaction (0 songs added, app stuck). `begin` runs
         // the append on the main actor when the panel dismisses. See
         // `presentOpenPanel` for the full rationale; works from AppKit too.
+        isPresentingPanel = true
         panel.begin { [weak self] response in
-            guard response == .OK else { return }
             MainActor.assumeIsolated {
-                self?.appendToPlaylist(urls: panel.urls)
+                self?.isPresentingPanel = false
+                guard response == .OK, let self else { return }
+                self.appendToPlaylist(urls: panel.urls)
             }
         }
     }
@@ -703,6 +722,7 @@ final class AudioSession {
     /// playlist bar's "Add Directory…" flow. The directory pick grants sandbox
     /// access to everything under it for this launch.
     func presentAddFolderPanel() {
+        guard !isPresentingPanel else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = true
@@ -714,10 +734,12 @@ final class AudioSession {
         // button, so a nested `runModal()` deadlocks the SwiftUI transaction. `begin`
         // runs the folder scan + append on the main actor at dismissal. See
         // `presentOpenPanel`; works from AppKit too.
+        isPresentingPanel = true
         panel.begin { [weak self] response in
-            guard response == .OK, let folder = panel.url else { return }
             MainActor.assumeIsolated {
-                self?.appendToPlaylist(urls: AudioSession.audioFiles(under: folder))
+                self?.isPresentingPanel = false
+                guard response == .OK, let folder = panel.url, let self else { return }
+                self.appendToPlaylist(urls: AudioSession.audioFiles(under: folder))
             }
         }
     }
@@ -746,6 +768,7 @@ final class AudioSession {
             (url: url, didStart: url.startAccessingSecurityScopedResource())
         }
         core.append(urls.map(trackForURL))
+        loadDurations(for: urls)
         // Persist the WHOLE merged queue (the append above included) so the
         // next launch reopens exactly what is loaded now. The pre-existing
         // tracks' scopes are open, so re-minting their bookmarks succeeds.
@@ -789,13 +812,19 @@ final class AudioSession {
 
     // MARK: Playlist files (.m3u — LIST OPTS + File/Skin menu)
 
-    /// The colour-theme types the Appearance "Open Skin…" panel accepts: the custom
-    /// `.dwskin` extension plus `.json` (`public.json` == application/json). Derived
-    /// from the filename extension like `.wsz` / `.m3u`, so an unregistered `.dwskin`
-    /// is still selectable. Falls back to `.plainText` if neither type synthesises, so
-    /// the panel is never unfiltered.
+    /// The colour-theme types the Appearance "Open Theme…" panel accepts, in preference
+    /// order: the new `.dwtheme` extension first, the LEGACY `.dwskin` (still opened for
+    /// backward compat — the theme file was renamed away from the misleading "skin"
+    /// word, but existing `.dwskin` files keep working), then `.json` (`public.json` ==
+    /// application/json). Each custom extension is derived from the filename extension
+    /// like `.wsz` / `.m3u`, so an unregistered `.dwtheme` / `.dwskin` is still
+    /// selectable. Falls back to `.plainText` if no type synthesises, so the panel is
+    /// never unfiltered. No parse logic keys on the extension — format is detected from
+    /// the file's CONTENT (JSON vs. `key: value` lines) — so both extensions load the
+    /// same way.
     private static let appearanceContentTypes: [UTType] = {
         var types: [UTType] = []
+        if let dwtheme = UTType(filenameExtension: "dwtheme") { types.append(dwtheme) }
         if let dwskin = UTType(filenameExtension: "dwskin") { types.append(dwskin) }
         types.append(.json)
         return types.isEmpty ? [.plainText] : types
@@ -832,6 +861,7 @@ final class AudioSession {
     /// it (a previously granted location) — an unreachable entry is skipped by the
     /// engine's unplayable-track policy at play time.
     func presentOpenPlaylistPanel() {
+        guard !isPresentingPanel else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -845,15 +875,17 @@ final class AudioSession {
         // Add panels so no SwiftUI-triggered NSOpenPanel uses a nested `runModal()`.
         // See `presentOpenPanel`; the completion runs the REPLACE-load on the main
         // actor and works from AppKit too.
+        isPresentingPanel = true
         panel.begin { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
             MainActor.assumeIsolated {
-                guard let self else { return }
+                self?.isPresentingPanel = false
+                guard response == .OK, let url = panel.url, let self else { return }
                 let urls = self.expandPlaylist(at: url)
                 guard !urls.isEmpty else { return }
                 self.recordPlaylist(urls)
                 self.beginSession(for: urls)
                 self.core.load(urls.map(self.trackForURL))
+                self.loadDurations(for: urls)
             }
         }
     }
@@ -864,6 +896,7 @@ final class AudioSession {
     /// (the queue itself is unaffected). Internal (not private) so the menu commands
     /// in `DwanimItApp` can route here — one source of truth for saving the playlist.
     func presentSaveListPanel() {
+        guard !isPresentingPanel else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = AudioSession.playlistContentTypes
         panel.nameFieldStringValue = "Playlist.m3u"
@@ -875,10 +908,11 @@ final class AudioSession {
         // panels so no SwiftUI-triggered panel uses a nested `runModal()`. See
         // `presentOpenPanel`; the completion serializes + writes on the main actor
         // and works from AppKit too.
+        isPresentingPanel = true
         panel.begin { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
             MainActor.assumeIsolated {
-                guard let self else { return }
+                self?.isPresentingPanel = false
+                guard response == .OK, let url = panel.url, let self else { return }
                 let text = M3UPlaylist.serialize(self.core.playlist.map(\.url))
                 try? text.write(to: url, atomically: true, encoding: .utf8)
             }
@@ -906,6 +940,7 @@ final class AudioSession {
             // Load (selects index 0) WITHOUT play: the scene shows the reopened
             // first title and a ready transport until the user presses play.
             core.load(playlist.urls.map(trackForURL))
+            loadDurations(for: playlist.urls)
             return
         }
 
@@ -918,6 +953,7 @@ final class AudioSession {
         guard let url = resolution.url else { return }
         beginSession(for: [url])
         core.load([trackForURL(url)])
+        loadDurations(for: [url])
     }
 
     // MARK: Session scope lifetime
@@ -951,10 +987,36 @@ final class AudioSession {
     // MARK: Helpers
 
     /// Build a `Track` whose title is the file's own name stem (the user's file —
-    /// fine to display; NO brand title is invented), matching the harness.
+    /// fine to display; NO brand title is invented), matching the harness. The
+    /// `duration` stays `nil` here — it is resolved ASYNCHRONOUSLY by
+    /// `loadDurations(for:)` after the tracks are in the queue (a synchronous read
+    /// per file would stall adding a folder of hundreds).
     private func trackForURL(_ url: URL) -> Track {
         let stem = url.deletingPathExtension().lastPathComponent
         return Track(url: url, title: stem)
+    }
+
+    /// Resolve each URL's duration off the main thread and write it back into the
+    /// observable `PlayerCore` track, so the default face's playlist Time column
+    /// (which reads `track.duration`) fills in shortly after files are added.
+    ///
+    /// Fired from every add path (open / append / launch-resolve / m3u open) once
+    /// the tracks are already in the queue. Each load is its own `Task`: it
+    /// inherits this `@MainActor`, so the `core.setDuration(_:forURL:)` write-back
+    /// is main-actor-correct, while the `await`ed `AVURLAsset.load(.duration)`
+    /// inside `TrackDurationLoader` runs on AVFoundation's executor — the UI is
+    /// never blocked. Write-back is URL-keyed, so a reorder / removal between the
+    /// load starting and finishing is harmless. The queue's session scope is
+    /// already open (see `beginSession` / `appendToPlaylist`), so the read has file
+    /// access; an unreadable file just keeps its "—". URLs are de-duplicated so the
+    /// same file is read once even if queued more than once.
+    private func loadDurations(for urls: [URL]) {
+        for url in Set(urls) {
+            Task { [weak self] in
+                guard let seconds = await TrackDurationLoader.duration(of: url) else { return }
+                self?.core.setDuration(seconds, forURL: url)
+            }
+        }
     }
 
     /// The audio UTTypes the open panel accepts. `.audio` is the broad umbrella;

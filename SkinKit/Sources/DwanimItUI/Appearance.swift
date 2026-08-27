@@ -141,7 +141,7 @@ public struct AppearanceTheme: Identifiable, Equatable, Sendable {
     public static let removeGlyph = Color(hex: 0x6f6f74)
     /// `#b8b8bd` — a row title for a track with no file.
     public static let missingTitle = Color(hex: 0xb8b8bd)
-    /// `#ff9a90` — the skin-parse error hint colour.
+    /// `#ff9a90` — the theme-parse error hint colour.
     public static let error = Color(hex: 0xff9a90)
     /// `#d6d6da` — the seek track's filled portion.
     public static let seekFill = Color(hex: 0xd6d6da)
@@ -184,24 +184,57 @@ public struct AppearanceTheme: Identifiable, Equatable, Sendable {
     public static let railFill = Color.white.opacity(0.14)
 }
 
-// MARK: - Open-skin file panel contract
+// MARK: - Open-theme file panel contract
 
-/// A completion the App invokes with the picked skin file's TEXT + FILENAME — both
+/// A completion the App invokes with the picked theme file's TEXT + FILENAME — both
 /// `nil` when the user cancelled the panel, or `(nil, filename)` when the file could
 /// not be read. `@MainActor` because it drives the `@MainActor` `AppearanceStore`.
 public typealias AppearanceFileCompletion = @MainActor (_ text: String?, _ filename: String?) -> Void
 
-/// The App-tier "Open Skin…" action: present a file panel and, on OK, call the
+/// The App-tier "Open Theme…" action: present a file panel and, on OK, call the
 /// completion with the picked file's text + filename (or `nil` on cancel). The App
 /// owns the `NSOpenPanel` (so `DwanimItUI` stays AppKit-free); the Appearance popover
 /// supplies the completion, which parses + applies the text via the `AppearanceStore`.
 public typealias OpenAppearanceFileAction = @MainActor (@escaping AppearanceFileCompletion) -> Void
 
+// MARK: - AppearancePersistedState
+
+/// The launch-persistable snapshot of the current Appearance selection (F16). A pure
+/// value the App tier can JSON-encode into UserDefaults and hand back at the next
+/// launch — `DwanimItUI` never touches Foundation-UserDefaults itself (the write /
+/// read is a plain `onPersist` closure the App wires up).
+///
+/// Two shapes, distinguished by `sourceText`:
+///   - `sourceText == nil` — a BUILT-IN selected by `name` (restore via `select`).
+///   - `sourceText != nil` — a LOADED theme to re-parse (restore by re-running the
+///     same `load(text:filename:)` path, so collision-suffixing etc. reproduce). We
+///     persist the raw source text (+ its filename) rather than the resolved `Color`
+///     tokens: reconstructing via the existing `AppearanceParser` keeps this value
+///     AppKit-free (serializing a resolved `Color` would need AppKit) and reuses one
+///     parser.
+public struct AppearancePersistedState: Codable, Sendable, Equatable {
+    /// The selected theme's display name — the identity of a built-in, or the
+    /// resolved name of a loaded theme.
+    public let name: String
+    /// The raw source text of a LOADED theme, to be re-parsed on restore; `nil` for a
+    /// built-in (which is restored by `name` alone).
+    public let sourceText: String?
+    /// The filename the loaded theme was read from (drives the parser's name-stem
+    /// fallback + the collision-suffix reproduction); `nil` for a built-in.
+    public let filename: String?
+
+    public init(name: String, sourceText: String? = nil, filename: String? = nil) {
+        self.name = name
+        self.sourceText = sourceText
+        self.filename = filename
+    }
+}
+
 // MARK: - AppearanceStore
 
 /// The observable holder of the current player theme. Exposes the ordered themes
-/// (built-ins, then any user-loaded skins), a `select` that swaps the current theme
-/// instantly, and a `load(text:filename:)` that parses a picked skin FILE into a new
+/// (built-ins, then any user-loaded themes), a `select` that swaps the current theme
+/// instantly, and a `load(text:filename:)` that parses a picked theme file into a new
 /// theme — every view reads `store.current`, so a swap retints the whole deck on the
 /// next render, and the popover reads `hint` / `isError` for its status line.
 ///
@@ -218,7 +251,7 @@ public final class AppearanceStore {
     /// The ordered built-in themes shown first in the Appearance popover.
     public let builtIns: [AppearanceTheme]
 
-    /// Themes loaded from a user skin file, in load order — listed AFTER the
+    /// Themes loaded from a user theme file, in load order — listed AFTER the
     /// built-ins in the popover. A same-named reload replaces its earlier entry
     /// (see `load`) rather than duplicating.
     public private(set) var loaded: [AppearanceTheme] = []
@@ -230,13 +263,52 @@ public final class AppearanceStore {
     /// The error hint shown while `isError` is true (set by a failed `load`).
     private var errorMessage = ""
 
+    /// Emits the current selection as an `AppearancePersistedState` whenever it
+    /// changes (from `select` / `load`) so the App tier can persist it to
+    /// UserDefaults. A plain closure — `DwanimItUI` stays AppKit / Foundation-UI
+    /// free — and `nil` in the headless harness (no persistence). NEVER called from
+    /// the restore path (guarded by `isRestoring`), so a launch does not churn the
+    /// store.
+    public var onPersist: ((AppearancePersistedState) -> Void)?
+
+    /// The raw source text (+ filename) each LOADED theme was parsed from, keyed by
+    /// its resolved name. Lets `select` re-emit a LOADED persisted state (with its
+    /// source) when the user switches BACK to a loaded theme via the popover — a
+    /// resolved `AppearanceTheme` carries no source, so without this a re-selected
+    /// loaded theme would persist as a built-in name that falls back to Graphite on
+    /// the next launch. Populated by `load`, reproduced by the loaded-restore path.
+    private var loadedSources: [String: (text: String, filename: String)] = [:]
+
+    /// True ONLY while `restore(_:)` is applying a persisted state, so the `select` /
+    /// `load` it drives does not re-emit a persist write (which would churn
+    /// UserDefaults at every launch). Reset in a `defer`.
+    private var isRestoring = false
+
     public init(current: AppearanceTheme = .graphite, builtIns: [AppearanceTheme] = AppearanceTheme.builtIns) {
         self.builtIns = builtIns
         self.current = current
     }
 
+    /// Restore a persisted selection at init AND wire the persist sink (F16). The App
+    /// tier calls this with the value it decoded from UserDefaults (or `nil` on first
+    /// launch / a corrupt payload) and the closure that writes future changes back.
+    /// The restore is applied WITHOUT re-emitting (see `restore`), so wiring
+    /// `onPersist` first is safe — a launch reproduces the theme without churning the
+    /// store.
+    public convenience init(
+        restoring state: AppearancePersistedState?,
+        onPersist: ((AppearancePersistedState) -> Void)? = nil,
+        builtIns: [AppearanceTheme] = AppearanceTheme.builtIns
+    ) {
+        self.init(current: .graphite, builtIns: builtIns)
+        self.onPersist = onPersist
+        if let state {
+            restore(state)
+        }
+    }
+
     /// The full ordered theme list for the popover: built-ins first, then the loaded
-    /// skins, de-duplicated by name (a built-in wins a name tie) so every row keeps a
+    /// themes, de-duplicated by name (a built-in wins a name tie) so every row keeps a
     /// unique `id` for `ForEach`.
     public var themes: [AppearanceTheme] {
         var seen = Set<String>()
@@ -244,28 +316,32 @@ public final class AppearanceStore {
     }
 
     /// The popover's status line. Normal (muted) — naming the current theme and what a
-    /// skin file is — unless the last load failed, in which case it is the error hint.
+    /// theme file is — unless the last load failed, in which case it is the error hint.
     public var hint: String {
         isError
             ? errorMessage
-            : "Current: \(current.name) — A skin is a .dwskin or .json file of colors."
+            : "Current: \(current.name) — A theme is a .dwtheme or .json color file."
     }
 
-    /// Swap to the theme named `name` (a built-in OR a loaded skin), instantly. An
-    /// unknown name is a guarded no-op (the current theme is kept). Clears any error.
+    /// Swap to the theme named `name` (a built-in OR a loaded theme), instantly. An
+    /// unknown name is a guarded no-op (the current theme is kept). Clears any error
+    /// and persists the new selection.
     public func select(name: String) {
         guard let match = themes.first(where: { $0.name == name }) else { return }
         current = match
         isError = false
+        emitPersist()
     }
 
-    /// Swap directly to `theme`, instantly. Clears any error hint.
+    /// Swap directly to `theme`, instantly. Clears any error hint and persists the new
+    /// selection.
     public func select(_ theme: AppearanceTheme) {
         current = theme
         isError = false
+        emitPersist()
     }
 
-    /// Load a skin file's TEXT: parse it (JSON or `key: value` lines) and, on success,
+    /// Load a theme file's TEXT: parse it (JSON or `key: value` lines) and, on success,
     /// append the resolved theme (merged over Graphite) to the loaded list, select it,
     /// and clear the error. A same-named reload REPLACES its earlier entry rather than
     /// duplicating. On failure (empty / no recognised tokens) the current theme is
@@ -273,14 +349,96 @@ public final class AppearanceStore {
     public func load(text: String, filename: String) {
         switch AppearanceTheme.parse(text: text, filename: filename) {
         case .success(let theme):
-            loaded.removeAll { $0.name == theme.name }
-            loaded.append(theme)
-            current = theme
+            // Guard a BUILT-IN name collision: `themes` de-dupes by name with a
+            // built-in winning the `id`==name tie, which would HIDE a loaded theme
+            // named like a built-in AND checkmark the built-in row while the loaded
+            // theme is actually `current`. Rename the loaded one on collision so it
+            // stays reachable + correctly checkmarked. (A LOADED-vs-loaded name clash
+            // is left to the same-name REPLACE below — the intended reload semantics.)
+            let resolved = collisionSafe(theme)
+            loaded.removeAll { $0.name == resolved.name }
+            loaded.append(resolved)
+            // Remember the raw source so a later re-select of this loaded theme can
+            // persist the LOADED state (with its source), not a bare built-in name.
+            loadedSources[resolved.name] = (text: text, filename: filename)
+            current = resolved
             isError = false
+            emitPersist()
         case .failure:
-            errorMessage = "\"\(filename)\" isn't a readable skin. Needs keys like accent, bg1, panel."
+            errorMessage = "\"\(filename)\" isn't a readable theme. Needs keys like accent, bg1, panel."
             isError = true
+            // A failed load must NOT persist a broken state — leave the store as-is.
         }
+    }
+
+    // MARK: - Persistence (F16)
+
+    /// Apply a persisted selection at launch, WITHOUT re-emitting it (guarded by
+    /// `isRestoring`, so a launch does not churn the store). A built-in is applied via
+    /// `select(name:)`; a loaded state is re-run through the same `load` path so its
+    /// collision-suffixing etc. reproduce. Robustness: a built-in name that no longer
+    /// exists, or a `sourceText` that fails to parse, falls back to the Graphite
+    /// default WITHOUT crashing and WITHOUT surfacing an error hint at launch. Called
+    /// only from the `restoring:` init (the store starts on Graphite).
+    private func restore(_ state: AppearancePersistedState) {
+        isRestoring = true
+        defer { isRestoring = false }
+
+        if let sourceText = state.sourceText {
+            // A loaded theme: re-parse via the same load path (emit is suppressed).
+            load(text: sourceText, filename: state.filename ?? state.name)
+            if isError {
+                // Unparseable now — fall back to Graphite silently (no launch-time
+                // error hint, no persisted broken state).
+                isError = false
+                current = .graphite
+            }
+        } else if themes.contains(where: { $0.name == state.name }) {
+            // A known built-in (or a loaded theme already present) — select it.
+            select(name: state.name)
+        } else {
+            // An unknown built-in name — fall back to the Graphite default.
+            current = .graphite
+        }
+    }
+
+    /// The persisted snapshot of the CURRENT selection: a LOADED state (name + source
+    /// + filename) when `current` was loaded from a file (its source is remembered in
+    /// `loadedSources`), else a BUILT-IN state (name only).
+    private var persistedState: AppearancePersistedState {
+        if let source = loadedSources[current.name] {
+            return AppearancePersistedState(name: current.name, sourceText: source.text, filename: source.filename)
+        }
+        return AppearancePersistedState(name: current.name, sourceText: nil, filename: nil)
+    }
+
+    /// Emit the current selection to `onPersist`, unless we are mid-`restore` (a
+    /// launch reproduction must not write back).
+    private func emitPersist() {
+        guard !isRestoring else { return }
+        onPersist?(persistedState)
+    }
+
+    /// Return `theme` unchanged when its name is free of a BUILT-IN collision, else a
+    /// copy renamed with a `" (2)"` (then `" (3)"`, …) suffix so its `id`/name is
+    /// unique against the built-ins and it survives the `themes` de-dupe. Only
+    /// built-in names are avoided; a clash with another loaded theme is the
+    /// intended reload REPLACE handled by `load`.
+    private func collisionSafe(_ theme: AppearanceTheme) -> AppearanceTheme {
+        let builtInNames = Set(builtIns.map(\.name))
+        guard builtInNames.contains(theme.name) else { return theme }
+        var candidate = theme.name
+        var suffix = 2
+        while builtInNames.contains(candidate) {
+            candidate = "\(theme.name) (\(suffix))"
+            suffix += 1
+        }
+        return AppearanceTheme(
+            name: candidate,
+            accent: theme.accent, glow: theme.glow, glow2: theme.glow2,
+            bg1: theme.bg1, bg2: theme.bg2, panel: theme.panel,
+            text: theme.text, muted: theme.muted, lcd: theme.lcd
+        )
     }
 }
 

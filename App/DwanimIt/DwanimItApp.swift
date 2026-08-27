@@ -50,10 +50,35 @@ struct DwanimItApp: App {
     /// instance (core + engine + feed + scopes) lives as long as the app does.
     @State private var session = AudioSession()
 
+    /// The player's theme store (F16), OWNED here (as App `@State`, like `session`)
+    /// so the chosen appearance persists across launches. Built wired to a
+    /// UserDefaults-backed `AppearancePersistenceStore`: `restoring:` re-applies the
+    /// last selection at launch (nil / corrupt ⇒ Graphite default) and `onPersist`
+    /// writes every later change back. The one instance is passed DOWN into
+    /// `DwanimItPlayerScene` → `DefaultPlayerView` (held as a plain reference, read in
+    /// `body`; Observation still tracks it). Previously scene-private `@State`, so the
+    /// selection was lost on relaunch.
+    @State private var appearance = DwanimItApp.makeAppearanceStore()
+
     /// The AppKit delegate that drives session teardown from genuine app
     /// termination (NOT window disappearance) and quits the app when the single
     /// main window closes. SwiftUI owns this instance for the app's lifetime.
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    /// Build the persisting `AppearanceStore` (F16): create the UserDefaults-backed
+    /// `AppearancePersistenceStore`, restore the last-saved selection from it, and
+    /// wire `onPersist` to write future changes back. The persistence store is
+    /// captured by the `onPersist` closure, so it lives as long as the returned
+    /// `AppearanceStore` does. `@MainActor` because both stores are main-actor types
+    /// (mirrors the `AudioSession()` `@State` default, which runs on the same actor).
+    @MainActor
+    private static func makeAppearanceStore() -> AppearanceStore {
+        let persistence = AppearancePersistenceStore()
+        return AppearanceStore(
+            restoring: persistence.load(),
+            onPersist: { persistence.save($0) }
+        )
+    }
 
     var body: some Scene {
         // SINGLE Window (not WindowGroup): one lifecycle owner for the shared
@@ -62,15 +87,17 @@ struct DwanimItApp: App {
             DwanimItPlayerScene(
                 core: session.core,
                 model: session.model,
-                // The gear/overflow menu's open actions route to the SAME session
-                // calls the File menu uses — one source of truth. Plumbed as
-                // closures so DwanimItUI never imports AppKit.
-                onOpenAudio: { session.presentOpenPanel() },
-                onOpenSkin: { session.presentOpenSkinPanel() },
-                // The gear menu's "Add Songs…" / "Add Folder…" APPEND to the queue
-                // (never replace) and "Clear Queue" empties it — all routing to the
-                // same session calls, then re-persisting the live queue. Plumbed as
-                // closures so DwanimItUI never imports AppKit.
+                // F16: the App-owned, UserDefaults-persisting theme store (see the
+                // `appearance` @State above) — passed down so the selection survives
+                // relaunch. The Appearance popover still calls `store.load` in the
+                // Open Theme… panel completion; the store is now this App-owned
+                // instance, so a load both retints the deck AND persists.
+                appearance: appearance,
+                // The playlist context menu's "Add Songs…" / "Add Folder…" APPEND to
+                // the queue (never replace) and "Clear Queue" empties it — all routing
+                // to the same session calls the File / Skin menus use, then re-persisting
+                // the live queue. Plumbed as closures so DwanimItUI never imports AppKit.
+                // (Open Audio ⌘O / Open Skin ⌘⇧O stay MENU-BAR commands below.)
                 onAddFiles: { session.presentAddFilesPanel() },
                 onAddFolder: { session.presentAddFolderPanel() },
                 onPlaylistEdited: { session.persistCurrentPlaylist() },
@@ -79,13 +106,23 @@ struct DwanimItApp: App {
                 // uses (a `.wsz` applies as a skin, audio files load) — so a drop on
                 // the playlist behaves identically to a drop anywhere else.
                 onAddURLs: { session.handleDroppedURLs($0) },
-                // The Appearance popover's "Open Skin…" row presents a colour-theme
-                // (.dwskin / .json) file panel through the session (App owns the panel;
+                // The Appearance popover's "Open Theme…" row presents a colour-theme
+                // (.dwtheme / .json; legacy .dwskin still opens) file panel through the
+                // session (App owns the panel;
                 // DwanimItUI stays AppKit-free), reads the picked file's text, and
                 // hands (text, filename) to the completion the popover supplied — which
-                // parses + applies it via the AppearanceStore. Distinct from
-                // onOpenSkin (the classic .wsz bitmap skin, ⌘⇧O).
+                // parses + applies it via the AppearanceStore. Distinct from the
+                // menu-bar "Open Skin…" (⌘⇧O) command, which applies a classic .wsz
+                // bitmap skin.
                 onOpenAppearanceFile: { completion in session.presentOpenAppearancePanel(completion) },
+                // The Appearance popover's "Open Skin…" row (directly below "Open
+                // Theme…") opens the classic `.wsz` skin picker — the SAME session
+                // call the File ▸ Open Skin… (⌘⇧O) menu command uses (one source of
+                // truth; the panel/AppKit logic stays App-side, DwanimItUI stays
+                // pure). Fire-and-forget: loading a `.wsz` swaps the whole face, so no
+                // completion is threaded back. Distinct from onOpenAppearanceFile
+                // above, which loads a nine-token COLOUR theme for the default face.
+                onOpenSkin: { session.presentOpenSkinPanel() },
                 // fix-5 dynamic size: the scene measures its panel's intrinsic SIZE
                 // (pure SwiftUI) and reports it here whenever it changes (first
                 // layout + EQ/queue expand/collapse). The session resizes the
@@ -98,7 +135,7 @@ struct DwanimItApp: App {
                 // Compact resize floor only. Under `.windowResizability(.contentMinSize)`
                 // the App-layer content-SIZE report (`onContentSizeChange` ->
                 // `session.setDefaultContentSize`) drives the opening size (the panel's
-                // intrinsic `compactWidth` ~580 × its content height) — this frame just
+                // intrinsic `compactWidth` 560 × its content height) — this frame just
                 // sets how small the user can drag it. No max: expanding the in-scene
                 // EQ / queue grows the window (App-layer resize); collapsing shrinks it
                 // back.
@@ -148,16 +185,16 @@ struct DwanimItApp: App {
         // window buttons.
         .windowStyle(.hiddenTitleBar)
         // P2-5 / fix-5: the content's fitting size drives the window's MINIMUM (and
-        // opening) size — the definite width on `DefaultPlayerView` (~580) plus the
+        // opening) size — the definite width on `DefaultPlayerView` (560) plus the
         // compact-bar height open the window hugging the panel. We use
         // `.contentMinSize` rather than `.contentSize` ON PURPOSE: a SwiftUI `Window`
         // hosted in an `NSHostingView` does NOT reliably grow itself when the content
         // height changes at runtime (measured: `.contentSize` pinned the window to the
-        // collapsed 580×148 and SNAPPED BACK any App-layer resize). `.contentMinSize`
-        // keeps the compact opening size as a floor while letting the App layer GROW
-        // the window when the in-scene queue (P2-1) expands and SHRINK it back when it
-        // collapses, driven by the scene's `onContentHeightChange` ->
-        // `session.setDefaultContentHeight` (see those). Frame restoration to a stale
+        // collapsed 560-wide panel and SNAPPED BACK any App-layer resize).
+        // `.contentMinSize` keeps the compact opening size as a floor while letting the
+        // App layer GROW the window when the in-scene queue / EQ expands and SHRINK it
+        // back when it collapses, driven by the scene's `onContentSizeChange` ->
+        // `session.setDefaultContentSize` (see those). Frame restoration to a stale
         // large frame can't reappear: `WindowAccessor.forceCompact` disables the
         // autosave on first capture.
         .windowResizability(.contentMinSize)
@@ -233,7 +270,7 @@ struct DwanimItApp: App {
             // P2-7: a top-level "Skin" menu. Closing the classic skin's MAIN window
             // now QUITS the app (the user disliked the default face popping back), so
             // this menu is the standard-mac way to leave a classic skin WITHOUT
-            // quitting: "Default Skin" (⌘⇧D) closes the classic cluster and restores
+            // quitting: "Default View" (⌘⇧D) closes the classic cluster and restores
             // the default SwiftUI face. The cluster close is programmatic, so the
             // presenter's close→quit guard (an internal switching flag) keeps it from
             // terminating. "Open Skin…" / "Open Audio…" / "Open Playlist…" / "Save
@@ -241,11 +278,11 @@ struct DwanimItApp: App {
             // (same session calls the File menu uses — one source of truth). NO brand
             // words (§12).
             CommandMenu("Skin") {
-                Button("Default Skin") {
+                Button("Default View") {
                     session.switchToDefaultSkin()
                 }
                 // ⌘⇧D (not plain ⌘D): the macOS-standard ⌘D is Duplicate / "Don't
-                // Save", so the Default Skin command takes the shifted chord to avoid
+                // Save", so the Default View command takes the shifted chord to avoid
                 // colliding with it. Unique across the menu bar.
                 .keyboardShortcut("d", modifiers: [.command, .shift])
 

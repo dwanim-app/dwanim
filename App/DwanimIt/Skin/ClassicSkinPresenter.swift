@@ -202,6 +202,13 @@ final class ClassicSkinPresenter {
     /// true for the rest of the process lifetime — termination never reverses.
     private var isTerminating = false
 
+    /// Guards the modeless "Open Skin…" `NSOpenPanel` `begin { }` against being
+    /// STACKED (its own flag, separate from `AudioSession`'s). Set true right before
+    /// `panel.begin` and cleared in the completion on EVERY path (OK or cancel);
+    /// `presentOpenPanel` early-returns while it is true, so a second skin panel
+    /// cannot open on top of the first.
+    private var isPresentingPanel = false
+
     /// PRESENTATION scale for the hosted classic windows: POINTS per skin pixel.
     /// `1.5` is the sweet spot between `1` (authentic 275x116-pt main window —
     /// too small on modern displays) and `2` (too big). The main window becomes
@@ -271,6 +278,7 @@ final class ClassicSkinPresenter {
     /// then load the skin and host the classic main window driven by the shared
     /// core.
     func presentOpenPanel() {
+        guard !isPresentingPanel else { return }
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -284,10 +292,12 @@ final class ClassicSkinPresenter {
         // transaction. `begin(completionHandler:)` presents without a nested modal
         // loop and runs the record-then-open on the main actor at dismissal (same
         // pattern as the audio panels in AudioSession); works from AppKit callers too.
+        isPresentingPanel = true
         panel.begin { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
             MainActor.assumeIsolated {
-                self?.recordAndOpen(url: url)
+                self?.isPresentingPanel = false
+                guard response == .OK, let url = panel.url, let self else { return }
+                self.recordAndOpen(url: url)
             }
         }
     }

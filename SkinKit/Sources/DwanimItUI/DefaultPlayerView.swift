@@ -42,11 +42,16 @@ public struct DefaultPlayerView: View {
     /// Route dropped file URLs into the library (the playlist drop overlay). Nil in
     /// the headless harness.
     private let onAddURLs: (([URL]) -> Void)?
-    /// App-tier "Open Skin…" action for the Appearance popover: present the
+    /// App-tier "Open Theme…" action for the Appearance popover: present the
     /// colour-theme file panel + return its text. Nil in the headless harness (the
-    /// popover's Open Skin… row is then disabled). Forwarded to
+    /// popover's Open Theme… row is then disabled). Forwarded to
     /// `CadenceAppearanceButton`.
     private let onOpenAppearanceFile: OpenAppearanceFileAction?
+    /// App-tier "Open Skin…" action for the Appearance popover: open the classic
+    /// `.wsz` skin picker (File ▸ Open Skin… ⌘⇧O). Fire-and-forget — loading a `.wsz`
+    /// swaps the whole face. A no-op `{}` in the headless harness. Forwarded to
+    /// `CadenceAppearanceButton`.
+    private let onOpenSkin: () -> Void
 
     /// The fixed panel width (design: 560 px). A definite width keeps the scene's
     /// fitting size compact so the window hugs the panel (see `DwanimItPlayerScene`).
@@ -62,7 +67,8 @@ public struct DefaultPlayerView: View {
         onAddFolder: (() -> Void)? = nil,
         onPlaylistEdited: (() -> Void)? = nil,
         onAddURLs: (([URL]) -> Void)? = nil,
-        onOpenAppearanceFile: OpenAppearanceFileAction? = nil
+        onOpenAppearanceFile: OpenAppearanceFileAction? = nil,
+        onOpenSkin: @escaping () -> Void = {}
     ) {
         self._core = Bindable(core)
         self._model = Bindable(model)
@@ -72,6 +78,7 @@ public struct DefaultPlayerView: View {
         self.onPlaylistEdited = onPlaylistEdited
         self.onAddURLs = onAddURLs
         self.onOpenAppearanceFile = onOpenAppearanceFile
+        self.onOpenSkin = onOpenSkin
     }
 
     private var theme: AppearanceTheme { appearance.current }
@@ -119,7 +126,11 @@ public struct DefaultPlayerView: View {
 
             HStack {
                 Spacer()
-                CadenceAppearanceButton(store: appearance, onOpenAppearanceFile: onOpenAppearanceFile)
+                CadenceAppearanceButton(
+                    store: appearance,
+                    onOpenAppearanceFile: onOpenAppearanceFile,
+                    openSkin: onOpenSkin
+                )
             }
         }
         .padding(.horizontal, 12)
@@ -172,21 +183,18 @@ public struct DefaultPlayerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The live now-playing title (the quiet "dwanim it" when nothing is loaded).
-    /// When the filename follows `Artist - Title`, the title half shows here and the
-    /// artist half in `nowArtist` (display-only; `Track` carries no artist field).
-    private var nowTitle: String {
-        guard let raw = core.currentTrack?.title, !raw.isEmpty else { return "dwanim it" }
-        if let sep = raw.range(of: " - ") {
-            let rest = String(raw[sep.upperBound...])
-            if !rest.isEmpty { return rest }
-        }
-        return raw
+    /// The now-playing `(title, artist)` pair, split via the shared `TrackTitle` seam
+    /// (the same split the playlist rows use). The quiet "dwanim it" fallback for an
+    /// empty queue stays HERE at the call site — only the `Artist - Title` split logic
+    /// is shared; `Track` carries no artist field, so the artist is display-only.
+    private var nowParts: (title: String, artist: String?) {
+        guard let raw = core.currentTrack?.title, !raw.isEmpty else { return ("dwanim it", nil) }
+        return TrackTitle.split(raw)
     }
 
-    private var nowArtist: String? {
-        guard let raw = core.currentTrack?.title, let sep = raw.range(of: " - ") else { return nil }
-        let artist = String(raw[raw.startIndex..<sep.lowerBound])
-        return artist.isEmpty ? nil : artist
-    }
+    /// The live now-playing title (the quiet "dwanim it" when nothing is loaded).
+    private var nowTitle: String { nowParts.title }
+
+    /// The now-playing artist half (nil unless the title follows `Artist - Title`).
+    private var nowArtist: String? { nowParts.artist }
 }

@@ -6,7 +6,7 @@ import SwiftUI
 /// the gold `DwennimmenMark` on a dark rounded-rectangle plate. This is the brand
 /// mark as **imagery only**: no text, no "Dwennimmen"/"dwanim it" word anywhere.
 ///
-/// Why a separate view from `EmblemTile`: the running-UI tile uses
+/// Why a separate view from the running UI's frosted panels: those use
 /// `.ultraThinMaterial` (a LIVE blur that reads against the scene behind it).
 /// That is exactly wrong for an icon — a live blur renders non-deterministically
 /// off-screen (`ImageRenderer`) and turns muddy at 16x16. `AppIconView` therefore

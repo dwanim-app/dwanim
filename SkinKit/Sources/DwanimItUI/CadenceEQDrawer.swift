@@ -29,11 +29,17 @@ struct CadenceEQDrawer: View {
     @Bindable var core: PlayerCore
     let theme: AppearanceTheme
 
-    /// The currently-applied preset (also the highlighted tab). Selecting a tab
-    /// applies its gains AND sets this; a manual band drag clears it to `nil`
-    /// (design: adjusting a band clears the active preset highlight). Starts on
-    /// `.flat` because a fresh equalizer is flat (all bands 0 dB).
-    @State private var selectedPreset: EQPreset? = .flat
+    /// The highlighted preset, DERIVED from the live `core.equalizer.bands` rather
+    /// than stored: a preset is highlighted only while the bands EXACTLY match its
+    /// gain array, else nothing is. Deriving (vs. an `@State` snapshot fixed at view
+    /// creation) keeps the highlight honest even when the SHARED bands are changed
+    /// elsewhere — e.g. the classic `.wsz` EQ moving the same `EQState` while this
+    /// (persistent) default drawer is hidden behind a skin. A manual band drag moves
+    /// the bands off every preset's array, so the highlight clears on its own; a fresh
+    /// (all-zero) equalizer matches `.flat`, so Flat starts highlighted as before.
+    private var activePreset: EQPreset? {
+        EQPreset.allCases.first { $0.bands == core.equalizer.bands }
+    }
 
     private static let bandLabels = ["60", "170", "310", "600", "1K", "3K", "6K", "12K", "14K", "16K"]
     private static let trackHeight: CGFloat = 92
@@ -101,7 +107,7 @@ struct CadenceEQDrawer: View {
     private var segmentedPresets: some View {
         HStack(spacing: 2) {
             ForEach(EQPreset.allCases, id: \.self) { preset in
-                let selected = selectedPreset == preset
+                let selected = activePreset == preset
                 Button {
                     apply(preset)
                 } label: {
@@ -162,7 +168,6 @@ struct CadenceEQDrawer: View {
                             trackHeight: Self.trackHeight
                         ) { newGain in
                             core.setEQBand(index, dB: newGain)
-                            selectedPreset = nil
                         }
                         Text(Self.bandLabels[index])
                             .font(.system(size: 9.5))
@@ -184,15 +189,15 @@ struct CadenceEQDrawer: View {
     }
 
     /// Apply `preset`: push every band gain through the SAME `core.setEQBand` call
-    /// the sliders use (so the thumbs visibly move to match the curve and the
-    /// playing audio changes once EQ is on), then highlight the tab. The preamp is
-    /// untouched and EQ is NOT force-enabled (a preset only dials in gains).
+    /// the sliders use (so the thumbs visibly move to match the curve and the playing
+    /// audio changes once EQ is on). The tab highlight follows automatically —
+    /// `activePreset` re-derives from the now-matching bands. The preamp is untouched
+    /// and EQ is NOT force-enabled (a preset only dials in gains).
     private func apply(_ preset: EQPreset) {
         let gains = preset.bands
         for index in 0..<EQState.bandCount where index < gains.count {
             core.setEQBand(index, dB: gains[index])
         }
-        selectedPreset = preset
     }
 }
 

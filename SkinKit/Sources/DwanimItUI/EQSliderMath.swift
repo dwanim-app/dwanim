@@ -7,7 +7,7 @@ import PlayerCore
 /// track of a given height back to a gain. SwiftUI has no native vertical
 /// `Slider`, so the default-skin EQ draws its own draggable band columns; this
 /// enum is the seam that keeps the gain math out of the View (mirroring how
-/// `SeekMath` keeps the seek math out of `ProgressTrack`), so it is unit-testable
+/// `SeekMath` keeps the seek math out of `CadenceSeekBar`), so it is unit-testable
 /// in isolation without rendering anything.
 ///
 /// ## Orientation

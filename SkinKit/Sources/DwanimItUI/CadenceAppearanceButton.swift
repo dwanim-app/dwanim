@@ -4,21 +4,34 @@ import SwiftUI
 
 /// The title-bar Appearance pop-up button and its popover. The button shows the
 /// current theme's swatch + name + a chevron chip; tapping it opens a popover to
-/// switch between the themes (built-ins, then any user-loaded skins) instantly.
+/// switch between the themes (built-ins, then any user-loaded themes) instantly.
 ///
-/// The **Open Skin…** row loads a user colour-theme file: it invokes
+/// The **Open Theme…** row loads a user colour-theme file: it invokes
 /// `onOpenAppearanceFile` (the App presents the file panel and reads the text), then
 /// feeds the text back through `store.load(text:filename:)` — which parses it, merges
 /// it over Graphite, appends + selects it (retinting the whole deck), or sets the
 /// error hint. The row is disabled only when no action is wired (the headless
 /// harness). The status line at the bottom reads `store.hint`, error-red on a failed
 /// load.
+///
+/// Directly BELOW it sits the **Open Skin…** row: a fire-and-forget action that opens
+/// the classic Winamp `.wsz` skin picker (the SAME command as File ▸ Open Skin… ⌘⇧O).
+/// It is a plain `() -> Void` injected by the App (`AppKit`/panel logic stays there,
+/// keeping `DwanimItUI` pure) — no completion handler, because loading a `.wsz` swaps
+/// the whole face; the popover just triggers the panel. So from this one popover the
+/// user can pick a colour THEME (recolours the default face) OR load a `.wsz` SKIN
+/// (switches to the classic bitmap face).
 struct CadenceAppearanceButton: View {
 
     @Bindable var store: AppearanceStore
-    /// The App-tier action that presents the "Open Skin…" file panel and returns the
+    /// The App-tier action that presents the "Open Theme…" file panel and returns the
     /// picked file's text + name. Nil in the headless harness → the row is disabled.
     let onOpenAppearanceFile: OpenAppearanceFileAction?
+    /// The App-tier action that opens the classic `.wsz` skin picker (File ▸ Open
+    /// Skin… ⌘⇧O). Fire-and-forget: loading a `.wsz` swaps the whole face, so no
+    /// completion is needed. A no-op `{}` in the headless harness (the App wires it to
+    /// `session.presentOpenSkinPanel()`).
+    let openSkin: () -> Void
 
     @State private var isOpen = false
 
@@ -91,6 +104,7 @@ struct CadenceAppearanceButton: View {
                 .padding(.vertical, 5)
 
             openThemeRow
+            openSkinRow
 
             Text(store.hint)
                 .font(.system(size: 10))
@@ -149,7 +163,7 @@ struct CadenceAppearanceButton: View {
                     .font(.system(size: 11))
                     .foregroundStyle(AppearanceTheme.secondary)
                     .frame(width: 12)
-                Text("Open Skin…")
+                Text("Open Theme…")
                     .font(.system(size: 12.5))
                     .foregroundStyle(AppearanceTheme.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -160,6 +174,35 @@ struct CadenceAppearanceButton: View {
         }
         .buttonStyle(.plain)
         .disabled(onOpenAppearanceFile == nil)
+    }
+
+    /// Opens the classic `.wsz` skin picker — the SAME action as File ▸ Open Skin…
+    /// (⌘⇧O). Sits directly BELOW "Open Theme…" and mirrors its styling (row height,
+    /// padding, font, plain-button hover/press). Fire-and-forget: loading a `.wsz`
+    /// swaps the whole face, so this just triggers the App's panel and dismisses the
+    /// popover. A distinct `paintbrush` leading icon (vs the theme row's `folder`)
+    /// so the two actions read as different: recolour the deck vs swap to a classic
+    /// bitmap skin.
+    private var openSkinRow: some View {
+        Button {
+            openSkin()
+            isOpen = false
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "paintbrush")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppearanceTheme.secondary)
+                    .frame(width: 12)
+                Text("Open Skin…")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(AppearanceTheme.primaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Swatch

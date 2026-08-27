@@ -12,8 +12,10 @@ import XCTest
 /// modes, and the hex / rgba colour value forms.
 final class AppearanceParserTests: XCTestCase {
 
-    // Convenience: the resolved theme, or fail the test with the parse error.
-    private func parsed(_ text: String, _ filename: String = "Test.dwskin",
+    // Convenience: the resolved theme, or fail the test with the parse error. The
+    // default filename uses the PREFERRED `.dwtheme` extension; a legacy `.dwskin`
+    // regression is exercised explicitly below (`testLegacyDwskinFilenameStillStripsStem`).
+    private func parsed(_ text: String, _ filename: String = "Test.dwtheme",
                         file: StaticString = #filePath, line: UInt = #line) throws -> AppearanceTheme {
         switch AppearanceTheme.parse(text: text, filename: filename) {
         case .success(let theme):
@@ -105,8 +107,18 @@ final class AppearanceParserTests: XCTestCase {
     // MARK: - Name handling
 
     func testNameFallsBackToFilenameStem() throws {
-        let theme = try parsed("accent: #ffffff", "My Cool Skin.dwskin")
-        XCTAssertEqual(theme.name, "My Cool Skin")
+        let theme = try parsed("accent: #ffffff", "My Cool Theme.dwtheme")
+        XCTAssertEqual(theme.name, "My Cool Theme")
+    }
+
+    /// Backward-compat regression: a LEGACY `.dwskin` file still derives its display
+    /// name from the filename stem (the extension is stripped the same way `.dwtheme`
+    /// is). The theme file was renamed `.dwskin` → `.dwtheme`, but the owner's existing
+    /// `.dwskin` files must keep loading — no parse logic keys on the extension.
+    func testLegacyDwskinFilenameStillStripsStem() throws {
+        let theme = try parsed("accent: #ffffff", "Legacy Deck.dwskin")
+        XCTAssertEqual(theme.name, "Legacy Deck")
+        XCTAssertEqual(theme.accent, Color(hex: 0xffffff))
     }
 
     func testExplicitNameWinsOverFilename() throws {
@@ -114,8 +126,20 @@ final class AppearanceParserTests: XCTestCase {
         XCTAssertEqual(theme.name, "Chosen")
     }
 
+    func testJSONNameKeyIsCaseInsensitive() throws {
+        // A capitalised `"Name"` key still sets the display name (matching the
+        // case-insensitive token-key handling), rather than being dropped.
+        let theme = try parsed(##"{ "Name": "Capitalized", "accent": "#ffffff" }"##, "ignored.json")
+        XCTAssertEqual(theme.name, "Capitalized")
+    }
+
+    func testJSONNameKeyUppercaseIsCaseInsensitive() throws {
+        let theme = try parsed(##"{ "NAME": "Shouty", "accent": "#ffffff" }"##, "ignored.json")
+        XCTAssertEqual(theme.name, "Shouty")
+    }
+
     func testBlankExplicitNameFallsBackToFilename() throws {
-        let theme = try parsed("name:   \naccent: #ffffff", "Fallback.dwskin")
+        let theme = try parsed("name:   \naccent: #ffffff", "Fallback.dwtheme")
         XCTAssertEqual(theme.name, "Fallback")
     }
 
@@ -181,7 +205,7 @@ final class AppearanceParserTests: XCTestCase {
 
     func testRecognizedKeyWithOnlyMalformedValueFails() {
         // The one recognised key has an unparseable value → nothing to apply.
-        assertFailure(AppearanceTheme.parse(text: "accent: banana", filename: "Bad.dwskin"),
+        assertFailure(AppearanceTheme.parse(text: "accent: banana", filename: "Bad.dwtheme"),
                       .noRecognizedKeys)
     }
 
@@ -211,6 +235,17 @@ final class AppearanceParserTests: XCTestCase {
 
     func testUppercaseHexParses() {
         XCTAssertEqual(Color(appearanceToken: "#E0A341"), Color(hex: 0xe0a341))
+    }
+
+    func testRGBOutOfRangeChannelsAreClamped() {
+        // r < 0 clamps to 0, g > 255 clamps to 255 — a sane in-gamut colour.
+        XCTAssertEqual(Color(appearanceToken: "rgb(-5, 999, 0)"), Color(rgba: 0, 255, 0, 1))
+    }
+
+    func testRGBAOutOfRangeAlphaIsClamped() {
+        // Alpha above 1 clamps to 1; below 0 clamps to 0.
+        XCTAssertEqual(Color(appearanceToken: "rgba(10, 20, 30, 5)"), Color(rgba: 10, 20, 30, 1))
+        XCTAssertEqual(Color(appearanceToken: "rgba(10, 20, 30, -2)"), Color(rgba: 10, 20, 30, 0))
     }
 
     func testMalformedColorValuesReturnNil() {

@@ -137,16 +137,16 @@ final class EQSliderMathTests: XCTestCase {
     // MARK: - Full-travel DOWNWARD sweep (the default-skin analogue of the
     // classic EQ down-drag regression)
     //
-    // The default (Dwennimmen) skin's `EqualizerPanel` is shown by default, so its
-    // vertical band columns must ALSO follow the cursor across the whole travel on
-    // a downward drag — top = +12, centre = 0, bottom = −12 — never plateauing at 0
-    // dB. These sweep the cursor y down a track of the ACTUAL default-column height
-    // (`EqualizerPanel` uses a 96 pt track) and assert the gains descend
-    // monotonically through 0 to −12, plus the specific centre-and-below values the
-    // "stuck at default" symptom describes.
+    // The default face's `CadenceEQDrawer` is always visible, so its vertical band
+    // columns must ALSO follow the cursor across the whole travel on a downward drag
+    // — top = +12, centre = 0, bottom = −12 — never plateauing at 0 dB. These sweep
+    // the cursor y down a track of a representative default-column height and assert
+    // the gains descend monotonically through 0 to −12, plus the specific
+    // centre-and-below values the "stuck at default" symptom describes.
 
-    /// The default-skin band column's track height (points), matching
-    /// `EqualizerPanel.trackHeight`.
+    /// A representative default band-column track height (points) — `EQSliderMath` is
+    /// height-parametric, so the exact value only needs to be a realistic column
+    /// height (`CadenceEQDrawer` renders a comparable track).
     private let defaultTrackHeight = 96.0
 
     /// A cursor sweep DOWN a full-height track produces gains that decrease

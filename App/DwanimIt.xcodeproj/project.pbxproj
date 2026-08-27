@@ -21,6 +21,7 @@
 		A2719D54F75A12E44D43AAB6 /* PlayerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 44D5666FED81ADFF9353455E /* PlayerCore */; };
 		A7698DD348B8C62FF396BE69 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */; };
 		BE84E7454A3F38B84D03016B /* SkinRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0159AB74B541644A2F7407C9 /* SkinRender */; };
+		E779080FEB0423885C63D5F9 /* AppearancePersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B80DD44ACD8F1A8072727D /* AppearancePersistenceStore.swift */; };
 		E7AF16046C18820C0B05821A /* DwanimItUI in Frameworks */ = {isa = PBXBuildFile; productRef = B88EACC74230D16FD3718B43 /* DwanimItUI */; };
 		F14427448890A9535000FA59 /* SkinKitImageIO in Frameworks */ = {isa = PBXBuildFile; productRef = 6E1363065C6BEA8BB2BD5889 /* SkinKitImageIO */; };
 		F5B60E80EDAF05624910C7A0 /* SpectrumKit in Frameworks */ = {isa = PBXBuildFile; productRef = EB61D652ECD2812AB677B5F1 /* SpectrumKit */; };
@@ -36,6 +37,7 @@
 		8B22EBF96972CBC44217AE60 /* DwanimIt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DwanimIt.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C87EF84C87D1F53083532DB6 /* DwanimItApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwanimItApp.swift; sourceTree = "<group>"; };
 		DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityScopedFileAccess.swift; sourceTree = "<group>"; };
+		F6B80DD44ACD8F1A8072727D /* AppearancePersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePersistenceStore.swift; sourceTree = "<group>"; };
 		FAC4F231F7B7936205B9F05E /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -116,6 +118,7 @@
 		F7CB1BAF0DED2C08E5A06D3E /* Platform */ = {
 			isa = PBXGroup;
 			children = (
+				F6B80DD44ACD8F1A8072727D /* AppearancePersistenceStore.swift */,
 				88959338971C569718784169 /* BookmarkStore.swift */,
 				4F39C5CC79A1DA4285A38835 /* DropRouter.swift */,
 				DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */,
@@ -211,6 +214,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E779080FEB0423885C63D5F9 /* AppearancePersistenceStore.swift in Sources */,
 				3CCDF99FC645AABCA7B03473 /* AudioSession.swift in Sources */,
 				0F6E70F57BAE6358FE8871AA /* BookmarkStore.swift in Sources */,
 				5CEB8EB7F227B2ACE2D1BA27 /* ClassicSkinPresenter.swift in Sources */,

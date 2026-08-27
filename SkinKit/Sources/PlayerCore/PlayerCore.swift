@@ -240,6 +240,28 @@ public final class PlayerCore {
         currentIndex = nil
     }
 
+    // MARK: - Metadata write-back
+
+    /// Write a resolved track `duration` (seconds) into EVERY playlist row whose
+    /// `url` matches. This is how an ASYNC metadata read done after a file was
+    /// added (e.g. the app resolving `AVURLAsset.load(.duration)`) fills the
+    /// default face's playlist Time column in — `PlayerCore` stays Foundation-only
+    /// and just receives the number.
+    ///
+    /// URL-keyed (not index-keyed) on purpose: the load may finish AFTER the queue
+    /// was reordered or partly removed, and the same file may appear more than
+    /// once, so matching by URL lands on the right track(s) regardless and updates
+    /// every copy. A non-finite or non-positive value is a guarded no-op (an
+    /// unreadable file keeps showing "—" rather than a bogus "0:00"), as is a URL
+    /// no longer in the queue. Mutating `playlist` in place drives the observable
+    /// update, so the row's Time cell refreshes as each duration resolves.
+    public func setDuration(_ duration: TimeInterval, forURL url: URL) {
+        guard duration.isFinite, duration > 0 else { return }
+        for index in playlist.indices where playlist[index].url == url {
+            playlist[index].duration = duration
+        }
+    }
+
     // MARK: - Playlist reorder (sort / reverse / randomize)
 
     /// Sort the playlist by display title (case-insensitive; a track with no

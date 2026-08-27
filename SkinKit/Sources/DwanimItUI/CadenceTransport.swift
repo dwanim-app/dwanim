@@ -243,8 +243,7 @@ private struct CadenceVolumeSlider: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0).onChanged { g in
-                    guard width > 0 else { return }
-                    onChange(Float(min(max(g.location.x / width, 0), 1)))
+                    onChange(Float(Self.fraction(forX: g.location.x, width: width, knobDiameter: knobDiameter)))
                 }
             )
         }
@@ -252,5 +251,16 @@ private struct CadenceVolumeSlider: View {
         .accessibilityElement()
         .accessibilityLabel(Text("Volume"))
         .accessibilityValue(Text("\(Int((min(max(value, 0), 1)) * 100)) percent"))
+    }
+
+    /// The `0...1` volume for a cursor `x`, mapped through the SAME knob-travel inset
+    /// the knob renders with (its centre travels `knobDiameter/2 … width−knobDiameter/2`,
+    /// not the full width), so the knob sits under the pointer at both extremes —
+    /// mirroring the seek bar's self-consistent mapping. A width at/under the knob
+    /// diameter (zero travel) reads as 0.
+    private static func fraction(forX x: CGFloat, width: CGFloat, knobDiameter: CGFloat) -> Double {
+        let knobTravel = max(0, width - knobDiameter)
+        guard knobTravel > 0 else { return 0 }
+        return min(max(Double((x - knobDiameter / 2) / knobTravel), 0), 1)
     }
 }
