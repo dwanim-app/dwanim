@@ -279,8 +279,17 @@ final class ClassicSkinPresenter {
         panel.prompt = "Open"
         panel.message = "Choose a skin archive (.wsz) to apply."
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        recordAndOpen(url: url)
+        // NON-BLOCKING present (BUG-C): reached from the SwiftUI "Open Skin…" command
+        // (⌘⇧O) — a nested `runModal()` inside a SwiftUI action deadlocks the SwiftUI
+        // transaction. `begin(completionHandler:)` presents without a nested modal
+        // loop and runs the record-then-open on the main actor at dismissal (same
+        // pattern as the audio panels in AudioSession); works from AppKit callers too.
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            MainActor.assumeIsolated {
+                self?.recordAndOpen(url: url)
+            }
+        }
     }
 
     // MARK: Open Skin… (the drop flow)

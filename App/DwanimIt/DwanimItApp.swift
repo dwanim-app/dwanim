@@ -74,6 +74,11 @@ struct DwanimItApp: App {
                 onAddFiles: { session.presentAddFilesPanel() },
                 onAddFolder: { session.presentAddFolderPanel() },
                 onPlaylistEdited: { session.persistCurrentPlaylist() },
+                // The playlist's drag-over "Add to library" overlay routes dropped
+                // file URLs through the SAME session handler the window-level drop
+                // uses (a `.wsz` applies as a skin, audio files load) — so a drop on
+                // the playlist behaves identically to a drop anywhere else.
+                onAddURLs: { session.handleDroppedURLs($0) },
                 // fix-5 dynamic size: the scene measures its panel's intrinsic SIZE
                 // (pure SwiftUI) and reports it here whenever it changes (first
                 // layout + EQ/queue expand/collapse). The session resizes the

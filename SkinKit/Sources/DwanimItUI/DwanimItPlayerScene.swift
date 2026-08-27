@@ -62,9 +62,20 @@ public struct DwanimItPlayerScene: View {
     /// (`session.presentAddFolderPanel()`). Same nil-hides-the-item rule as above.
     private let onAddFolder: (() -> Void)?
     /// App-layer hook: RE-PERSIST the live queue after an in-UI edit (e.g. a
-    /// context-menu Remove or the gear "Clear Queue"), wired to
-    /// `session.persistCurrentPlaylist()`. Forwarded down to `PlaylistPanel`.
+    /// context-menu Remove or "Clear Queue"), wired to
+    /// `session.persistCurrentPlaylist()`. Forwarded down to the playlist.
     private let onPlaylistEdited: (() -> Void)?
+    /// App-layer hook: route dropped file URLs into the library (the playlist's
+    /// drag-over "Add to library" overlay), wired to the SAME
+    /// `session.handleDroppedURLs` the window-level drop uses. Optional so the
+    /// headless harness can host the scene without it.
+    private let onAddURLs: (([URL]) -> Void)?
+
+    /// The player's theme store. Owned here (as scene `@State`) so it outlives the
+    /// value-type views and is shared by the panel AND the backdrop — switching the
+    /// theme in the title-bar popover retints the whole scene at once. Kept internal
+    /// to the scene so the App / harness call sites are unchanged.
+    @State private var appearance = AppearanceStore()
     /// Reports the PANEL's intrinsic content SIZE (in points) whenever it changes
     /// — e.g. when the in-scene EQ or queue expands or collapses. The App layer
     /// wires this to a window content-size resize so the window grows/shrinks to
@@ -88,6 +99,7 @@ public struct DwanimItPlayerScene: View {
         onAddFiles: (() -> Void)? = nil,
         onAddFolder: (() -> Void)? = nil,
         onPlaylistEdited: (() -> Void)? = nil,
+        onAddURLs: (([URL]) -> Void)? = nil,
         onContentSizeChange: ((CGSize) -> Void)? = nil
     ) {
         self.core = core
@@ -97,6 +109,7 @@ public struct DwanimItPlayerScene: View {
         self.onAddFiles = onAddFiles
         self.onAddFolder = onAddFolder
         self.onPlaylistEdited = onPlaylistEdited
+        self.onAddURLs = onAddURLs
         self.onContentSizeChange = onContentSizeChange
     }
 
@@ -110,11 +123,11 @@ public struct DwanimItPlayerScene: View {
         DefaultPlayerView(
             core: core,
             model: model,
-            onOpenAudio: onOpenAudio,
-            onOpenSkin: onOpenSkin,
+            appearance: appearance,
             onAddFiles: onAddFiles,
             onAddFolder: onAddFolder,
-            onPlaylistEdited: onPlaylistEdited
+            onPlaylistEdited: onPlaylistEdited,
+            onAddURLs: onAddURLs
         )
         .fixedSize()
         // Measure the panel's intrinsic size (pure SwiftUI) and report it up so the
@@ -134,7 +147,7 @@ public struct DwanimItPlayerScene: View {
         // lets the backdrop fill whatever the window becomes; the panel stays pinned
         // at its intrinsic size on top, top-leading so the window hugs it once sized.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(DwanimItBackdrop())
+        .background(DwanimItBackdrop(theme: appearance.current))
         .onPreferenceChange(ScenePanelSizeKey.self) { size in
             guard let onContentSizeChange, size.width > 0, size.height > 0 else { return }
             onContentSizeChange(size)

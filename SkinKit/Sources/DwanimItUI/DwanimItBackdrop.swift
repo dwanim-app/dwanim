@@ -2,38 +2,48 @@ import SwiftUI
 
 // MARK: - DwanimItBackdrop
 
-/// The colourful backdrop that sits BEHIND the glass player bar so the
-/// translucent materials have something to blur — without it the
-/// `.regularMaterial` / `.ultraThinMaterial` panels read as flat grey.
+/// The colourful desktop backdrop that sits BEHIND the glass player panel so the
+/// translucent material has something to blur — without it the frosted panel reads
+/// as flat grey.
 ///
-/// A deep indigo -> teal diagonal gradient with two soft gold glows (warm
-/// accents). It fills exactly the space its parent gives it — used as a BOUNDED
-/// `.background` of the panel-plus-margin in `DwanimItPlayerScene`, NOT as a
-/// full-bleed `.ignoresSafeArea()` fill. That bounded use is what gives the
-/// scene a compact intrinsic size for `.windowResizability(.contentSize)` to
-/// hug: a flexible gradient that ignored the safe area would expand to fill any
-/// window, leaving the panel floating in a big empty expanse.
+/// Per the design it is a vertical `bg1 → bg2` gradient with two soft radial glows
+/// (`glow` upper-left, `glow2` upper-right). Every colour comes from the current
+/// `AppearanceTheme`, so switching the theme retints the backdrop along with the
+/// panel.
+///
+/// It fills exactly the space its parent gives it — used as a BOUNDED `.background`
+/// of the pinned panel in `DwanimItPlayerScene`, not a full-bleed `ignoresSafeArea`
+/// fill — so the scene keeps a compact intrinsic size for the window to hug.
 public struct DwanimItBackdrop: View {
 
-    public init() {}
+    private let theme: AppearanceTheme
+
+    public init(theme: AppearanceTheme) {
+        self.theme = theme
+    }
 
     public var body: some View {
-        ZStack {
-            DwanimItTheme.backdrop
-
-            // Two soft gold glows for warmth and so the glass picks up colour.
-            RadialGradient(
-                colors: [DwanimItTheme.goldDeep.opacity(0.35), .clear],
-                center: .topLeading,
-                startRadius: 0,
-                endRadius: 320
-            )
-            RadialGradient(
-                colors: [DwanimItTheme.backdropTeal.opacity(0.6), .clear],
-                center: .bottomTrailing,
-                startRadius: 0,
-                endRadius: 360
-            )
+        GeometryReader { geometry in
+            let w = geometry.size.width
+            ZStack {
+                LinearGradient(
+                    colors: [theme.bg1, theme.bg2],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                RadialGradient(
+                    colors: [theme.glow, .clear],
+                    center: UnitPoint(x: 0.2, y: 0.08),
+                    startRadius: 0,
+                    endRadius: max(1, w * 0.55)
+                )
+                RadialGradient(
+                    colors: [theme.glow2, .clear],
+                    center: UnitPoint(x: 0.85, y: 0.18),
+                    startRadius: 0,
+                    endRadius: max(1, w * 0.5)
+                )
+            }
         }
     }
 }

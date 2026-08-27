@@ -472,9 +472,11 @@ final class AudioSession {
         }
         let combined = playlistTracks + classification.audio
         if !combined.isEmpty {
-            let wasEmpty = core.playlist.isEmpty
-            appendToPlaylist(urls: combined)   // appends to the queue + persists; never auto-plays / never moves selection
-            if wasEmpty { core.play() }        // start playback ONLY when the queue was empty before the drop
+            // Append + persist; `appendToPlaylist` itself auto-plays from the first
+            // added track ONLY when the queue was empty before the append (the
+            // non-interrupting "a drop/add ADDS" rule), so a drop onto an empty
+            // queue starts playing while a drop onto a live queue just enqueues.
+            appendToPlaylist(urls: combined)
         }
     }
 
@@ -556,10 +558,25 @@ final class AudioSession {
         panel.prompt = "Open"
         panel.message = "Choose one or more audio files to play."
 
-        guard panel.runModal() == .OK else { return }
-        let urls = panel.urls
-        guard !urls.isEmpty else { return }
-        openAndPlay(urls: urls)
+        // NON-BLOCKING present (BUG-C): a synchronous `runModal()` nested inside a
+        // SwiftUI action — the default scene's gear menu / footer, or a SwiftUI
+        // menu-bar command — runs a modal loop INSIDE the SwiftUI event transaction,
+        // which deadlocks: the panel hangs, the pick never lands, and the app is
+        // stuck. `begin(completionHandler:)` presents the panel WITHOUT a nested
+        // modal loop and invokes the handler (on the main thread) when the user
+        // dismisses it, so the pick actually flows through. It works identically
+        // from AppKit callers (the classic window's eject), so the classic flow is
+        // unaffected. The handler runs on the main run loop = the main actor's
+        // executor, so `MainActor.assumeIsolated` is sound (same pattern as the
+        // RedrawLoop tick above).
+        panel.begin { [weak self] response in
+            guard response == .OK else { return }
+            MainActor.assumeIsolated {
+                let urls = panel.urls
+                guard !urls.isEmpty else { return }
+                self?.openAndPlay(urls: urls)
+            }
+        }
     }
 
     /// Record `urls` as the ordered playlist (minting + persisting a bookmark per
@@ -626,8 +643,17 @@ final class AudioSession {
         panel.prompt = "Add"
         panel.message = "Choose one or more audio files to add to the playlist."
 
-        guard panel.runModal() == .OK else { return }
-        appendToPlaylist(urls: panel.urls)
+        // NON-BLOCKING present (BUG-C): the default playlist footer "Add files…" and
+        // its context-menu "Add Songs…" are SwiftUI buttons, so a nested `runModal()`
+        // deadlocks the SwiftUI transaction (0 songs added, app stuck). `begin` runs
+        // the append on the main actor when the panel dismisses. See
+        // `presentOpenPanel` for the full rationale; works from AppKit too.
+        panel.begin { [weak self] response in
+            guard response == .OK else { return }
+            MainActor.assumeIsolated {
+                self?.appendToPlaylist(urls: panel.urls)
+            }
+        }
     }
 
     /// Show an NSOpenPanel picking ONE directory and APPEND its audio files
@@ -642,18 +668,38 @@ final class AudioSession {
         panel.prompt = "Add"
         panel.message = "Choose a folder whose audio files to add to the playlist."
 
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
-        appendToPlaylist(urls: AudioSession.audioFiles(under: folder))
+        // NON-BLOCKING present (BUG-C): the context-menu "Add Folder…" is a SwiftUI
+        // button, so a nested `runModal()` deadlocks the SwiftUI transaction. `begin`
+        // runs the folder scan + append on the main actor at dismissal. See
+        // `presentOpenPanel`; works from AppKit too.
+        panel.begin { [weak self] response in
+            guard response == .OK, let folder = panel.url else { return }
+            MainActor.assumeIsolated {
+                self?.appendToPlaylist(urls: AudioSession.audioFiles(under: folder))
+            }
+        }
     }
 
     /// APPEND `urls` to the live queue: persist the MERGED playlist's bookmarks,
     /// open ADDITIVE session scopes for just the new URLs (no `endSession` —
     /// the already-loaded tracks keep their scopes; each `start…` gets its
     /// balancing stop at the next `endSession`, and a duplicate URL is safe
-    /// because the brackets are counted), then `core.append` (which never
-    /// auto-plays and never moves the selection).
+    /// because the brackets are counted), then `core.append`.
+    ///
+    /// ## Auto-play parity with the drag-drop path (BUG-3 fix)
+    /// Opening the SESSION SCOPE here is what makes an appended track playable —
+    /// the same additive-scope grant a dropped file gets — so a panel-picked
+    /// "Add files…/Add Songs…/Add Folder…" track plays identically to a dragged
+    /// one when selected. And, mirroring the drop path exactly, when the queue was
+    /// EMPTY before the append we start playback from the first added track (a
+    /// non-empty queue keeps playing uninterrupted; the added rows just wait to be
+    /// selected). Centralising the empty-queue auto-play HERE means every append
+    /// entry point — the window/playlist drops AND all three panel "Add" flows
+    /// (default footer + context menu, and the classic playlist window's ADD menu)
+    /// — behaves the same, so "added files won't play" cannot recur on one path.
     private func appendToPlaylist(urls: [URL]) {
         guard !urls.isEmpty else { return }
+        let wasEmpty = core.playlist.isEmpty
         sessionScopes += urls.map { url in
             (url: url, didStart: url.startAccessingSecurityScopedResource())
         }
@@ -662,6 +708,9 @@ final class AudioSession {
         // next launch reopens exactly what is loaded now. The pre-existing
         // tracks' scopes are open, so re-minting their bookmarks succeeds.
         persistCurrentPlaylist()
+        // Start playback ONLY when the queue was empty before this append, from the
+        // first added track — the same non-interrupting rule the drop path used.
+        if wasEmpty { core.play() }
     }
 
     /// Re-persist the LIVE queue's bookmarks — after an append here or any edit
@@ -737,12 +786,22 @@ final class AudioSession {
         panel.prompt = "Open"
         panel.message = "Choose a playlist file (.m3u) to open."
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let urls = expandPlaylist(at: url)
-        guard !urls.isEmpty else { return }
-        recordPlaylist(urls)
-        beginSession(for: urls)
-        core.load(urls.map(trackForURL))
+        // NON-BLOCKING present (BUG-C): reached from the SwiftUI menu-bar command
+        // (⌘⌥O) and the classic playlist window's LIST OPTS. Converted with the two
+        // Add panels so no SwiftUI-triggered NSOpenPanel uses a nested `runModal()`.
+        // See `presentOpenPanel`; the completion runs the REPLACE-load on the main
+        // actor and works from AppKit too.
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let urls = self.expandPlaylist(at: url)
+                guard !urls.isEmpty else { return }
+                self.recordPlaylist(urls)
+                self.beginSession(for: urls)
+                self.core.load(urls.map(self.trackForURL))
+            }
+        }
     }
 
     /// LIST OPTS > "Save List…" AND File / Skin ▸ "Save Playlist…": write the live
@@ -757,9 +816,19 @@ final class AudioSession {
         panel.prompt = "Save"
         panel.message = "Save the current playlist as a .m3u file."
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let text = M3UPlaylist.serialize(core.playlist.map(\.url))
-        try? text.write(to: url, atomically: true, encoding: .utf8)
+        // NON-BLOCKING present (BUG-C): reached from the SwiftUI menu-bar command
+        // (⌘S) and the classic playlist window's LIST OPTS. Converted with the other
+        // panels so no SwiftUI-triggered panel uses a nested `runModal()`. See
+        // `presentOpenPanel`; the completion serializes + writes on the main actor
+        // and works from AppKit too.
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let text = M3UPlaylist.serialize(self.core.playlist.map(\.url))
+                try? text.write(to: url, atomically: true, encoding: .utf8)
+            }
+        }
     }
 
     // MARK: Launch resolve

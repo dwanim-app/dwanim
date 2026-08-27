@@ -96,6 +96,32 @@ struct WindowAccessor: NSViewRepresentable {
             // Stop macOS from restoring / persisting a stale large frame so the
             // content-size report path is the single source of truth for the size.
             window.setFrameAutosaveName("")
+            // Disable full-screen for this fixed-width (560px) deck — full screen
+            // leaves the compact panel stranded in a huge black field and looks
+            // broken. `.fullScreenNone` removes the capability entirely: the green
+            // traffic-light and the View menu's "Enter Full Screen" both stop
+            // offering it. Belt-and-suspenders: strip `.fullScreen` from the style
+            // mask (harmless if absent) and disable the green zoom button so it
+            // can't maximize the fixed-width panel either. The window stays movable,
+            // minimisable, and closable.
+            var behavior = window.collectionBehavior
+            behavior.remove([.fullScreenPrimary, .fullScreenAuxiliary])
+            behavior.insert(.fullScreenNone)
+            window.collectionBehavior = behavior
+            window.styleMask.remove(.fullScreen)
+            window.standardWindowButton(.zoomButton)?.isEnabled = false
+            // NON-RESIZABLE by the USER: the deck is a fixed-width (560px) glass
+            // panel whose height is driven PROGRAMMATICALLY by the scene's
+            // content-size measurement (`onContentSizeChange` ->
+            // `session.setDefaultContentSize` -> `setContentSize`/`setFrame`).
+            // Letting the user drag the border stretches the deck ugly. Removing
+            // `.resizable` from the style mask blocks ONLY the user's drag-to-resize
+            // (and the border/corner grow handles); programmatic `setFrame` /
+            // `setContentSize` still resize the window (they never consult the
+            // resizable bit), so the EQ-always-visible / playlist-growth height
+            // changes keep resizing the window. The window stays movable,
+            // minimisable, and closable (those masks are untouched).
+            window.styleMask.remove(.resizable)
         }
     }
 }
