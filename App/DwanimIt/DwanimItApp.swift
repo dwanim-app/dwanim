@@ -79,6 +79,13 @@ struct DwanimItApp: App {
                 // uses (a `.wsz` applies as a skin, audio files load) — so a drop on
                 // the playlist behaves identically to a drop anywhere else.
                 onAddURLs: { session.handleDroppedURLs($0) },
+                // The Appearance popover's "Open Skin…" row presents a colour-theme
+                // (.dwskin / .json) file panel through the session (App owns the panel;
+                // DwanimItUI stays AppKit-free), reads the picked file's text, and
+                // hands (text, filename) to the completion the popover supplied — which
+                // parses + applies it via the AppearanceStore. Distinct from
+                // onOpenSkin (the classic .wsz bitmap skin, ⌘⇧O).
+                onOpenAppearanceFile: { completion in session.presentOpenAppearancePanel(completion) },
                 // fix-5 dynamic size: the scene measures its panel's intrinsic SIZE
                 // (pure SwiftUI) and reports it here whenever it changes (first
                 // layout + EQ/queue expand/collapse). The session resizes the

@@ -412,6 +412,48 @@ final class AudioSession {
         classicSkin.presentOpenPanel()
     }
 
+    // MARK: Open Skin… (colour theme — the Appearance popover)
+
+    /// Present the Appearance popover's "Open Skin…" panel: pick ONE `.dwskin` /
+    /// `.json` colour-theme file, read its TEXT inside the panel's security scope, and
+    /// hand `(text, filename)` back to `completion` — the popover then parses + applies
+    /// it via the `AppearanceStore`. On cancel the completion gets `(nil, nil)`; on an
+    /// unreadable pick `(nil, filename)` (so the popover can still surface the "isn't a
+    /// readable skin" hint).
+    ///
+    /// NON-BLOCKING `begin { }` (BUG-C): the "Open Skin…" row is a SwiftUI button
+    /// inside a popover, so a nested `runModal()` would deadlock the SwiftUI
+    /// transaction exactly like the audio / playlist panels; `begin` presents without a
+    /// nested modal loop and runs the completion on the main actor at dismissal.
+    ///
+    /// SEPARATE from `presentOpenSkinPanel()` (the classic `.wsz` bitmap skin, ⌘⇧O):
+    /// this loads a nine-token COLOUR theme for the default face, not a skin cluster.
+    func presentOpenAppearancePanel(_ completion: @escaping AppearanceFileCompletion) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = AudioSession.appearanceContentTypes
+        panel.prompt = "Open"
+        panel.message = "Choose a color-theme file (.dwskin or .json)."
+
+        panel.begin { [weak self] response in
+            MainActor.assumeIsolated {
+                guard let self, response == .OK, let url = panel.url else {
+                    completion(nil, nil)
+                    return
+                }
+                // Read the picked file's text inside its security scope (uniform with
+                // `expandPlaylist`). An unreadable file yields nil text — the popover
+                // treats that as a parse failure and shows the error hint.
+                let text = try? self.access.withAccess(to: url) {
+                    try String(contentsOf: url, encoding: .utf8)
+                }
+                completion(text, url.lastPathComponent)
+            }
+        }
+    }
+
     // MARK: Default Skin (return without quitting — P2-7)
 
     /// RETURN to the default face WITHOUT quitting: close the classic cluster and
@@ -746,6 +788,18 @@ final class AudioSession {
     }
 
     // MARK: Playlist files (.m3u — LIST OPTS + File/Skin menu)
+
+    /// The colour-theme types the Appearance "Open Skin…" panel accepts: the custom
+    /// `.dwskin` extension plus `.json` (`public.json` == application/json). Derived
+    /// from the filename extension like `.wsz` / `.m3u`, so an unregistered `.dwskin`
+    /// is still selectable. Falls back to `.plainText` if neither type synthesises, so
+    /// the panel is never unfiltered.
+    private static let appearanceContentTypes: [UTType] = {
+        var types: [UTType] = []
+        if let dwskin = UTType(filenameExtension: "dwskin") { types.append(dwskin) }
+        types.append(.json)
+        return types.isEmpty ? [.plainText] : types
+    }()
 
     /// The `.m3u` playlist types the open/save panels accept. Derived from the
     /// filename extension (like `.wsz`); `.m3u8` is accepted on open for

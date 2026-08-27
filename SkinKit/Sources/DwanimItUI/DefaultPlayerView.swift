@@ -42,6 +42,11 @@ public struct DefaultPlayerView: View {
     /// Route dropped file URLs into the library (the playlist drop overlay). Nil in
     /// the headless harness.
     private let onAddURLs: (([URL]) -> Void)?
+    /// App-tier "Open Skin…" action for the Appearance popover: present the
+    /// colour-theme file panel + return its text. Nil in the headless harness (the
+    /// popover's Open Skin… row is then disabled). Forwarded to
+    /// `CadenceAppearanceButton`.
+    private let onOpenAppearanceFile: OpenAppearanceFileAction?
 
     /// The fixed panel width (design: 560 px). A definite width keeps the scene's
     /// fitting size compact so the window hugs the panel (see `DwanimItPlayerScene`).
@@ -56,7 +61,8 @@ public struct DefaultPlayerView: View {
         onAddFiles: (() -> Void)? = nil,
         onAddFolder: (() -> Void)? = nil,
         onPlaylistEdited: (() -> Void)? = nil,
-        onAddURLs: (([URL]) -> Void)? = nil
+        onAddURLs: (([URL]) -> Void)? = nil,
+        onOpenAppearanceFile: OpenAppearanceFileAction? = nil
     ) {
         self._core = Bindable(core)
         self._model = Bindable(model)
@@ -65,6 +71,7 @@ public struct DefaultPlayerView: View {
         self.onAddFolder = onAddFolder
         self.onPlaylistEdited = onPlaylistEdited
         self.onAddURLs = onAddURLs
+        self.onOpenAppearanceFile = onOpenAppearanceFile
     }
 
     private var theme: AppearanceTheme { appearance.current }
@@ -112,7 +119,7 @@ public struct DefaultPlayerView: View {
 
             HStack {
                 Spacer()
-                CadenceAppearanceButton(store: appearance, onOpenColorTheme: nil)
+                CadenceAppearanceButton(store: appearance, onOpenAppearanceFile: onOpenAppearanceFile)
             }
         }
         .padding(.horizontal, 12)

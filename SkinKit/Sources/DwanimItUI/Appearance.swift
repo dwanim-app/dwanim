@@ -184,11 +184,26 @@ public struct AppearanceTheme: Identifiable, Equatable, Sendable {
     public static let railFill = Color.white.opacity(0.14)
 }
 
+// MARK: - Open-skin file panel contract
+
+/// A completion the App invokes with the picked skin file's TEXT + FILENAME — both
+/// `nil` when the user cancelled the panel, or `(nil, filename)` when the file could
+/// not be read. `@MainActor` because it drives the `@MainActor` `AppearanceStore`.
+public typealias AppearanceFileCompletion = @MainActor (_ text: String?, _ filename: String?) -> Void
+
+/// The App-tier "Open Skin…" action: present a file panel and, on OK, call the
+/// completion with the picked file's text + filename (or `nil` on cancel). The App
+/// owns the `NSOpenPanel` (so `DwanimItUI` stays AppKit-free); the Appearance popover
+/// supplies the completion, which parses + applies the text via the `AppearanceStore`.
+public typealias OpenAppearanceFileAction = @MainActor (@escaping AppearanceFileCompletion) -> Void
+
 // MARK: - AppearanceStore
 
-/// The observable holder of the current player theme. Exposes the ordered
-/// built-ins and a `select(name:)` that swaps the current theme instantly — every
-/// view reads `store.current`, so a swap retints the whole deck on the next render.
+/// The observable holder of the current player theme. Exposes the ordered themes
+/// (built-ins, then any user-loaded skins), a `select` that swaps the current theme
+/// instantly, and a `load(text:filename:)` that parses a picked skin FILE into a new
+/// theme — every view reads `store.current`, so a swap retints the whole deck on the
+/// next render, and the popover reads `hint` / `isError` for its status line.
 ///
 /// `@MainActor @Observable` mirrors `PlayerCore` / `PlayerViewModel`: the single
 /// writer/reader is the SwiftUI view tree on the main actor, so no locking is
@@ -200,24 +215,72 @@ public final class AppearanceStore {
     /// The theme currently applied to the deck.
     public private(set) var current: AppearanceTheme
 
-    /// The ordered built-in themes shown in the Appearance popover.
+    /// The ordered built-in themes shown first in the Appearance popover.
     public let builtIns: [AppearanceTheme]
+
+    /// Themes loaded from a user skin file, in load order — listed AFTER the
+    /// built-ins in the popover. A same-named reload replaces its earlier entry
+    /// (see `load`) rather than duplicating.
+    public private(set) var loaded: [AppearanceTheme] = []
+
+    /// Whether the LAST `load` failed. The popover renders `hint` error-red when
+    /// true; cleared by any successful `load` or `select`.
+    public private(set) var isError = false
+
+    /// The error hint shown while `isError` is true (set by a failed `load`).
+    private var errorMessage = ""
 
     public init(current: AppearanceTheme = .graphite, builtIns: [AppearanceTheme] = AppearanceTheme.builtIns) {
         self.builtIns = builtIns
         self.current = current
     }
 
-    /// Swap to the built-in theme with `name`, instantly. An unknown name is a
-    /// guarded no-op (the current theme is kept).
-    public func select(name: String) {
-        guard let match = builtIns.first(where: { $0.name == name }) else { return }
-        current = match
+    /// The full ordered theme list for the popover: built-ins first, then the loaded
+    /// skins, de-duplicated by name (a built-in wins a name tie) so every row keeps a
+    /// unique `id` for `ForEach`.
+    public var themes: [AppearanceTheme] {
+        var seen = Set<String>()
+        return (builtIns + loaded).filter { seen.insert($0.name).inserted }
     }
 
-    /// Swap directly to `theme` (used by future loaded-theme paths).
+    /// The popover's status line. Normal (muted) — naming the current theme and what a
+    /// skin file is — unless the last load failed, in which case it is the error hint.
+    public var hint: String {
+        isError
+            ? errorMessage
+            : "Current: \(current.name) — A skin is a .dwskin or .json file of colors."
+    }
+
+    /// Swap to the theme named `name` (a built-in OR a loaded skin), instantly. An
+    /// unknown name is a guarded no-op (the current theme is kept). Clears any error.
+    public func select(name: String) {
+        guard let match = themes.first(where: { $0.name == name }) else { return }
+        current = match
+        isError = false
+    }
+
+    /// Swap directly to `theme`, instantly. Clears any error hint.
     public func select(_ theme: AppearanceTheme) {
         current = theme
+        isError = false
+    }
+
+    /// Load a skin file's TEXT: parse it (JSON or `key: value` lines) and, on success,
+    /// append the resolved theme (merged over Graphite) to the loaded list, select it,
+    /// and clear the error. A same-named reload REPLACES its earlier entry rather than
+    /// duplicating. On failure (empty / no recognised tokens) the current theme is
+    /// left untouched and the error hint is set from the filename.
+    public func load(text: String, filename: String) {
+        switch AppearanceTheme.parse(text: text, filename: filename) {
+        case .success(let theme):
+            loaded.removeAll { $0.name == theme.name }
+            loaded.append(theme)
+            current = theme
+            isError = false
+        case .failure:
+            errorMessage = "\"\(filename)\" isn't a readable skin. Needs keys like accent, bg1, panel."
+            isError = true
+        }
     }
 }
 

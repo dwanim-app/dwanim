@@ -70,6 +70,14 @@ public struct DwanimItPlayerScene: View {
     /// `session.handleDroppedURLs` the window-level drop uses. Optional so the
     /// headless harness can host the scene without it.
     private let onAddURLs: (([URL]) -> Void)?
+    /// App-layer "Open Skin…" action for the Appearance popover: present a
+    /// colour-theme (`.dwskin` / `.json`) file panel, read the picked file's text,
+    /// and hand `(text, filename)` back so the popover can load it into the
+    /// `AppearanceStore`. The app wires it to `session.presentOpenAppearancePanel`;
+    /// nil in the headless harness (the Open Skin… row is then disabled). Forwarded to
+    /// `DefaultPlayerView`. Distinct from `onOpenSkin` (the classic `.wsz` bitmap
+    /// skin, ⌘⇧O) — this loads the nine-token COLOUR theme for the default face.
+    private let onOpenAppearanceFile: OpenAppearanceFileAction?
 
     /// The player's theme store. Owned here (as scene `@State`) so it outlives the
     /// value-type views and is shared by the panel AND the backdrop — switching the
@@ -100,6 +108,7 @@ public struct DwanimItPlayerScene: View {
         onAddFolder: (() -> Void)? = nil,
         onPlaylistEdited: (() -> Void)? = nil,
         onAddURLs: (([URL]) -> Void)? = nil,
+        onOpenAppearanceFile: OpenAppearanceFileAction? = nil,
         onContentSizeChange: ((CGSize) -> Void)? = nil
     ) {
         self.core = core
@@ -110,6 +119,7 @@ public struct DwanimItPlayerScene: View {
         self.onAddFolder = onAddFolder
         self.onPlaylistEdited = onPlaylistEdited
         self.onAddURLs = onAddURLs
+        self.onOpenAppearanceFile = onOpenAppearanceFile
         self.onContentSizeChange = onContentSizeChange
     }
 
@@ -127,7 +137,8 @@ public struct DwanimItPlayerScene: View {
             onAddFiles: onAddFiles,
             onAddFolder: onAddFolder,
             onPlaylistEdited: onPlaylistEdited,
-            onAddURLs: onAddURLs
+            onAddURLs: onAddURLs,
+            onOpenAppearanceFile: onOpenAppearanceFile
         )
         .fixedSize()
         // Measure the panel's intrinsic size (pure SwiftUI) and report it up so the

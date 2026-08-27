@@ -4,17 +4,21 @@ import SwiftUI
 
 /// The title-bar Appearance pop-up button and its popover. The button shows the
 /// current theme's swatch + name + a chevron chip; tapping it opens a popover to
-/// switch between the built-in themes instantly.
+/// switch between the themes (built-ins, then any user-loaded skins) instantly.
 ///
-/// Phase-1 scope: switching between built-ins is live. The **Open Skin…** row (which
-/// will open a colour-file in a later phase) is a STUB — it invokes the optional
-/// `onOpenColorTheme` closure, which is nil this phase, so the row is disabled and
-/// no file panel / parser is wired.
+/// The **Open Skin…** row loads a user colour-theme file: it invokes
+/// `onOpenAppearanceFile` (the App presents the file panel and reads the text), then
+/// feeds the text back through `store.load(text:filename:)` — which parses it, merges
+/// it over Graphite, appends + selects it (retinting the whole deck), or sets the
+/// error hint. The row is disabled only when no action is wired (the headless
+/// harness). The status line at the bottom reads `store.hint`, error-red on a failed
+/// load.
 struct CadenceAppearanceButton: View {
 
     @Bindable var store: AppearanceStore
-    /// Phase-2 hook to open a colour-theme file. Nil this phase → the row is disabled.
-    let onOpenColorTheme: (() -> Void)?
+    /// The App-tier action that presents the "Open Skin…" file panel and returns the
+    /// picked file's text + name. Nil in the headless harness → the row is disabled.
+    let onOpenAppearanceFile: OpenAppearanceFileAction?
 
     @State private var isOpen = false
 
@@ -78,7 +82,7 @@ struct CadenceAppearanceButton: View {
                 .padding(.top, 5)
                 .padding(.bottom, 4)
 
-            ForEach(store.builtIns) { theme in
+            ForEach(store.themes) { theme in
                 themeRow(theme)
             }
 
@@ -88,9 +92,9 @@ struct CadenceAppearanceButton: View {
 
             openThemeRow
 
-            Text(hintText)
+            Text(store.hint)
                 .font(.system(size: 10))
-                .foregroundStyle(AppearanceTheme.secondary)
+                .foregroundStyle(store.isError ? AppearanceTheme.error : AppearanceTheme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 8)
                 .padding(.top, 5)
@@ -130,7 +134,15 @@ struct CadenceAppearanceButton: View {
 
     private var openThemeRow: some View {
         Button {
-            onOpenColorTheme?()
+            // Present the App's file panel; on a successful pick, load the file's
+            // text into the store (parse → merge over Graphite → append + select, or
+            // set the error hint). A `nil` filename means the user cancelled — leave
+            // the current theme untouched. Carries NO ⌘O accelerator: ⌘O is
+            // "Open Audio"; this loader is reached from the popover only.
+            onOpenAppearanceFile? { text, filename in
+                guard let filename else { return }
+                store.load(text: text ?? "", filename: filename)
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "folder")
@@ -141,20 +153,13 @@ struct CadenceAppearanceButton: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(AppearanceTheme.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Text("⌘O")
-                    .font(.system(size: 11))
-                    .foregroundStyle(AppearanceTheme.tertiary)
             }
             .padding(.horizontal, 8)
             .frame(height: 26)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(onOpenColorTheme == nil)
-    }
-
-    private var hintText: String {
-        "Current: \(store.current.name) — A theme is a .json or .dwskin file of colors."
+        .disabled(onOpenAppearanceFile == nil)
     }
 
     // MARK: Swatch
