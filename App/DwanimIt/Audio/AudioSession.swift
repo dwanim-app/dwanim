@@ -444,8 +444,8 @@ final class AudioSession {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = AudioSession.appearanceContentTypes
-        panel.prompt = "Open"
-        panel.message = "Choose a color-theme file (.dwtheme or .json)."
+        panel.prompt = String(localized: "Open")
+        panel.message = String(localized: "Choose a color-theme file (.dwtheme or .json).")
 
         isPresentingPanel = true
         panel.begin { [weak self] response in
@@ -610,8 +610,8 @@ final class AudioSession {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = AudioSession.audioContentTypes
-        panel.prompt = "Open"
-        panel.message = "Choose one or more audio files to play."
+        panel.prompt = String(localized: "Open")
+        panel.message = String(localized: "Choose one or more audio files to play.")
 
         // NON-BLOCKING present (BUG-C): a synchronous `runModal()` nested inside a
         // SwiftUI action — the default scene's gear menu / footer, or a SwiftUI
@@ -699,8 +699,8 @@ final class AudioSession {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = AudioSession.audioContentTypes
-        panel.prompt = "Add"
-        panel.message = "Choose one or more audio files to add to the playlist."
+        panel.prompt = String(localized: "Add")
+        panel.message = String(localized: "Choose one or more audio files to add to the playlist.")
 
         // NON-BLOCKING present (BUG-C): the default playlist footer "Add files…" and
         // its context-menu "Add Songs…" are SwiftUI buttons, so a nested `runModal()`
@@ -727,8 +727,8 @@ final class AudioSession {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.prompt = "Add"
-        panel.message = "Choose a folder whose audio files to add to the playlist."
+        panel.prompt = String(localized: "Add")
+        panel.message = String(localized: "Choose a folder whose audio files to add to the playlist.")
 
         // NON-BLOCKING present (BUG-C): the context-menu "Add Folder…" is a SwiftUI
         // button, so a nested `runModal()` deadlocks the SwiftUI transaction. `begin`
@@ -867,8 +867,8 @@ final class AudioSession {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = AudioSession.playlistContentTypes
-        panel.prompt = "Open"
-        panel.message = "Choose a playlist file (.m3u) to open."
+        panel.prompt = String(localized: "Open")
+        panel.message = String(localized: "Choose a playlist file (.m3u) to open.")
 
         // NON-BLOCKING present (BUG-C): reached from the SwiftUI menu-bar command
         // (⌘⌥O) and the classic playlist window's LIST OPTS. Converted with the two
@@ -900,8 +900,8 @@ final class AudioSession {
         let panel = NSSavePanel()
         panel.allowedContentTypes = AudioSession.playlistContentTypes
         panel.nameFieldStringValue = "Playlist.m3u"
-        panel.prompt = "Save"
-        panel.message = "Save the current playlist as a .m3u file."
+        panel.prompt = String(localized: "Save")
+        panel.message = String(localized: "Save the current playlist as a .m3u file.")
 
         // NON-BLOCKING present (BUG-C): reached from the SwiftUI menu-bar command
         // (⌘S) and the classic playlist window's LIST OPTS. Converted with the other

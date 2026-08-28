@@ -232,9 +232,9 @@ final class ClassicSkinPresenter {
     /// (chromeless), so these are invisible — they are kept set for accessibility
     /// / Mission Control labels. Neutral, brand-free labels — the skin filename
     /// is NOT used (filenames may carry third-party brand names).
-    private static let mainWindowTitle = "Skin"
-    private static let playlistWindowTitle = "Playlist"
-    private static let eqWindowTitle = "Equalizer"
+    private static let mainWindowTitle = String(localized: "Skin")
+    private static let playlistWindowTitle = String(localized: "Playlist")
+    private static let eqWindowTitle = String(localized: "Equalizer")
 
     /// The content types the open panel accepts. A `.wsz` skin archive has no
     /// system-declared UTI (this app deliberately does NOT claim it as a document
@@ -284,8 +284,8 @@ final class ClassicSkinPresenter {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = ClassicSkinPresenter.skinContentTypes
-        panel.prompt = "Open"
-        panel.message = "Choose a skin archive (.wsz) to apply."
+        panel.prompt = String(localized: "Open")
+        panel.message = String(localized: "Choose a skin archive (.wsz) to apply.")
 
         // NON-BLOCKING present (BUG-C): reached from the SwiftUI "Open Skin…" command
         // (⌘⇧O) — a nested `runModal()` inside a SwiftUI action deadlocks the SwiftUI
@@ -690,11 +690,11 @@ final class ClassicSkinPresenter {
     /// informative text for the curious.
     private func presentLoadFailure(_ error: Error?) {
         let alert = NSAlert()
-        alert.messageText = "Could not open this skin."
+        alert.messageText = String(localized: "Could not open this skin.")
         alert.informativeText = error.map { "\($0.localizedDescription)" }
-            ?? "The file is not a usable skin archive."
+            ?? String(localized: "The file is not a usable skin archive.")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: String(localized: "OK"))
         alert.runModal()
     }
 }

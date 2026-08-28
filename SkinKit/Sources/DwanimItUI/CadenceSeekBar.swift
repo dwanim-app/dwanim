@@ -83,8 +83,9 @@ struct CadenceSeekBar: View {
         }
         .frame(height: 14)
         .accessibilityElement()
-        .accessibilityLabel(Text("Playback position"))
-        .accessibilityValue(Text("\(Int((displayedFraction * 100).rounded())) percent"))
+        .accessibilityLabel(Text("Playback position", bundle: .module))
+        // Locale-aware percentage read-out (shared "%lld percent" catalog key).
+        .accessibilityValue(Text("\(Int((displayedFraction * 100).rounded())) percent", bundle: .module))
         .accessibilityHidden(!isSeekable)
     }
 

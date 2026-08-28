@@ -19,6 +19,13 @@ let strictConcurrency: [SwiftSetting] = [
 
 let package = Package(
     name: "SkinKit",
+    // LOCALIZATION FOUNDATION (l10n step). Declaring the package's source
+    // (development) language is the SwiftPM prerequisite for `Bundle.module`
+    // localization: without it a target with localized resources has no notion
+    // of a fallback locale, and `String(localized:bundle:)` / `NSLocalizedString`
+    // resolution against `Bundle.module` is undefined. Tools-version 5.10 already
+    // supports this key, so no manifest bump is needed.
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v14)
     ],
@@ -123,6 +130,15 @@ let package = Package(
                 "SkinKit", "SkinRender", "PlayerCore",
                 "PlayerControl", "SpectrumKit"
             ],
+            // LOCALIZATION FOUNDATION (l10n step). SkinAppKit ships ~13
+            // user-visible strings but had no resource bundle, so it had no
+            // `Bundle.module` to resolve a String Catalog against. Adding a
+            // `.process("Resources")` rule makes SwiftPM synthesize a
+            // `Bundle.module` for the target and pick up any catalog placed in
+            // `Sources/SkinAppKit/Resources/`. The catalog is seeded here (empty
+            // strings map) so the mechanism is ready; the 13 call-site
+            // conversions are a later step.
+            resources: [.process("Resources")],
             swiftSettings: strictConcurrency
         ),
         .executableTarget(

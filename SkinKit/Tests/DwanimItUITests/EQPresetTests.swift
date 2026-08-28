@@ -58,4 +58,19 @@ final class EQPresetTests: XCTestCase {
         XCTAssertEqual(EQPreset.allCases.map(\.rawValue), ["Flat", "Rock", "Vocal", "Bass"],
                        "The segmented control renders Flat / Rock / Vocal / Bass in that order")
     }
+
+    // MARK: - Localized display name is split from the stable identity
+
+    /// The localized `displayName` must NOT disturb `rawValue`, which is the enum's
+    /// identity (used for `CaseIterable` order + any serialization). Under the
+    /// uncompiled-catalog `swift test` path the localized name resolves to its English
+    /// source, which equals the identity — so display and identity coincide in English,
+    /// proving the split rewires the render site without changing the identity. The
+    /// native ja/zh-Hant forms are proven in the catalog + under xcodebuild.
+    func testDisplayNameFallsBackToEnglishSourceAndKeepsIdentity() {
+        for preset in EQPreset.allCases {
+            XCTAssertEqual(preset.displayName, preset.rawValue,
+                           "\(preset) displayName should equal its English identity under swift test")
+        }
+    }
 }

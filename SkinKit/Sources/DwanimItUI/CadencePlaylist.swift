@@ -90,9 +90,9 @@ struct CadencePlaylist: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            Text("#").frame(width: indexWidth, alignment: .center)
-            Text("Title").frame(maxWidth: .infinity, alignment: .leading)
-            Text("Time").frame(width: timeWidth, alignment: .trailing)
+            Text(verbatim: "#").frame(width: indexWidth, alignment: .center)
+            Text("Title", bundle: .module).frame(maxWidth: .infinity, alignment: .leading)
+            Text("Time", bundle: .module).frame(width: timeWidth, alignment: .trailing)
             Color.clear.frame(width: removeWidth)
         }
         .font(.system(size: 11))
@@ -120,49 +120,74 @@ struct CadencePlaylist: View {
         .scrollContentBackground(.hidden)
         .environment(\.defaultMinListRowHeight, rowHeight)
         .contextMenu(forSelectionType: Int.self) { items in
-            Button("Play", systemImage: "play.fill") {
+            // Context-menu titles resolve through `Bundle.module` (a `Label` built from
+            // `String(localized:bundle:.module)`), since `Button("…", systemImage:)`'s
+            // own key would look up the MAIN app bundle, not this package's catalog.
+            Button {
                 if let first = items.sorted().first { core.select(first) }
+            } label: {
+                Label(String(localized: "Play", bundle: .module), systemImage: "play.fill")
             }
             .disabled(items.isEmpty)
-            Button("Remove", systemImage: "trash", role: .destructive) {
+            Button(role: .destructive) {
                 removeSelected(items)
+            } label: {
+                Label(String(localized: "Remove", bundle: .module), systemImage: "trash")
             }
             .disabled(items.isEmpty)
             Divider()
-            Button("Select All") { selection = Set(core.playlist.indices) }
-            Button("Select None") { selection.removeAll() }
-                .disabled(selection.isEmpty)
+            Button { selection = Set(core.playlist.indices) } label: {
+                Text("Select All", bundle: .module)
+            }
+            Button { selection.removeAll() } label: {
+                Text("Select None", bundle: .module)
+            }
+            .disabled(selection.isEmpty)
             Divider()
             // The old gear-menu "Add" items rehomed here (hidden when their closure is
             // nil, as in the harness) so no capability is lost with the gear menu gone.
             if let onAddFiles {
-                Button("Add Songs…", systemImage: "plus") { onAddFiles() }
+                Button { onAddFiles() } label: {
+                    Label(String(localized: "Add Songs…", bundle: .module), systemImage: "plus")
+                }
             }
             if let onAddFolder {
-                Button("Add Folder…", systemImage: "folder.badge.plus") { onAddFolder() }
+                Button { onAddFolder() } label: {
+                    Label(String(localized: "Add Folder…", bundle: .module), systemImage: "folder.badge.plus")
+                }
             }
             if onAddFiles != nil || onAddFolder != nil {
                 Divider()
             }
-            Button("Sort by Title", systemImage: "textformat.abc") {
+            Button {
                 core.sortByTitle(); onPlaylistEdited?()
+            } label: {
+                Label(String(localized: "Sort by Title", bundle: .module), systemImage: "textformat.abc")
             }
             .disabled(core.playlist.count <= 1)
-            Button("Sort by Filename", systemImage: "doc.text") {
+            Button {
                 core.sortByFilename(); onPlaylistEdited?()
+            } label: {
+                Label(String(localized: "Sort by Filename", bundle: .module), systemImage: "doc.text")
             }
             .disabled(core.playlist.count <= 1)
-            Button("Reverse", systemImage: "arrow.up.arrow.down") {
+            Button {
                 core.reverse(); onPlaylistEdited?()
+            } label: {
+                Label(String(localized: "Reverse", bundle: .module), systemImage: "arrow.up.arrow.down")
             }
             .disabled(core.playlist.count <= 1)
-            Button("Randomize", systemImage: "shuffle") {
+            Button {
                 core.randomize(); onPlaylistEdited?()
+            } label: {
+                Label(String(localized: "Randomize", bundle: .module), systemImage: "shuffle")
             }
             .disabled(core.playlist.count <= 1)
             Divider()
-            Button("Clear Queue", systemImage: "trash", role: .destructive) {
+            Button(role: .destructive) {
                 core.removeAll(); selection.removeAll(); onPlaylistEdited?()
+            } label: {
+                Label(String(localized: "Clear Queue", bundle: .module), systemImage: "trash")
             }
             .disabled(core.playlist.isEmpty)
         } primaryAction: { items in
@@ -205,16 +230,16 @@ struct CadencePlaylist: View {
             Image(systemName: "music.note.list")
                 .font(.system(size: 28, weight: .regular))
                 .foregroundStyle(AppearanceTheme.tertiary)
-            Text("No songs in your library")
+            Text("No songs in your library", bundle: .module)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(AppearanceTheme.secondary)
             HStack(spacing: 4) {
-                Text("Drag audio files here, or")
+                Text("Drag audio files here, or", bundle: .module)
                     .foregroundStyle(AppearanceTheme.tertiary)
                 Button {
                     onAddFiles?()
                 } label: {
-                    Text("Add files…")
+                    Text("Add files…", bundle: .module)
                         .foregroundStyle(theme.accent)
                 }
                 .buttonStyle(CadencePressStyle())
@@ -223,11 +248,11 @@ struct CadencePlaylist: View {
                 // is reachable from the EMPTY state too (its only other home is the list
                 // context menu, which does not exist when there are no rows). Same action
                 // the context menu's "Add Folder…" fires (`onAddFolder`).
-                Text("·").foregroundStyle(AppearanceTheme.tertiary)
+                Text(verbatim: "·").foregroundStyle(AppearanceTheme.tertiary)
                 Button {
                     onAddFolder?()
                 } label: {
-                    Text("Add Folder…")
+                    Text("Add Folder…", bundle: .module)
                         .foregroundStyle(theme.accent)
                 }
                 .buttonStyle(CadencePressStyle())
@@ -239,7 +264,7 @@ struct CadencePlaylist: View {
         .frame(height: emptyStateHeight)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("Library is empty. Drag audio files here, add files, or add a folder."))
+        .accessibilityLabel(Text("Library is empty. Drag audio files here, add files, or add a folder.", bundle: .module))
     }
 
     // MARK: Row
@@ -254,7 +279,8 @@ struct CadencePlaylist: View {
                         .font(.system(size: 9))
                         .foregroundStyle(theme.accent)
                 } else {
-                    Text("\(index + 1)")
+                    // Row number is numeric DATA (universal Arabic numerals) — verbatim.
+                    Text(verbatim: "\(index + 1)")
                         .font(.system(size: 11))
                         .monospacedDigit()
                         .foregroundStyle(index == core.currentIndex ? theme.accent : AppearanceTheme.tertiary)
@@ -305,7 +331,9 @@ struct CadencePlaylist: View {
         .contentShape(Rectangle())
         .onHover { hovered = $0 ? index : (hovered == index ? nil : hovered) }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(index + 1). \(parts.title)"))
+        // "N. <title>" is a number + already-final track title (data), identical in every
+        // locale — verbatim, so no passthrough catalog key is needed.
+        .accessibilityLabel(Text(verbatim: "\(index + 1). \(parts.title)"))
         .accessibilityAction { core.select(index) }
     }
 
@@ -328,11 +356,11 @@ struct CadencePlaylist: View {
             Text(footerLabel)
                 .font(.system(size: 11))
                 .foregroundStyle(AppearanceTheme.secondary)
-            Text("·").foregroundStyle(Color(hex: 0x5f5f64))
+            Text(verbatim: "·").foregroundStyle(Color(hex: 0x5f5f64))
             Button {
                 onAddFiles?()
             } label: {
-                Text("Add files…")
+                Text("Add files…", bundle: .module)
                     .font(.system(size: 11))
                     .foregroundStyle(theme.accent)
             }
@@ -364,7 +392,7 @@ struct CadencePlaylist: View {
                     .stroke(theme.accent, lineWidth: 2)
             )
             .overlay(
-                Text("Add to library")
+                Text("Add to library", bundle: .module)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(theme.accent)
             )
@@ -415,6 +443,6 @@ private struct RemoveButton: View {
         .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
         .animation(CadenceMotion.hoverEase, value: hovering)
-        .accessibilityLabel(Text("Remove from queue"))
+        .accessibilityLabel(Text("Remove from queue", bundle: .module))
     }
 }

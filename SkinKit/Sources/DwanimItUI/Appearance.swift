@@ -332,7 +332,11 @@ public final class AppearanceStore {
     public var hint: String {
         isError
             ? errorMessage
-            : "Current: \(current.name) — A theme is a .dwtheme or .json color file."
+            // The theme name is DATA (%@); the `.dwtheme` / `.json` file-extension tokens
+            // survive verbatim inside the translated sentence.
+            : String(localized: "Current: \(current.name) — A theme is a .dwtheme or .json color file.",
+                     bundle: .module,
+                     comment: "Appearance popover status line naming the current theme")
     }
 
     /// Swap to the theme named `name` (a built-in OR a loaded theme), instantly. An
@@ -377,7 +381,11 @@ public final class AppearanceStore {
             isError = false
             emitPersist()
         case .failure:
-            errorMessage = "\"\(filename)\" isn't a readable theme. Needs keys like accent, bg1, panel."
+            // The filename is DATA (%@); the `accent` / `bg1` / `panel` token names stay
+            // verbatim inside the translated sentence.
+            errorMessage = String(localized: "\"\(filename)\" isn't a readable theme. Needs keys like accent, bg1, panel.",
+                                  bundle: .module,
+                                  comment: "Appearance popover error when a theme file cannot be parsed")
             isError = true
             // A failed load must NOT persist a broken state — leave the store as-is.
         }

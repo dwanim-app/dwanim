@@ -10,6 +10,7 @@
 		0F6E70F57BAE6358FE8871AA /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88959338971C569718784169 /* BookmarkStore.swift */; };
 		174B6C052A3200CA10A62ECC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 345014DA6B29E81C78724A57 /* Assets.xcassets */; };
 		1D45EEE336011CBAAE96FDA2 /* SkinAppKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3F52AE2C0E81D4DF620D92DD /* SkinAppKit */; };
+		317ED84F56BB18A0434754DF /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 21FBF14B0825AC5901F79573 /* InfoPlist.strings */; };
 		3CCDF99FC645AABCA7B03473 /* AudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC4F231F7B7936205B9F05E /* AudioSession.swift */; };
 		4FD451133BB73C0C54203526 /* PlayerControl in Frameworks */ = {isa = PBXBuildFile; productRef = 0EA5EFE4797FE1B1184A1537 /* PlayerControl */; };
 		591796A3DBB1818C861FF71B /* PlaybackKit in Frameworks */ = {isa = PBXBuildFile; productRef = A5C8673990E84EE874839191 /* PlaybackKit */; };
@@ -20,6 +21,7 @@
 		83B095E3AA9F350C53EE87D8 /* SkinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 090842812690C2E45A80E383 /* SkinKit */; };
 		A2719D54F75A12E44D43AAB6 /* PlayerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 44D5666FED81ADFF9353455E /* PlayerCore */; };
 		A7698DD348B8C62FF396BE69 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */; };
+		A9503B389DE331F25FE21084 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6E2DFC4CBC5293B378C88667 /* Localizable.xcstrings */; };
 		BE84E7454A3F38B84D03016B /* SkinRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0159AB74B541644A2F7407C9 /* SkinRender */; };
 		E779080FEB0423885C63D5F9 /* AppearancePersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B80DD44ACD8F1A8072727D /* AppearancePersistenceStore.swift */; };
 		E7AF16046C18820C0B05821A /* DwanimItUI in Frameworks */ = {isa = PBXBuildFile; productRef = B88EACC74230D16FD3718B43 /* DwanimItUI */; };
@@ -28,11 +30,15 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		17A4BCB80B2E05FEA044D84E /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		20F124A669281654D41F8AB7 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		309509DFE07E97359678016F /* zh-Hant */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hant"; path = "zh-Hant.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		345014DA6B29E81C78724A57 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4F39C5CC79A1DA4285A38835 /* DropRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropRouter.swift; sourceTree = "<group>"; };
 		5860F9A2D3412EF67FAA8D30 /* SkinKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SkinKit; path = ../SkinKit; sourceTree = SOURCE_ROOT; };
 		617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		64D97B8B8AE9FE4963213058 /* ClassicSkinPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassicSkinPresenter.swift; sourceTree = "<group>"; };
+		6E2DFC4CBC5293B378C88667 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		88959338971C569718784169 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
 		8B22EBF96972CBC44217AE60 /* DwanimIt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DwanimIt.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C87EF84C87D1F53083532DB6 /* DwanimItApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwanimItApp.swift; sourceTree = "<group>"; };
@@ -65,6 +71,8 @@
 			isa = PBXGroup;
 			children = (
 				345014DA6B29E81C78724A57 /* Assets.xcassets */,
+				6E2DFC4CBC5293B378C88667 /* Localizable.xcstrings */,
+				21FBF14B0825AC5901F79573 /* InfoPlist.strings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -186,6 +194,8 @@
 			knownRegions = (
 				Base,
 				en,
+				ja,
+				"zh-Hant",
 			);
 			mainGroup = 9A844BD89DB74AEEEF7491BE;
 			minimizedProjectReferenceProxies = 1;
@@ -208,6 +218,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				174B6C052A3200CA10A62ECC /* Assets.xcassets in Resources */,
+				317ED84F56BB18A0434754DF /* InfoPlist.strings in Resources */,
+				A9503B389DE331F25FE21084 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -230,6 +242,19 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		21FBF14B0825AC5901F79573 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				17A4BCB80B2E05FEA044D84E /* en */,
+				20F124A669281654D41F8AB7 /* ja */,
+				309509DFE07E97359678016F /* zh-Hant */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		915B508F3AAACC16899A2772 /* Debug */ = {

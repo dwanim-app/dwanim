@@ -36,7 +36,7 @@ struct CadenceTransport: View {
             // centred within the row).
             HStack(spacing: 4) {
                 TransportToggle(
-                    title: "Shuffle",
+                    label: Text("Shuffle", bundle: .module),
                     isActive: core.isShuffle,
                     bold: false,
                     theme: theme
@@ -48,7 +48,7 @@ struct CadenceTransport: View {
                 }
 
                 TransportToggle(
-                    title: "Repeat",
+                    label: Text("Repeat", bundle: .module),
                     isActive: core.repeatMode == .one,
                     bold: false,
                     theme: theme
@@ -61,7 +61,8 @@ struct CadenceTransport: View {
                 }
 
                 TransportToggle(
-                    title: "EQ",
+                    // "EQ" is a fixed abbreviation kept identical in every locale — verbatim.
+                    label: Text(verbatim: "EQ"),
                     isActive: core.equalizer.enabled,
                     bold: true,
                     theme: theme
@@ -116,7 +117,11 @@ struct CadenceTransport: View {
 /// text on transparent (hover raises a faint fill); active is white text on the
 /// theme accent at 34% alpha.
 private struct TransportToggle: View {
-    let title: String
+    /// The already-localized label. A `Text` (not a `String`) so each call site chooses
+    /// its own bundle: Shuffle / Repeat pass `Text("…", bundle: .module)` (translated),
+    /// while the fixed-frame "EQ" abbreviation passes `Text(verbatim:)` (never localized).
+    /// The same value drives both the visible pill and the accessibility label.
+    let label: Text
     let isActive: Bool
     let bold: Bool
     let theme: AppearanceTheme
@@ -126,9 +131,15 @@ private struct TransportToggle: View {
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            label
                 .font(.system(size: 11, weight: bold ? .semibold : .regular))
                 .foregroundStyle(isActive ? Color.white : AppearanceTheme.idleToggle)
+                // Defensive safety net: the three toggles size to content inside a
+                // fixed 176 pt zone. Every current locale fits with slack, so this is
+                // invisible today; it only engages if a future longer string would
+                // otherwise overflow the pill into the centre cluster as overlap.
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(height: 24)
                 .padding(.horizontal, 8)
                 .background(
@@ -140,7 +151,7 @@ private struct TransportToggle: View {
         .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
         .animation(CadenceMotion.hoverEase, value: hovering)
-        .accessibilityLabel(Text(title))
+        .accessibilityLabel(label)
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
@@ -156,7 +167,8 @@ private struct TransportToggle: View {
 /// on hover.
 private struct TransportIconButton: View {
     let systemName: String
-    let label: String
+    /// The accessibility label key, resolved against `Bundle.module`'s catalog.
+    let label: LocalizedStringKey
     let action: () -> Void
 
     @State private var hovering = false
@@ -176,7 +188,7 @@ private struct TransportIconButton: View {
         .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
         .animation(CadenceMotion.hoverEase, value: hovering)
-        .accessibilityLabel(Text(label))
+        .accessibilityLabel(Text(label, bundle: .module))
     }
 }
 
@@ -209,7 +221,7 @@ private struct PlayButton: View {
         .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
         .animation(CadenceMotion.hoverEase, value: hovering)
-        .accessibilityLabel(Text(isPlaying ? "Pause" : "Play"))
+        .accessibilityLabel(Text(isPlaying ? "Pause" : "Play", bundle: .module))
     }
 }
 
@@ -253,8 +265,9 @@ private struct CadenceVolumeSlider: View {
         }
         .frame(height: 14)
         .accessibilityElement()
-        .accessibilityLabel(Text("Volume"))
-        .accessibilityValue(Text("\(Int((min(max(value, 0), 1)) * 100)) percent"))
+        .accessibilityLabel(Text("Volume", bundle: .module))
+        // Locale-aware percentage read-out (shared "%lld percent" catalog key).
+        .accessibilityValue(Text("\(Int((min(max(value, 0), 1)) * 100)) percent", bundle: .module))
     }
 
     /// The `0...1` volume for a cursor `x`, mapped through the SAME knob-travel inset

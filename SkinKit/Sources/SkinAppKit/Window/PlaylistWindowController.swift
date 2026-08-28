@@ -414,10 +414,10 @@ public final class PlaylistWindowController: SkinWindowController {
     /// could never play; the classic third item is left out rather than shown dead.
     private func makeAddMenu() -> NSMenu {
         let menu = makeBarMenu()
-        addItem(to: menu, title: "Add File(s)…", enabled: onAddFiles != nil) { [weak self] in
+        addItem(to: menu, title: String(localized: "Add File(s)…", bundle: .module), enabled: onAddFiles != nil) { [weak self] in
             self?.onAddFiles?()
         }
-        addItem(to: menu, title: "Add Directory…", enabled: onAddFolder != nil) { [weak self] in
+        addItem(to: menu, title: String(localized: "Add Directory…", bundle: .module), enabled: onAddFolder != nil) { [weak self] in
             self?.onAddFolder?()
         }
         return menu
@@ -428,13 +428,13 @@ public final class PlaylistWindowController: SkinWindowController {
         let menu = makeBarMenu()
         let hasSelection = !selectedRows.isEmpty
         let hasTracks = !core.playlist.isEmpty
-        addItem(to: menu, title: "Remove Selected", enabled: hasSelection) { [weak self] in
+        addItem(to: menu, title: String(localized: "Remove Selected", bundle: .module), enabled: hasSelection) { [weak self] in
             self?.removeSelectedRows()
         }
-        addItem(to: menu, title: "Crop Selected", enabled: hasSelection) { [weak self] in
+        addItem(to: menu, title: String(localized: "Crop Selected", bundle: .module), enabled: hasSelection) { [weak self] in
             self?.cropToSelectedRows()
         }
-        addItem(to: menu, title: "Remove All", enabled: hasTracks) { [weak self] in
+        addItem(to: menu, title: String(localized: "Remove All", bundle: .module), enabled: hasTracks) { [weak self] in
             self?.removeAllRows()
         }
         return menu
@@ -444,13 +444,13 @@ public final class PlaylistWindowController: SkinWindowController {
     private func makeSelectionMenu() -> NSMenu {
         let menu = makeBarMenu()
         let hasTracks = !core.playlist.isEmpty
-        addItem(to: menu, title: "Select All", enabled: hasTracks) { [weak self] in
+        addItem(to: menu, title: String(localized: "Select All", bundle: .module), enabled: hasTracks) { [weak self] in
             self?.replaceSelection(with: Set(self?.core.playlist.indices ?? 0..<0))
         }
-        addItem(to: menu, title: "Select None", enabled: !selectedRows.isEmpty) { [weak self] in
+        addItem(to: menu, title: String(localized: "Select None", bundle: .module), enabled: !selectedRows.isEmpty) { [weak self] in
             self?.replaceSelection(with: [])
         }
-        addItem(to: menu, title: "Invert Selection", enabled: hasTracks) { [weak self] in
+        addItem(to: menu, title: String(localized: "Invert Selection", bundle: .module), enabled: hasTracks) { [weak self] in
             guard let self else { return }
             self.replaceSelection(with: Set(self.core.playlist.indices).symmetricDifference(self.selectedRows))
         }
@@ -463,16 +463,16 @@ public final class PlaylistWindowController: SkinWindowController {
     private func makeMiscMenu() -> NSMenu {
         let menu = makeBarMenu()
         let canReorder = core.playlist.count > 1
-        addItem(to: menu, title: "Sort List by Title", enabled: canReorder) { [weak self] in
+        addItem(to: menu, title: String(localized: "Sort List by Title", bundle: .module), enabled: canReorder) { [weak self] in
             self?.reorder { $0.sortByTitle() }
         }
-        addItem(to: menu, title: "Sort List by Filename", enabled: canReorder) { [weak self] in
+        addItem(to: menu, title: String(localized: "Sort List by Filename", bundle: .module), enabled: canReorder) { [weak self] in
             self?.reorder { $0.sortByFilename() }
         }
-        addItem(to: menu, title: "Reverse List", enabled: canReorder) { [weak self] in
+        addItem(to: menu, title: String(localized: "Reverse List", bundle: .module), enabled: canReorder) { [weak self] in
             self?.reorder { $0.reverse() }
         }
-        addItem(to: menu, title: "Randomize List", enabled: canReorder) { [weak self] in
+        addItem(to: menu, title: String(localized: "Randomize List", bundle: .module), enabled: canReorder) { [weak self] in
             self?.reorder { $0.randomize() }
         }
         return menu
@@ -481,14 +481,14 @@ public final class PlaylistWindowController: SkinWindowController {
     /// LIST OPTS menu: new (clear) / open / save `.m3u`.
     private func makeListMenu() -> NSMenu {
         let menu = makeBarMenu()
-        addItem(to: menu, title: "New List", enabled: !core.playlist.isEmpty) { [weak self] in
+        addItem(to: menu, title: String(localized: "New List", bundle: .module), enabled: !core.playlist.isEmpty) { [weak self] in
             self?.removeAllRows()
         }
-        addItem(to: menu, title: "Open List…", enabled: onOpenList != nil) { [weak self] in
+        addItem(to: menu, title: String(localized: "Open List…", bundle: .module), enabled: onOpenList != nil) { [weak self] in
             self?.onOpenList?()
         }
         addItem(
-            to: menu, title: "Save List…",
+            to: menu, title: String(localized: "Save List…", bundle: .module),
             enabled: onSaveList != nil && !core.playlist.isEmpty
         ) { [weak self] in
             self?.onSaveList?()

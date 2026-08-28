@@ -1,0 +1,539 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Add" : {
+      "comment" : "Default button title of the Add File(s) / Add Folder open panels.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入"
+          }
+        }
+      }
+    },
+    "Choose a color-theme file (.dwtheme or .json)." : {
+      "comment" : "Open Theme panel message. .dwtheme/.json are literal extensions kept verbatim.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a color-theme file (.dwtheme or .json)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カラーテーマファイル（.dwtheme または .json）を選択してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇色彩佈景主題檔案（.dwtheme 或 .json）。"
+          }
+        }
+      }
+    },
+    "Choose a folder whose audio files to add to the playlist." : {
+      "comment" : "Add Folder open panel message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder whose audio files to add to the playlist."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーディオファイルをプレイリストに追加するフォルダを選択してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇要將其中音訊檔案加入播放清單的資料夾。"
+          }
+        }
+      }
+    },
+    "Choose a playlist file (.m3u) to open." : {
+      "comment" : "Open Playlist panel message. .m3u is a literal extension kept verbatim.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a playlist file (.m3u) to open."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開くプレイリストファイル（.m3u）を選択してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇要開啟的播放清單檔案（.m3u）。"
+          }
+        }
+      }
+    },
+    "Choose a skin archive (.wsz) to apply." : {
+      "comment" : "Open Skin panel message. .wsz is a literal extension kept verbatim.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a skin archive (.wsz) to apply."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "適用するスキンアーカイブ（.wsz）を選択してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇要套用的面板封存檔（.wsz）。"
+          }
+        }
+      }
+    },
+    "Choose one or more audio files to add to the playlist." : {
+      "comment" : "Add File(s) open panel message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose one or more audio files to add to the playlist."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレイリストに追加するオーディオファイルを1つ以上選択してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇一個或多個要加入播放清單的音訊檔案。"
+          }
+        }
+      }
+    },
+    "Choose one or more audio files to play." : {
+      "comment" : "Open Audio panel message.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose one or more audio files to play."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生するオーディオファイルを1つ以上選択してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇一個或多個要播放的音訊檔案。"
+          }
+        }
+      }
+    },
+    "Could not open this skin." : {
+      "comment" : "Skin-load failure alert title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not open this skin."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このスキンを開けませんでした。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法開啟此面板。"
+          }
+        }
+      }
+    },
+    "Default View" : {
+      "comment" : "Skin menu command: leave the classic skin and return to the default face.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default View"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルト表示"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預設檢視"
+          }
+        }
+      }
+    },
+    "dwanim it" : {
+      "comment" : "Product name / main window title. Not translated.",
+      "extractionState" : "manual",
+      "shouldTranslate" : false
+    },
+    "Equalizer" : {
+      "comment" : "View-menu toggle + classic EQ window title. Matches the DwanimItUI catalog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Equalizer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "イコライザ"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等化器"
+          }
+        }
+      }
+    },
+    "OK" : {
+      "comment" : "Dismiss button on the skin-load failure alert.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "好"
+          }
+        }
+      }
+    },
+    "Open" : {
+      "comment" : "Default button title of the Open Audio / Open Skin / Open Playlist / Open Theme panels.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開く"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟"
+          }
+        }
+      }
+    },
+    "Open Audio…" : {
+      "comment" : "File / Skin menu command: open audio files to play.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Audio…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーディオを開く…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟音訊…"
+          }
+        }
+      }
+    },
+    "Open Playlist…" : {
+      "comment" : "File / Skin menu command: open a .m3u playlist (replaces the queue).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Playlist…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレイリストを開く…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟播放清單…"
+          }
+        }
+      }
+    },
+    "Open Skin…" : {
+      "comment" : "File / Skin menu command: open the classic .wsz bitmap skin picker. Matches the DwanimItUI catalog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Skin…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキンを開く…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟面板…"
+          }
+        }
+      }
+    },
+    "Playlist" : {
+      "comment" : "View-menu toggle + classic playlist window title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playlist"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレイリスト"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放清單"
+          }
+        }
+      }
+    },
+    "Save" : {
+      "comment" : "Default button title of the Save Playlist panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存"
+          }
+        }
+      }
+    },
+    "Save Playlist…" : {
+      "comment" : "File / Skin menu command: save the live queue as a .m3u file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save Playlist…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレイリストを保存…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存播放清單…"
+          }
+        }
+      }
+    },
+    "Save the current playlist as a .m3u file." : {
+      "comment" : "Save Playlist panel message. .m3u is a literal extension kept verbatim.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save the current playlist as a .m3u file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在のプレイリストを .m3u ファイルとして保存します。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將目前的播放清單儲存為 .m3u 檔案。"
+          }
+        }
+      }
+    },
+    "Skin" : {
+      "comment" : "Top-level Skin menu title + classic main window title. Kept consistent with the skin (面板 / スキン) vocabulary.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skin"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキン"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "面板"
+          }
+        }
+      }
+    },
+    "Skin Window" : {
+      "comment" : "View-menu toggle: show/hide the classic main (skin) window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skin Window"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキンウインドウ"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "面板視窗"
+          }
+        }
+      }
+    },
+    "The file is not a usable skin archive." : {
+      "comment" : "Skin-load failure alert body when no underlying error is available.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file is not a usable skin archive."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このファイルは使用可能なスキンアーカイブではありません。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此檔案不是可用的面板封存檔。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

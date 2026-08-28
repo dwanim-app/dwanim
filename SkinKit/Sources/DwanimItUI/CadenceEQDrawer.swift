@@ -46,7 +46,7 @@ struct CadenceEQDrawer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Equalizer")
+            Text("Equalizer", bundle: .module)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(AppearanceTheme.secondary)
                 .frame(height: 26)
@@ -88,14 +88,14 @@ struct CadenceEQDrawer: View {
                                 .foregroundStyle(Color.white)
                         }
                     }
-                    Text("On")
+                    Text("On", bundle: .module)
                         .font(.system(size: 12))
                         .foregroundStyle(AppearanceTheme.titleText)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(CadencePressStyle())
-            .accessibilityLabel(Text("Equalizer on"))
+            .accessibilityLabel(Text("Equalizer on", bundle: .module))
             .accessibilityAddTraits(core.equalizer.enabled ? .isSelected : [])
 
             Spacer(minLength: 0)
@@ -111,7 +111,10 @@ struct CadenceEQDrawer: View {
                 Button {
                     apply(preset)
                 } label: {
-                    Text(preset.rawValue)
+                    // Display uses the LOCALIZED `displayName`; the segmented control's
+                    // identity/highlight still derives from `bands` (see `activePreset`),
+                    // never from this label — `rawValue` stays the untranslated identity.
+                    Text(preset.displayName)
                         .font(.system(size: 11))
                         .foregroundStyle(selected ? AppearanceTheme.primaryText : AppearanceTheme.idleToggle)
                         .frame(height: 20)
@@ -148,7 +151,8 @@ struct CadenceEQDrawer: View {
                     showCenterLine: false,
                     trackHeight: Self.trackHeight
                 ) { core.setEQPreamp($0) }
-                Text("Pre")
+                // "Pre" is a fixed-frame preamp abbreviation (data, not prose) — verbatim.
+                Text(verbatim: "Pre")
                     .font(.system(size: 10))
                     .foregroundStyle(AppearanceTheme.secondary)
             }
@@ -169,7 +173,8 @@ struct CadenceEQDrawer: View {
                         ) { newGain in
                             core.setEQBand(index, dB: newGain)
                         }
-                        Text(Self.bandLabels[index])
+                        // Hz band labels (60…16K) are frequency DATA — verbatim.
+                        Text(verbatim: Self.bandLabels[index])
                             .font(.system(size: 9.5))
                             .foregroundStyle(AppearanceTheme.secondary)
                     }
@@ -263,6 +268,9 @@ private struct EQVerticalSlider: View {
         }
         .frame(width: columnWidth, height: trackHeight)
         .accessibilityElement()
-        .accessibilityValue(Text("\(Int(gain.rounded())) decibels"))
+        // Locale-aware dB read-out. The signed integer keeps its sign (negatives render
+        // the locale's minus glyph, positive/zero take none — sign handling preserved),
+        // and the "%lld decibels" catalog key localizes the unit word.
+        .accessibilityValue(Text("\(Int(gain.rounded())) decibels", bundle: .module))
     }
 }

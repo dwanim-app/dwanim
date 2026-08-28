@@ -18,6 +18,19 @@ options:
     macOS: "14.0"
   # Keep generated-project noise out of the diff-able spec.
   createIntermediateGroups: true
+  # LOCALIZATION FOUNDATION (l10n step). Sets the project's development
+  # (source) language to English.
+  developmentLanguage: en
+
+# LOCALIZATION FOUNDATION (l10n step). The project's `knownRegions` is NOT set
+# by a literal spec key — XcodeGen 2.45.4 has no `knownRegions` input and
+# silently ignores one. XcodeGen instead DERIVES knownRegions from the locales
+# declared in localized resources it discovers, plus `Base` and the
+# development language. The app-level String Catalog at
+# DwanimIt/Resources/Localizable.xcstrings declares en + ja + zh-Hant, so the
+# regenerated project emits `knownRegions = (Base, en, ja, zh-Hant)`. Add a new
+# target locale by adding it to that catalog (and the package catalogs), not
+# here.
 
 # The local SkinKit SwiftPM package (one directory up from App/).
 packages:

@@ -69,8 +69,9 @@ struct CadenceAppearanceButton: View {
         }
         .buttonStyle(CadencePressStyle())
         .animation(CadenceMotion.hoverEase, value: isOpen)
-        .help("Appearance")
-        .accessibilityLabel(Text("Appearance: \(store.current.name)"))
+        .help(Text("Appearance", bundle: .module))
+        // The theme name is DATA (%@) inside the translated a11y label.
+        .accessibilityLabel(Text("Appearance: \(store.current.name)", bundle: .module))
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             popoverContent
                 .frame(width: 236)
@@ -93,7 +94,7 @@ struct CadenceAppearanceButton: View {
 
     private var popoverContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Appearance")
+            Text("Appearance", bundle: .module)
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(AppearanceTheme.secondary)
                 .padding(.horizontal, 8)
@@ -186,7 +187,7 @@ struct CadenceAppearanceButton: View {
                     .font(.system(size: 11))
                     .foregroundStyle(AppearanceTheme.secondary)
                     .frame(width: 12)
-                Text("Open Theme…")
+                Text("Open Theme…", bundle: .module)
                     .font(.system(size: 12.5))
                     .foregroundStyle(AppearanceTheme.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -221,7 +222,7 @@ struct CadenceAppearanceButton: View {
                     .font(.system(size: 11))
                     .foregroundStyle(AppearanceTheme.secondary)
                     .frame(width: 12)
-                Text("Open Skin…")
+                Text("Open Skin…", bundle: .module)
                     .font(.system(size: 12.5))
                     .foregroundStyle(AppearanceTheme.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
