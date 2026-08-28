@@ -10,27 +10,28 @@ on, together with the attributions their licenses require.
 
 None. No third-party source code is bundled in the project at this time.
 
-## Reserved attribution — Webamp (MIT License)
+## Reference acknowledgment — Webamp (MIT License) and the public Winamp skin format
 
-The project's `.wsz` skin-parsing work is planned to be informed by **Webamp**,
-an MIT-licensed open-source project:
+dwanim it's classic `.wsz` skin support was built by reading the **public
+Winamp skin-format documentation**. With thanks to the **Webamp** project and
+that public documentation, which were consulted as a reference for understanding
+the `.wsz` format:
 
 - **Project:** Webamp
 - **Source:** https://github.com/captbaritone/webamp
 - **License:** MIT
 - **Copyright:** © Jordan Eldredge and the Webamp contributors
 
-When parsing logic that is derived from or ported from Webamp is incorporated
-into dwanim, the MIT License requires that Webamp's copyright notice and
-permission notice be retained. At that point the upstream `LICENSE` text must be
-reproduced **verbatim** in this file (or alongside the relevant source files),
-and the authoritative copyright line copied directly from the upstream Webamp
-repository.
+The `.wsz` parsing and sprite-coordinate code is an independent, clean-room
+implementation authored from the public format specification and empirically
+corrected by measuring a local corpus of real skins. **No Webamp — or any other
+third-party — source code is bundled, used, or ported.** This acknowledgment is
+offered as a courtesy to the reference material, not because any third-party
+code is included.
 
-The standard MIT License text is reproduced below for reference. It is included
-here as a forward-looking reservation; the canonical copyright line above should
-be confirmed against, and copied verbatim from, the upstream repository at the
-time any code is incorporated.
+Webamp's MIT License text is reproduced below as a courtesy attribution. The
+copyright line above should be confirmed against, and copied verbatim from, the
+upstream Webamp repository.
 
 ---
 
