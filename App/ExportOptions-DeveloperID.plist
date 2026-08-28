@@ -13,12 +13,12 @@
       -exportOptionsPlist App/ExportOptions-DeveloperID.plist
 
   ┌──────────────────────── REQUIRES YOUR APPLE ACCOUNT ────────────────────────┐
-  │ The <teamID> below is a PLACEHOLDER. The account owner MUST replace          │
-  │ REPLACE_WITH_YOUR_TEAM_ID with the 10-character Apple Developer Team ID,     │
-  │ and a valid "Developer ID Application" signing identity must be installed    │
-  │ in the keychain. Notarization additionally needs an App-Store-Connect API    │
-  │ key or an app-specific password (see md_files/SHIPPING.md). None of this     │
-  │ works without an Apple Developer Program membership.                         │
+  │ <teamID> is the real Apple Developer Team ID (7GRD9Y5U7W) -- not a secret,   │
+  │ it ships inside every signed binary. A valid "Developer ID Application"      │
+  │ signing identity must be installed in the keychain. Notarization             │
+  │ additionally needs an App-Store-Connect API key or an app-specific password  │
+  │ (see md_files/SHIPPING.md). None of this works without an Apple Developer    │
+  │ Program membership.                                                          │
   └─────────────────────────────────────────────────────────────────────────────┘
 
   ENABLE_HARDENED_RUNTIME = YES is already set in project.yml, which is a hard
@@ -32,9 +32,9 @@
 	<key>method</key>
 	<string>developer-id</string>
 
-	<!-- PLACEHOLDER: account owner replaces with the 10-char Team ID. -->
+	<!-- Apple Developer Team ID (public; embedded in every signed binary). -->
 	<key>teamID</key>
-	<string>REPLACE_WITH_YOUR_TEAM_ID</string>
+	<string>7GRD9Y5U7W</string>
 
 	<!-- Let Xcode resolve the Developer ID Application certificate. -->
 	<key>signingStyle</key>

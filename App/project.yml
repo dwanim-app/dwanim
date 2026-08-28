@@ -93,12 +93,19 @@ targets:
         # App Sandbox already constrains the process, and hardened runtime adds
         # no get-task-allow of its own (Xcode injects get-task-allow only for
         # Debug ad-hoc signing, and strips it from Release archives).
-        #
-        # Signing identity is intentionally LEFT UNSET here: DEVELOPMENT_TEAM,
-        # CODE_SIGN_IDENTITY and CODE_SIGN_STYLE are filled in by the account
-        # owner at archive/export time (see md_files/SHIPPING.md). The committed
-        # spec stays account-agnostic so any clone builds ad-hoc without secrets.
         ENABLE_HARDENED_RUNTIME: YES
+        # SIGNING IDENTITY: the Apple Developer Team ID is now baked in. It is
+        # NOT a secret -- the 10-character team id is embedded in every shipped
+        # binary and readable from any distributed copy -- so committing it keeps
+        # the archive/export step reproducible instead of relying on per-machine
+        # overrides. CODE_SIGN_IDENTITY is still left unset so Xcode's automatic
+        # signing picks the right certificate per configuration ("Apple
+        # Development" for Debug, "Apple Distribution" / "3rd Party Mac
+        # Developer Application" for a Mac App Store archive). A clone without
+        # this team's certificates can still build unsigned with
+        # CODE_SIGNING_ALLOWED=NO. See md_files/SHIPPING.md.
+        DEVELOPMENT_TEAM: 7GRD9Y5U7W
+        CODE_SIGN_STYLE: Automatic
 
 # A SHARED scheme so `xcodebuild -scheme DwanimIt` works for any clone / CI
 # without relying on Xcode's per-user autocreated schemes (which are gitignored).
