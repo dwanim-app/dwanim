@@ -11,7 +11,7 @@ import PlayerCore
 //
 // ## Why UserDefaults (the app container) and not a loose file
 // Under the sandbox, `UserDefaults.standard` is backed by a plist inside
-// `~/Library/Containers/app.dwanim.dwanimit/…` — the same container the sandbox
+// `~/Library/Containers/tw.com.yuzhitech.dwanimit/…` — the same container the sandbox
 // proof checks for. It is the simplest durable, per-app, atomic store for a
 // small blob like this, with no extra file-coordination or path plumbing. The
 // payload is one JSON `Data` under a single stable key.

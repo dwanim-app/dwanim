@@ -204,14 +204,14 @@
     取代原本的 `REPLACE_WITH_YOUR_TEAM_ID` 佔位字串。Team ID 非機密(每個簽章 binary 內都有),
     故可入庫。完成後 archive/export 指令**無需再帶簽章參數**。
   - [ ] **portal 帳號操作（仍未開始）**:
-    - [ ] 在 Apple Developer portal 註冊 **explicit** App ID `app.dwanim.dwanimit`（不可 wildcard,
+    - [ ] 在 Apple Developer portal 註冊 **explicit** App ID `tw.com.yuzhitech.dwanimit`（不可 wildcard,
       否則 App Sandbox / provisioning 不成立）。
     - [ ] 建立 **macOS 專用**憑證(iOS 那組不通用):**Mac App Distribution**
       (`3rd Party Mac Developer Application`,簽 .app)+ **Mac Installer Distribution**
       (`3rd Party Mac Developer Installer`,簽 .pkg)——上架**兩張都要**;另 Mac App Store
       provisioning profile。(Developer-ID 備援路線另需 Developer ID Application 憑證。)
     - [ ] 在 **App Store Connect** 建立 app 紀錄:My Apps → + → New App → **macOS** →
-      綁 `app.dwanim.dwanimit` → 名稱「dwanim it」。上傳前必須先存在。
+      綁 `tw.com.yuzhitech.dwanimit` → 名稱「dwanim it」。上傳前必須先存在。
     - [ ] 確認 **Paid Applications 合約 / 稅務 / 銀行**狀態(iOS app 有 live IAP,理應已完備
       → **只需驗證,非阻擋**),並把 app 設為付費;**價格級距尚未決定**。
 - [ ] ⑧ `xcodebuild archive` → exportArchive(選對 plist,macOS 產出的是 **`.pkg` 不是 `.ipa`**)

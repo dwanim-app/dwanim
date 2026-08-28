@@ -10,9 +10,9 @@
 
   ┌──────────────────────── REQUIRES YOUR APPLE ACCOUNT ────────────────────────┐
   │ <teamID> is the real Apple Developer Team ID (7GRD9Y5U7W) -- not a secret,   │
-  │ it ships inside every signed binary. The bundle id app.dwanim.dwanimit must  │
-  │ already be registered in the Apple Developer portal + App Store Connect,     │
-  │ before this export can succeed. Nothing here works without an Apple          │
+  │ it ships inside every signed binary. The bundle id tw.com.yuzhitech.dwanimit │
+  │ must already be registered in the Apple Developer portal + App Store         │
+  │ Connect, before this export can succeed. Nothing here works without an Apple │
   │ Developer Program membership and a Mac App Distribution signing identity /   │
   │ provisioning profile available to the toolchain.                             │
   └─────────────────────────────────────────────────────────────────────────────┘

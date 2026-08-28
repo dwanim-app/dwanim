@@ -6,7 +6,7 @@
 # SkinKit package wiring.
 #
 # Locked decisions baked in here:
-#   - bundle id app.dwanim.dwanimit, display name dwanim it, min macOS 14.0
+#   - bundle id tw.com.yuzhitech.dwanimit, display name dwanim it, min macOS 14.0
 #   - sandbox via the CODE_SIGN_ENTITLEMENTS file (3 keys; no network)
 #   - .wsz is NOT a document type (no CFBundleDocumentTypes / no UTI)
 
@@ -86,7 +86,7 @@ targets:
 
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.dwanim.dwanimit
+        PRODUCT_BUNDLE_IDENTIFIER: tw.com.yuzhitech.dwanimit
         # We author Info.plist by hand; do not let Xcode synthesize one.
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: DwanimIt/Resources/Info.plist
