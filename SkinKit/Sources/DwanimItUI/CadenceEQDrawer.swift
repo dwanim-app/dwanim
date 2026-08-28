@@ -76,7 +76,7 @@ struct CadenceEQDrawer: View {
                 HStack(spacing: 6) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                            .fill(core.equalizer.enabled ? theme.accent : AppearanceTheme.railFill)
+                            .fill(core.equalizer.enabled ? theme.accent : AppearanceTheme.checkboxOffFill)
                             .frame(width: 13, height: 13)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 3.5, style: .continuous)
@@ -84,7 +84,7 @@ struct CadenceEQDrawer: View {
                             )
                         if core.equalizer.enabled {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 8, weight: .bold))
+                                .font(.system(size: 9, weight: .bold))
                                 .foregroundStyle(Color.white)
                         }
                     }
@@ -94,7 +94,7 @@ struct CadenceEQDrawer: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CadencePressStyle())
             .accessibilityLabel(Text("Equalizer on"))
             .accessibilityAddTraits(core.equalizer.enabled ? .isSelected : [])
 
@@ -122,7 +122,7 @@ struct CadenceEQDrawer: View {
                         )
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CadencePressStyle())
             }
         }
         .padding(2)
@@ -248,7 +248,9 @@ private struct EQVerticalSlider: View {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(enabled ? AppearanceTheme.eqThumbOn : AppearanceTheme.eqThumbOff)
                     .frame(width: columnWidth - 4, height: thumbHeight)
-                    .shadow(color: .black.opacity(0.55), radius: 1, y: 0.5)
+                    // Handoff §1d: 0 0.5px 2px rgba(0,0,0,0.55) (≈ radius 2), matching
+                    // the P7 volume-knob shadow fix.
+                    .shadow(color: .black.opacity(0.55), radius: 2, y: 0.5)
                     .position(x: columnWidth / 2, y: thumbCenterY)
             }
             .frame(width: columnWidth, height: height)

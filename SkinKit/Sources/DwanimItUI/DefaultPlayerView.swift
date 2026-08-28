@@ -58,6 +58,9 @@ public struct DefaultPlayerView: View {
     static let compactWidth: CGFloat = 560
     /// The panel corner radius (design: 11 px).
     static let panelCornerRadius: CGFloat = 11
+    /// The hero block's vertical column gap (design §1b: 12 px between the visualiser,
+    /// now-playing, seek, and transport rows). One constant so every hero gap matches.
+    static let heroColumnGap: CGFloat = 12
 
     public init(
         core: PlayerCore,
@@ -114,24 +117,28 @@ public struct DefaultPlayerView: View {
                 .stroke(AppearanceTheme.windowEdge, lineWidth: 0.5)
         }
         .clipShape(RoundedRectangle(cornerRadius: Self.panelCornerRadius, style: .continuous))
+        // M3 — a gentle colour crossfade when the theme changes (keyed on the theme
+        // name, so it fires only on a real swap, never on the per-frame visualiser
+        // updates). The prototype applies skins instantly; this stays subtle enough to
+        // still read as immediate.
+        .animation(CadenceMotion.themeCrossfade, value: theme.name)
     }
 
     // MARK: - Title bar
 
     private var titleBar: some View {
-        ZStack {
-            Text("dwanim it")
-                .font(.system(size: 12.5, weight: .semibold))
-                .foregroundStyle(AppearanceTheme.titleText)
-
-            HStack {
-                Spacer()
-                CadenceAppearanceButton(
-                    store: appearance,
-                    onOpenAppearanceFile: onOpenAppearanceFile,
-                    openSkin: onOpenSkin
-                )
-            }
+        // No centered app-name / track-title label: the hero now-playing row already
+        // carries the live title/artist, so the title bar keeps only the native window
+        // controls (left, drawn by macOS) and the Appearance button (right). The centre
+        // is an intentional empty spacer, preserving the row height and left/right
+        // balance.
+        HStack {
+            Spacer()
+            CadenceAppearanceButton(
+                store: appearance,
+                onOpenAppearanceFile: onOpenAppearanceFile,
+                openSkin: onOpenSkin
+            )
         }
         .padding(.horizontal, 12)
         .frame(height: 40)
@@ -143,10 +150,10 @@ public struct DefaultPlayerView: View {
     // MARK: - Hero
 
     private var hero: some View {
-        VStack(spacing: 12) {
-            CadenceVisualizer(theme: theme, levels: model.levels)
+        VStack(spacing: Self.heroColumnGap) {
+            CadenceVisualizer(theme: theme, levels: model.levels, playing: core.isPlaying)
 
-            VStack(spacing: 7) {
+            VStack(spacing: Self.heroColumnGap) {
                 nowPlaying
                 CadenceSeekBar(
                     theme: theme,
@@ -177,6 +184,10 @@ public struct DefaultPlayerView: View {
                     .foregroundStyle(AppearanceTheme.nowPlayingArtist)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    // E3 — the artist lays out at its (short) ideal width first, so a
+                    // very long title truncates and yields the row instead of starving
+                    // the artist to nothing.
+                    .layoutPriority(1)
             }
             Spacer(minLength: 0)
         }

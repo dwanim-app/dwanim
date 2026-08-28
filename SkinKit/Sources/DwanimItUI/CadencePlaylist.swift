@@ -52,11 +52,17 @@ struct CadencePlaylist: View {
     private let removeWidth: CGFloat = 26
     private let rowHeight: CGFloat = 30
     private let maxListHeight: CGFloat = 236
+    /// The empty-library invitation's height (S-a). Also widens the drop target: with
+    /// no rows the drop region would otherwise shrink to just the header + footer, so
+    /// this reserves a comfortable area for "drag files here".
+    private let emptyStateHeight: CGFloat = 150
 
     var body: some View {
         VStack(spacing: 0) {
             header
-            if !core.playlist.isEmpty {
+            if core.playlist.isEmpty {
+                emptyState
+            } else {
                 list
             }
             footer
@@ -185,6 +191,57 @@ struct CadencePlaylist: View {
         return min(count * rowHeight + 8, maxListHeight)
     }
 
+    // MARK: Empty state (S-a)
+
+    /// The invitation shown in place of the table when the library is empty (E1 / S-a).
+    /// The handoff never depicts an empty library (its prototype seeds demo tracks), so
+    /// this is a tasteful, theme-tokened fill: an icon, a quiet headline, and an
+    /// accent "Add files…" action beside a "drag here" hint. It sits INSIDE the same
+    /// container the `.dropDestination` covers, so dropping onto it still imports files;
+    /// its reserved height also keeps that drop target comfortably large. Vanishes the
+    /// instant the first track lands (the `if core.playlist.isEmpty` switch above).
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "music.note.list")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(AppearanceTheme.tertiary)
+            Text("No songs in your library")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(AppearanceTheme.secondary)
+            HStack(spacing: 4) {
+                Text("Drag audio files here, or")
+                    .foregroundStyle(AppearanceTheme.tertiary)
+                Button {
+                    onAddFiles?()
+                } label: {
+                    Text("Add files…")
+                        .foregroundStyle(theme.accent)
+                }
+                .buttonStyle(CadencePressStyle())
+                .disabled(onAddFiles == nil)
+                // C7 — "Add Folder…" beside "Add files…" so the folder-import capability
+                // is reachable from the EMPTY state too (its only other home is the list
+                // context menu, which does not exist when there are no rows). Same action
+                // the context menu's "Add Folder…" fires (`onAddFolder`).
+                Text("·").foregroundStyle(AppearanceTheme.tertiary)
+                Button {
+                    onAddFolder?()
+                } label: {
+                    Text("Add Folder…")
+                        .foregroundStyle(theme.accent)
+                }
+                .buttonStyle(CadencePressStyle())
+                .disabled(onAddFolder == nil)
+            }
+            .font(.system(size: 11))
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: emptyStateHeight)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("Library is empty. Drag audio files here, add files, or add a folder."))
+    }
+
     // MARK: Row
 
     private func row(index: Int, track: Track) -> some View {
@@ -218,6 +275,9 @@ struct CadencePlaylist: View {
                         .foregroundStyle(AppearanceTheme.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        // E3 — keep the inline artist a readable stub when the title is
+                        // very long (the title truncates first).
+                        .layoutPriority(1)
                 }
                 Spacer(minLength: 0)
             }
@@ -276,7 +336,7 @@ struct CadencePlaylist: View {
                     .font(.system(size: 11))
                     .foregroundStyle(theme.accent)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(CadencePressStyle())
             .disabled(onAddFiles == nil)
         }
         .frame(height: 26)
@@ -289,8 +349,9 @@ struct CadencePlaylist: View {
     private var footerLabel: String {
         let count = core.playlist.count
         let totalSeconds = core.playlist.reduce(0.0) { $0 + ($1.duration ?? 0) }
-        let minutes = Int((totalSeconds / 60).rounded())
-        return "\(count) songs, \(minutes) minutes"
+        // E2 — the pure `PlaylistSummary` seam owns the singular/plural grammar so
+        // "1 songs, 1 minutes" can never come back.
+        return PlaylistSummary.text(songCount: count, totalSeconds: totalSeconds)
     }
 
     // MARK: Drop overlay
@@ -351,8 +412,9 @@ private struct RemoveButton: View {
                 .frame(width: 26, height: 30)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
+        .animation(CadenceMotion.hoverEase, value: hovering)
         .accessibilityLabel(Text("Remove from queue"))
     }
 }

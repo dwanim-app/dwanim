@@ -33,7 +33,12 @@
 
 ## Phase 2 — 預設皮實機 UX（user-reported 2026-06-25,使用者跑起 app 實機回報）
 
-- [~] **P2-4 icon**:`.icns` 缺 512/1024 reps 待修（Finder 大圖會糊）。
+- **P2-4 icon — 完成（2026-08-28 複查）**:asset catalog
+  `App/DwanimIt/Resources/Assets.xcassets/AppIcon.appiconset` 已備齊 **全 10 個 macOS 尺寸**,
+  含 1024px 行銷圖（`icon_512x512@2x.png`,實測 1024×1024）;bundle 圖示由 actool 從 catalog
+  產生並已在 built bundle 中驗證存在。Finder 大圖不再糊,App Store 行銷圖亦由此取得。
+  （repo 內已無手工 `.icns` 來源檔——`project.yml` 的 sources 仍留著排除 `Resources/AppIcon.icns`
+  的那行,屬無害殘留,見「## 上架前置與待辦」。）
 
 ## A. SkinKit 核心 — 解析層內部延後項
 
@@ -54,7 +59,9 @@
 
 ## B. 尚未拍板的架構決策（會 block 其依賴的工作）
 
-- [ ] **預設 UI 技術**：SwiftUI（MVVM）vs AppKit（MVC）做 Adinkra 預設皮。決於 M4。
+- **預設 UI 技術 — 已決:SwiftUI**（M4 拍板,Cadence Phase 1–3 落實,2026-08-27/28）:
+  預設臉（`SkinKit/Sources/DwanimItUI`）為 SwiftUI + `PlayerCore`,不走 AppKit/MVC。
+  AppKit 僅留在平台殼（`SkinAppKit` 視窗、`NSOpenPanel`、classic `.wsz` 呈現）。此項不再阻擋依賴工作。
 - [ ] **模組再拆分**：介面穩後把 `PlayerCore` / `PlaybackKit` / `SkinRender` 從 app target 抽出（ADR-4 暫緩）。
 
 ## C. 尚未開工的里程碑（PRD §11）
@@ -190,8 +197,26 @@
 - [ ] [follow-up,非 bug] graduate 到 Swift 6 語言模式（`.swiftLanguageMode(.v6)` / `SWIFT_VERSION 6.0`,需 bump tools-version 6.0）→ 讓 race 警告變**硬錯誤**(CI guard);目前 Swift 5 模式為 warning-level。
 
 **卡 Apple 帳號（M5 本體）:** 不需帳號的腳手架**全部備好**（merge `ad60259`;見 `md_files/SHIPPING.md` runbook）;剩下純帳號操作:
-- [ ] ⑦ 帳號:portal 註冊 bundle id + Apple Distribution/Developer-ID 憑證 + 填 Team ID + `DEVELOPMENT_TEAM`。(照 SHIPPING.md PART B)
-- [ ] ⑧ `xcodebuild archive` → exportArchive(選對 plist)→ App Store 上傳送審 / 或 notarytool+stapler 直發。(照 SHIPPING.md PART B)
+- ⑦ 帳號設定 — **拆成兩半（2026-08-28）**:
+  - [~] **Team ID / `DEVELOPMENT_TEAM` — 進行中(同批另一 agent 接線中)**:Team ID `7GRD9Y5U7W`
+    寫進 `App/project.yml`(`DEVELOPMENT_TEAM` + `CODE_SIGN_STYLE: Automatic`)與
+    `App/ExportOptions-AppStore.plist` / `App/ExportOptions-DeveloperID.plist` 的 `teamID`,
+    取代原本的 `REPLACE_WITH_YOUR_TEAM_ID` 佔位字串。Team ID 非機密(每個簽章 binary 內都有),
+    故可入庫。完成後 archive/export 指令**無需再帶簽章參數**。
+  - [ ] **portal 帳號操作（仍未開始）**:
+    - [ ] 在 Apple Developer portal 註冊 **explicit** App ID `app.dwanim.dwanimit`（不可 wildcard,
+      否則 App Sandbox / provisioning 不成立）。
+    - [ ] 建立 **macOS 專用**憑證(iOS 那組不通用):**Mac App Distribution**
+      (`3rd Party Mac Developer Application`,簽 .app)+ **Mac Installer Distribution**
+      (`3rd Party Mac Developer Installer`,簽 .pkg)——上架**兩張都要**;另 Mac App Store
+      provisioning profile。(Developer-ID 備援路線另需 Developer ID Application 憑證。)
+    - [ ] 在 **App Store Connect** 建立 app 紀錄:My Apps → + → New App → **macOS** →
+      綁 `app.dwanim.dwanimit` → 名稱「dwanim it」。上傳前必須先存在。
+    - [ ] 確認 **Paid Applications 合約 / 稅務 / 銀行**狀態(iOS app 有 live IAP,理應已完備
+      → **只需驗證,非阻擋**),並把 app 設為付費;**價格級距尚未決定**。
+- [ ] ⑧ `xcodebuild archive` → exportArchive(選對 plist,macOS 產出的是 **`.pkg` 不是 `.ipa`**)
+  → 用既有 App Store Connect API key 上傳(`xcrun altool --upload-app --type macos`,
+  **注意是 `macos` 不是 `ios`**)→ 送審 / 或 notarytool+stapler 直發。(照 SHIPPING.md PART B)
 
 ## 全面複查 3（2026-06-25,M5-prep 後,539 測試）
 
@@ -228,5 +253,14 @@
 ## 音量/平衡滑塊 thumb（2026-07-17,user-reported,已修）
 
 - [ ] 待眼球:某個裁切到 418/419 的真皮上「只有軌道無旋鈕」的降級外觀是否可接受（headless 測不到)。
+
+## Phase-4 預設臉（Cadence）redesign — 刻意延後（2026-08-28，cadence review，0 must-fix）
+
+**延後項（皆非缺陷，Cadence Phase-4 刻意不做，已於程式碼註記；`DwanimItUI` 維持純 SwiftUI + PlayerCore，下列 App-tier 項需 AppKit 故不在此層做）：**
+
+- [ ] **P3 — 精準毛玻璃背板**：設計稿的 `blur(48px) saturate(1.6)` frosted backdrop 目前以 SwiftUI `.ultraThinMaterial` 近似（純 SwiftUI 可得的最接近值）。正解 = App-tier 包一個 `NSVisualEffectView` representable（含自訂 blur radius / saturation）注入為背板。屬平台殼工作，`DwanimItUI` 不引 AppKit。
+- [ ] **P4 — 自訂視窗投影**：設計稿的 `0 30px 70px rgba(0,0,0,0.62)` drop-shadow 目前用 AppKit 預設視窗陰影。正解 = 透明視窗留邊界 margin + layer shadow（App tier）畫出精準柔和大陰影。與 P3 同屬平台殼。
+- [ ] **C1 — visualizer 遮蔽時暫停驗證**：預設臉被 classic `.wsz` 皮覆蓋（藏於其後）時，visualizer 應停止燒幀——目前倚賴 `TimelineView(.animation)` 於視窗遮蔽時自動暫停。需驗證/守護：若實測仍持續重繪，改由 App 層向下 thread 一個 `paused` flag 到 `CadenceVisualizer`。
+- [ ] **C2 —（選配）idle visualizer 重繪節流**：idle（無訊號）時目前以全 display-rate（60/120fps）重繪，屬刻意設計。可選加 `TimelineView(.animation(minimumInterval: 1/30))` 上限以省 idle 能耗；非必要，做前先確認手感不受影響。
 
 *本文件隨開發演進更新。*

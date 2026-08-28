@@ -182,6 +182,18 @@ public struct AppearanceTheme: Identifiable, Equatable, Sendable {
     public static let selectedFill = Color.white.opacity(0.09)
     /// `rgba(255,255,255,0.14)` — unfilled slider/track rails.
     public static let railFill = Color.white.opacity(0.14)
+    /// `rgba(255,255,255,0.10)` — the EQ "On" checkbox fill when OFF (handoff §1d;
+    /// distinct from the `0.14` rails).
+    public static let checkboxOffFill = Color.white.opacity(0.10)
+
+    /// `rgba(255,255,255,0.09)` — the Appearance popover's row HOVER fill (P2). NB:
+    /// numerically equal to `selectedFill` (0.09) but a DISTINCT semantic token — in
+    /// the popover the SELECTED row is the brighter `popoverSelectedFill` (0.11), so
+    /// these two are paired here rather than reusing the row-list `selectedFill`.
+    public static let popoverHoverFill = Color.white.opacity(0.09)
+    /// `rgba(255,255,255,0.11)` — the Appearance popover's SELECTED row fill, which
+    /// wins over the `0.09` hover (handoff §1e).
+    public static let popoverSelectedFill = Color.white.opacity(0.11)
 }
 
 // MARK: - Open-theme file panel contract

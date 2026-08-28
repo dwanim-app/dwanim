@@ -137,8 +137,9 @@ private struct TransportToggle: View {
                 )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
+        .animation(CadenceMotion.hoverEase, value: hovering)
         .accessibilityLabel(Text(title))
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }
@@ -172,8 +173,9 @@ private struct TransportIconButton: View {
                 )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
+        .animation(CadenceMotion.hoverEase, value: hovering)
         .accessibilityLabel(Text(label))
     }
 }
@@ -204,8 +206,9 @@ private struct PlayButton: View {
                 )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
         .onHover { hovering = $0 }
+        .animation(CadenceMotion.hoverEase, value: hovering)
         .accessibilityLabel(Text(isPlaying ? "Pause" : "Play"))
     }
 }
@@ -236,7 +239,8 @@ private struct CadenceVolumeSlider: View {
                 Circle()
                     .fill(AppearanceTheme.volumeKnob)
                     .frame(width: knobDiameter, height: knobDiameter)
-                    .shadow(color: .black.opacity(0.5), radius: 1, y: 0.5)
+                    // P7 — handoff §1b: 0 0.5px 2px rgba(0,0,0,0.5) (≈ radius 2).
+                    .shadow(color: .black.opacity(0.5), radius: 2, y: 0.5)
                     .position(x: knobX, y: geometry.size.height / 2)
             }
             .frame(maxHeight: .infinity, alignment: .center)

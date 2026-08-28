@@ -34,6 +34,10 @@ struct CadenceAppearanceButton: View {
     let openSkin: () -> Void
 
     @State private var isOpen = false
+    /// The popover row currently hovered (theme id, or `"open-theme"` / `"open-skin"`),
+    /// so a hover raises the handoff's `white 0.09` fill (P2). `nil` when nothing is
+    /// hovered.
+    @State private var hoveredRow: String?
 
     var body: some View {
         Button {
@@ -63,7 +67,8 @@ struct CadenceAppearanceButton: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
+        .animation(CadenceMotion.hoverEase, value: isOpen)
         .help("Appearance")
         .accessibilityLabel(Text("Appearance: \(store.current.name)"))
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
@@ -115,10 +120,13 @@ struct CadenceAppearanceButton: View {
                 .padding(.bottom, 4)
         }
         .padding(5)
+        // M1 / P2 — the row hover fills ease over the shared 120 ms.
+        .animation(CadenceMotion.hoverEase, value: hoveredRow)
     }
 
     private func themeRow(_ theme: AppearanceTheme) -> some View {
         let isActive = theme.name == store.current.name
+        let isHovered = hoveredRow == theme.id
         return Button {
             store.select(theme)
             isOpen = false
@@ -139,11 +147,26 @@ struct CadenceAppearanceButton: View {
             .frame(height: 26)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isActive ? Color.white.opacity(0.11) : .clear)
+                    // Handoff §1e: selected `white 0.11`, hover `white 0.09` (P2).
+                    .fill(rowFill(isActive: isActive, isHovered: isHovered))
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
+        .onHover { hovering(theme.id, $0) }
+    }
+
+    /// The popover row background: the handoff's selected `white 0.11` wins over the
+    /// hover `white 0.09`, and an idle row is clear.
+    private func rowFill(isActive: Bool, isHovered: Bool) -> Color {
+        if isActive { return AppearanceTheme.popoverSelectedFill }
+        return isHovered ? AppearanceTheme.popoverHoverFill : .clear
+    }
+
+    /// Track hover for the row keyed by `id`, clearing only when the pointer leaves
+    /// THIS row (mirrors the playlist's hover bookkeeping).
+    private func hovering(_ id: String, _ isInside: Bool) {
+        hoveredRow = isInside ? id : (hoveredRow == id ? nil : hoveredRow)
     }
 
     private var openThemeRow: some View {
@@ -170,9 +193,14 @@ struct CadenceAppearanceButton: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(hoveredRow == "open-theme" ? AppearanceTheme.popoverHoverFill : .clear)
+            )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
+        .onHover { hovering("open-theme", $0) }
         .disabled(onOpenAppearanceFile == nil)
     }
 
@@ -200,9 +228,14 @@ struct CadenceAppearanceButton: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(hoveredRow == "open-skin" ? AppearanceTheme.popoverHoverFill : .clear)
+            )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CadencePressStyle())
+        .onHover { hovering("open-skin", $0) }
     }
 
     // MARK: Swatch
