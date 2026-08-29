@@ -55,5 +55,9 @@ local_skins/
 # Local dev convenience launcher (build + run) — machine-specific, not shipped
 run.sh
 
+# Local TestFlight/App Store upload script — references credential paths + is
+# machine-specific (uploads a real signed build), never shipped
+testFlight.sh
+
 # Local CI / release tooling — machine-specific (hardcodes local paths), never shipped
 automation/
