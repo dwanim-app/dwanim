@@ -54,3 +54,6 @@ local_skins/
 
 # Local dev convenience launcher (build + run) — machine-specific, not shipped
 run.sh
+
+# Local CI / release tooling — machine-specific (hardcodes local paths), never shipped
+automation/
