@@ -502,10 +502,17 @@ final class AudioSession {
     ///     tracks and APPENDED to the queue (with any loose audio). Each listed file
     ///     plays only where the sandbox already reaches it (the drop grants access to
     ///     the `.m3u`, not to its tracks).
+    ///   - folder(s): ENUMERATE each directory's audio files (the same recursive,
+    ///     path-sorted `audioFiles(under:)` scan the "Add Folder…" panel uses) and
+    ///     APPEND them — so a dropped folder adds its songs whether the queue is
+    ///     empty or not (fixing the "folder drop does nothing when the list already
+    ///     has tracks" report). The filesystem walk stays in this App tier; the pure
+    ///     `DropRouter` only recognises the directory.
     ///   - audio file(s): APPEND them to the queue (drop order preserved) — one or
     ///     many, identical order to a multi-select in the audio open panel.
-    ///   - a MIXED drop (skin + playlist + audio): all are handled — the skin is
-    ///     applied AND the playlist's tracks + any loose audio are appended.
+    ///   - a MIXED drop (skin + playlist + folder + audio): all are handled — the
+    ///     skin is applied AND the playlist's tracks + each folder's audio + any
+    ///     loose audio are appended.
     ///   - unsupported types: ignored gracefully (an empty classification is a no-op).
     func handleDroppedURLs(_ urls: [URL]) {
         let classification = DropRouter.classify(urls)
@@ -516,15 +523,30 @@ final class AudioSession {
             classicSkin.openDropped(url: skin)
         }
         // Expand any dropped playlist files into their listed tracks — each read +
-        // parsed inside a security-scoped bracket (like `recordPlaylist`). Then
-        // APPEND the playlist-expanded tracks (in playlist-file order) followed by
-        // any loose dropped audio. A drop ADDS to the queue (append, non-interrupting)
-        // rather than replacing it; only an empty-queue drop auto-plays from the top.
+        // parsed inside a security-scoped bracket (like `recordPlaylist`).
         var playlistTracks: [URL] = []
         for listURL in classification.playlists {
             playlistTracks.append(contentsOf: expandPlaylist(at: listURL))
         }
-        let combined = playlistTracks + classification.audio
+        // Enumerate each dropped FOLDER's audio files via the SAME recursive,
+        // path-sorted scan the "Add Folder…" panel uses (`audioFiles(under:)`), so a
+        // dropped directory contributes its songs exactly like the panel — and does
+        // so whether the queue is empty or not. The drop grants sandbox access to the
+        // folder for this launch, so the walk can read its contents.
+        var folderAudio: [URL] = []
+        for folder in classification.folders {
+            folderAudio.append(contentsOf: AudioSession.audioFiles(under: folder))
+        }
+        // Combine the expanded sources into one ordered append list (pure
+        // `DropAppendPlanner`): playlist tracks, then folder audio, then loose audio.
+        // A drop ADDS to the queue (append, non-interrupting) rather than replacing
+        // it; only an empty-queue drop auto-plays from the top, and `core.append`
+        // de-duplicates so files already queued are skipped.
+        let combined = DropAppendPlanner.appendOrder(
+            playlistTracks: playlistTracks,
+            folderAudio: folderAudio,
+            looseAudio: classification.audio
+        )
         if !combined.isEmpty {
             // Append + persist; `appendToPlaylist` itself auto-plays from the first
             // added track ONLY when the queue was empty before the append (the

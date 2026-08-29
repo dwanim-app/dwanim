@@ -100,7 +100,12 @@ struct CadenceEQDrawer: View {
 
             Spacer(minLength: 0)
 
+            // While EQ is OFF the presets ADJUST the EQ, so they are inert (matching
+            // the dimmed sliders below) — only the On checkbox above stays live so the
+            // user can turn EQ back on. The 0.5-opacity dim on the whole drawer is the
+            // visual cue; `.disabled` makes the dimmed area genuinely non-interactive.
             segmentedPresets
+                .disabled(!core.equalizer.enabled)
         }
     }
 
@@ -187,6 +192,11 @@ struct CadenceEQDrawer: View {
         // section never collapses. The On checkbox above stays at full strength so
         // it is always an obvious way to turn EQ back on.
         .opacity(core.equalizer.enabled ? 1 : 0.5)
+        // ...and OFF makes the Pre + band sliders non-interactive too (they ADJUST
+        // the EQ), so the dimmed area is genuinely inert rather than merely greyed.
+        // The On checkbox (in `headerControls`) is deliberately outside this block,
+        // so it stays enabled.
+        .disabled(!core.equalizer.enabled)
     }
 
     private func band(_ index: Int) -> Double {

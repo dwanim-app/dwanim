@@ -22,6 +22,11 @@ import UniformTypeIdentifiers
 //     `.wsz` these carry no reliable system UTI, so the extension IS the signal.
 //     The dropped playlist FILE is parsed to its listed tracks by the caller — a
 //     `.m3u` is NOT audio, so it is checked BEFORE the audio probe.
+//   - FOLDER: a DIRECTORY URL (by the on-disk `isDirectory` flag, falling back to
+//     the URL's directory-path heuristic). A directory carries no audio UTI, so it
+//     would otherwise be discarded as "unsupported"; instead it is routed to its
+//     own bucket and the App tier enumerates its audio files (the "Add Folder…"
+//     scan) and appends them. Checked BEFORE the audio probe.
 //   - AUDIO: a URL whose type conforms to one of the audio UTTypes the open panel
 //     accepts (the broad `.audio` umbrella plus the common concrete types), OR
 //     whose extension matches a known audio extension when the type can't be
@@ -38,16 +43,21 @@ import UniformTypeIdentifiers
 enum DropRouter {
 
     /// The split result of classifying a dropped `[URL]`: the skin URLs (usually
-    /// zero or one), the playlist (`.m3u`/`.m3u8`) URLs, and the audio URLs (each
-    /// in drop order), with everything else dropped. Empty buckets mean "nothing of
-    /// that kind was dropped".
+    /// zero or one), the playlist (`.m3u`/`.m3u8`) URLs, the FOLDER (directory)
+    /// URLs, and the audio URLs (each in drop order), with everything else dropped.
+    /// Empty buckets mean "nothing of that kind was dropped". The caller ENUMERATES
+    /// each folder's audio files (the filesystem walk lives in the App tier, not in
+    /// this pure classifier) and appends them alongside the loose audio.
     struct Classification: Equatable {
         var skins: [URL]
         var playlists: [URL]
+        var folders: [URL]
         var audio: [URL]
 
         /// True when the drop contained nothing the app can open.
-        var isEmpty: Bool { skins.isEmpty && audio.isEmpty && playlists.isEmpty }
+        var isEmpty: Bool {
+            skins.isEmpty && playlists.isEmpty && folders.isEmpty && audio.isEmpty
+        }
     }
 
     /// The `.wsz` skin extension (lowercased for a case-insensitive compare).
@@ -81,21 +91,26 @@ enum DropRouter {
     static func classify(_ urls: [URL]) -> Classification {
         var skins: [URL] = []
         var playlists: [URL] = []
+        var folders: [URL] = []
         var audio: [URL] = []
         for url in urls {
-            // Check order per URL: skin → playlist → audio. A `.m3u` is not audio,
-            // but classifying playlists BEFORE the audio probe keeps the intent
-            // explicit (independent of the audio type/extension sets).
+            // Check order per URL: skin → playlist → folder → audio. A `.m3u` is
+            // not audio, but classifying playlists BEFORE the audio probe keeps the
+            // intent explicit; a directory is recognised BEFORE the audio probe so a
+            // dropped folder routes to enumeration instead of being discarded as a
+            // non-audio type (a directory's content type never conforms to audio).
             if isSkin(url) {
                 skins.append(url)
             } else if isPlaylist(url) {
                 playlists.append(url)
+            } else if isFolder(url) {
+                folders.append(url)
             } else if isAudio(url) {
                 audio.append(url)
             }
             // else: unsupported — ignored gracefully.
         }
-        return Classification(skins: skins, playlists: playlists, audio: audio)
+        return Classification(skins: skins, playlists: playlists, folders: folders, audio: audio)
     }
 
     // MARK: Probes
@@ -110,6 +125,18 @@ enum DropRouter {
     /// `.wsz`, a playlist has no declared UTI, so the extension is the signal).
     private static func isPlaylist(_ url: URL) -> Bool {
         playlistExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// A DIRECTORY (dropped folder) whose audio files the caller should enumerate.
+    /// Prefers the authoritative on-disk `isDirectory` resource value (the same
+    /// cheap filesystem probe `resolvedType` already uses), falling back to the
+    /// URL's own directory-path heuristic when the flag can't be read — so a folder
+    /// is recognised whether or not the drag delivered a trailing-slash URL.
+    private static func isFolder(_ url: URL) -> Bool {
+        if let isDir = try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory {
+            return isDir
+        }
+        return url.hasDirectoryPath
     }
 
     /// An audio file: its resolved content type conforms to a known audio UTType,

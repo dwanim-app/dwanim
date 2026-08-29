@@ -171,9 +171,28 @@ public final class PlayerCore {
     /// `previous()` (which guard on `currentIndex`) would all be dead over a
     /// visibly non-empty list. The engine/`loadedIndex` are untouched — a
     /// later `play()` loads the track through the normal path.
+    ///
+    /// ## De-duplication (central for every ADD path)
+    /// This is the single append seam every ADD flows through (drag-drop, Add
+    /// Files…, Add Folder…, the classic playlist window's ADD), so the "no
+    /// duplicates" rule lives HERE: a track whose file is ALREADY in the queue is
+    /// skipped, and repeats WITHIN one batch collapse to a single entry — the
+    /// FIRST occurrence is kept and the incoming order is preserved. Membership is
+    /// by CANONICAL file URL (`standardizedFileURL`), so the same file added by a
+    /// different path spelling is one entry while two different files that merely
+    /// share a name are not duplicates. When every incoming track is a duplicate
+    /// the queue is unchanged and the selection is left untouched — so an
+    /// all-duplicate add never re-fires an empty-queue auto-play upstream.
     public func append(_ tracks: [Track]) {
         guard !tracks.isEmpty else { return }
-        playlist.append(contentsOf: tracks)
+        var seen = Set(playlist.map { $0.url.standardizedFileURL })
+        var fresh: [Track] = []
+        fresh.reserveCapacity(tracks.count)
+        for track in tracks where seen.insert(track.url.standardizedFileURL).inserted {
+            fresh.append(track)
+        }
+        guard !fresh.isEmpty else { return }
+        playlist.append(contentsOf: fresh)
         if currentIndex == nil {
             currentIndex = 0
         }
