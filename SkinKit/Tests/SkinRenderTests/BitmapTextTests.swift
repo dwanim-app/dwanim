@@ -518,4 +518,77 @@ final class BitmapTextTests: XCTestCase {
         XCTAssertEqual(pixel(base, x: 0, y: 0).0, bgColor.0)
         XCTAssertEqual(base.pixels.count, 80 * 20 * 4)
     }
+
+    // MARK: - 8. canRender predicate (bitmap-font vs CoreText fallback)
+    //
+    // `canRender` is the PURE gate deciding whether the main-window title marquee
+    // draws with the authentic bitmap font (whole string modelled) or falls back to
+    // platform text (any character the font does not model — CJK / kana / Hangul).
+    // It needs no skin: it asks only whether the fixed-cell font MODEL covers every
+    // character, after the same uppercasing the drawers apply.
+
+    /// Pure ASCII Latin — including mixed case, digits, and spaces — is renderable.
+    func testCanRenderPureASCIILatinIsTrue() {
+        XCTAssertTrue(BitmapText.canRender("HELLO WORLD"))
+        XCTAssertTrue(BitmapText.canRender("My Song 01"))
+    }
+
+    /// Lowercase is renderable: the drawers uppercase before lookup, so 'a' maps to
+    /// the same 'A' glyph.
+    func testCanRenderLowercaseIsTrue() {
+        XCTAssertTrue(BitmapText.canRender("hello world"))
+    }
+
+    /// Every digit is modelled.
+    func testCanRenderDigitsIsTrue() {
+        XCTAssertTrue(BitmapText.canRender("0123456789"))
+    }
+
+    /// The Nordic ÅÖÄ (the only non-ASCII letters the classic font models) are
+    /// renderable — both uppercase and (via uppercasing) lowercase.
+    func testCanRenderNordicLettersIsTrue() {
+        XCTAssertTrue(BitmapText.canRender("ÅÖÄ"))
+        XCTAssertTrue(BitmapText.canRender("åöä"))
+    }
+
+    /// The modelled punctuation set, `?`, `*`, and space are renderable.
+    func testCanRenderMappedPunctuationAndSpaceIsTrue() {
+        XCTAssertTrue(BitmapText.canRender("(A) - [B]!"))
+        XCTAssertTrue(BitmapText.canRender("?*"))
+        XCTAssertTrue(BitmapText.canRender("   "))
+    }
+
+    /// Empty text is renderable (nothing to draw).
+    func testCanRenderEmptyIsTrue() {
+        XCTAssertTrue(BitmapText.canRender(""))
+    }
+
+    /// A kanji title is NOT renderable — it must fall back to platform text.
+    func testCanRenderKanjiIsFalse() {
+        XCTAssertFalse(BitmapText.canRender("日本語"))
+    }
+
+    /// Kana (katakana and hiragana) is NOT renderable.
+    func testCanRenderKanaIsFalse() {
+        XCTAssertFalse(BitmapText.canRender("テスト"))   // katakana
+        XCTAssertFalse(BitmapText.canRender("ひらがな")) // hiragana
+    }
+
+    /// Hangul is NOT renderable.
+    func testCanRenderHangulIsFalse() {
+        XCTAssertFalse(BitmapText.canRender("한국어"))
+    }
+
+    /// Whole-string semantics: a single non-modelled character makes the entire
+    /// title non-renderable, so a mixed Latin+CJK title falls back as one unit
+    /// (guarding against a half-bitmap / half-CoreText double render).
+    func testCanRenderMixedLatinAndCJKIsFalse() {
+        XCTAssertFalse(BitmapText.canRender("Song 日本語"))
+    }
+
+    /// A character outside the modelled set (here `;`) makes the string
+    /// non-renderable, routing it to the correct-by-construction platform text.
+    func testCanRenderUnmodelledPunctuationIsFalse() {
+        XCTAssertFalse(BitmapText.canRender("a;b"))
+    }
 }

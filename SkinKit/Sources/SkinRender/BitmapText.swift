@@ -44,6 +44,39 @@ public enum BitmapText {
     /// every other character, keeping the metric a single source of truth.
     private static let scrollSeparator = "   "
 
+    // MARK: - Renderability predicate
+
+    /// Whether the WHOLE string is renderable by the classic `text.bmp` bitmap
+    /// font. Pure — no graphics framework, no `Skin`; it asks only whether the FONT
+    /// MODEL covers every character, so any classic skin's `text.bmp` (which all
+    /// ship the same fixed-cell glyph set) gives the same answer.
+    ///
+    /// A character is renderable when, after the SAME uppercasing `draw` /
+    /// `drawScrolling` apply, it is either a space (the font renders a space as an
+    /// intentional blank advance, exactly as the authentic marquee does) or its
+    /// `SpriteCoordinates.glyphName(for:)` names a glyph the font actually models
+    /// (`SpriteCoordinates.bitmapFontGlyphNames`: A–Z, 0–9, the fixed punctuation
+    /// set, and ÅÖÄ ? *). Any character the font does NOT model — notably CJK, kana,
+    /// or Hangul — makes the whole string non-renderable, so the caller can route it
+    /// to the platform-text (CoreText) fallback rather than drawing blank cells.
+    ///
+    /// Empty text is renderable (there is nothing to draw). Whole-string semantics:
+    /// a single non-modelled character makes the entire title non-renderable, so a
+    /// mixed "Song 日本語" falls back as a unit (no half-bitmap, half-CoreText split).
+    public static func canRender(_ string: String) -> Bool {
+        for character in string.uppercased() {
+            // The font renders a space as a blank advance, not a glyph cell, so it
+            // is always renderable even though it has no sprite.
+            if character == " " { continue }
+            if !SpriteCoordinates.bitmapFontGlyphNames.contains(
+                SpriteCoordinates.glyphName(for: character)
+            ) {
+                return false
+            }
+        }
+        return true
+    }
+
     // MARK: - Draw text
 
     /// Draw `text` left-to-right using the skin's `text.bmp` glyph sprites, onto

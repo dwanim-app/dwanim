@@ -241,6 +241,15 @@ public final class InteractiveController: SkinWindowController {
         }
         view.onMouseUp = { [weak self] in self?.handleMouseUp() }
 
+        // Title CoreText overlay: draws the current title on top of the presented
+        // frame bitmap ONLY when the title is not bitmap-font-renderable (CJK / kana
+        // / Hangul). For a bitmap-renderable title this draws nothing — the frame
+        // already carries the bitmap marquee. Runs in the shared `overlayDraw` seam
+        // (after `context.draw(image)`), so the classic bitmap path is untouched.
+        view.overlayDraw = { [weak self] context, _ in
+            self?.drawTitleOverlay(in: context)
+        }
+
         // ~25 Hz: full-window recompose per tick (acceptable for the dev harness;
         // the static/dynamic patch seam is a tracked M5 item). The per-tick work
         // advances the title marquee at the timer cadence (NOT on the mouse-driven
@@ -424,14 +433,31 @@ public final class InteractiveController: SkinWindowController {
     // MARK: Redraw
 
     /// Advance the title marquee for one redraw tick. Only scrolls when the title
-    /// actually overflows its display region (`pixelWidth > titleTextWidth`);
-    /// otherwise the offset is reset to 0 so a short title stays static and a
-    /// later long title starts from the left. The offset moves one pixel every
-    /// `titleScrollTickInterval` ticks (a readable pace) and is kept bounded by the
-    /// scroll cycle so it never grows without limit.
+    /// actually overflows its display region; otherwise the offset is reset to 0 so
+    /// a short title stays static and a later long title starts from the left. The
+    /// offset moves one pixel every `titleScrollTickInterval` ticks (a readable
+    /// pace) and is kept bounded by the scroll cycle so it never grows without
+    /// limit.
+    ///
+    /// ONE scroll-offset source drives BOTH title paths, so they can never fight:
+    /// for a bitmap-renderable title the overflow / cycle come from the bitmap
+    /// metrics (5px cells); for a CoreText-fallback title (CJK / kana / Hangul) they
+    /// come from the CoreText line width in skin pixels (`MainTitleMarquee`). Both
+    /// advance the offset one SKIN pixel per interval, so the scroll speed matches
+    /// regardless of which path is active.
     private func advanceTitleScroll() {
         let title = core.currentTrack?.title ?? ""
-        guard BitmapText.pixelWidth(of: title) > MainWindowLayout.titleTextWidth else {
+        let overflows: Bool
+        let cycle: Int
+        if BitmapText.canRender(title) {
+            overflows = BitmapText.pixelWidth(of: title) > MainWindowLayout.titleTextWidth
+            cycle = BitmapText.scrollCycleWidth(of: title)
+        } else {
+            let width = MainTitleMarquee.measuredWidthSkinPx(title, skin: skin)
+            overflows = width > MainWindowLayout.titleTextWidth
+            cycle = width + MainTitleMarquee.gapSkinPx
+        }
+        guard overflows else {
             titleScrollOffset = 0
             titleScrollTick = 0
             return
@@ -439,7 +465,6 @@ public final class InteractiveController: SkinWindowController {
         titleScrollTick += 1
         guard titleScrollTick >= InteractiveController.titleScrollTickInterval else { return }
         titleScrollTick = 0
-        let cycle = BitmapText.scrollCycleWidth(of: title)
         titleScrollOffset = (titleScrollOffset + 1) % max(1, cycle)
     }
 
@@ -470,15 +495,24 @@ public final class InteractiveController: SkinWindowController {
         // `drawScrolling` is static when the title fits and a marquee when it
         // overflows, so we always route through it and let the current scroll
         // offset ride; for a short title the offset is simply ignored.
-        BitmapText.drawScrolling(
-            core.currentTrack?.title ?? "",
-            from: skin,
-            onto: &composed,
-            x: MainWindowLayout.titleTextOrigin.x,
-            y: MainWindowLayout.titleTextOrigin.y,
-            maxWidth: MainWindowLayout.titleTextWidth,
-            offset: titleScrollOffset
-        )
+        //
+        // ONLY the bitmap-renderable path draws here. A title with any character
+        // the bitmap font does not model (CJK / kana / Hangul) is SKIPPED so the
+        // bitmap path never stamps its Latin remnants — the whole title is drawn
+        // instead by the CoreText overlay (`drawTitleOverlay`) on top of the
+        // presented frame, avoiding a double render.
+        let title = core.currentTrack?.title ?? ""
+        if BitmapText.canRender(title) {
+            BitmapText.drawScrolling(
+                title,
+                from: skin,
+                onto: &composed,
+                x: MainWindowLayout.titleTextOrigin.x,
+                y: MainWindowLayout.titleTextOrigin.y,
+                maxWidth: MainWindowLayout.titleTextWidth,
+                offset: titleScrollOffset
+            )
+        }
 
         // kbps / kHz overlay: when a track is loaded, draw the bitrate and
         // sample-rate number boxes from the engine's opt-in `TrackFormatProviding`
@@ -588,6 +622,29 @@ public final class InteractiveController: SkinWindowController {
             return // a transient scale failure just skips this frame
         }
         view.update(image: scaled.image)
+    }
+
+    /// Draw the current title as a CoreText marquee overlay when it is NOT
+    /// renderable by the bitmap font (CJK / kana / Hangul / any other non-modelled
+    /// character). For a bitmap-renderable title — or no title — this draws NOTHING:
+    /// the composed frame already carries the authentic bitmap marquee, and drawing
+    /// here too would double-render.
+    ///
+    /// Invoked from the shared `ScaledImageView.overlayDraw` seam (AFTER the scaled
+    /// frame bitmap is drawn), in the view's bottom-left POINT space. It rides the
+    /// SAME `titleScrollOffset` the bitmap path uses, so the two never fight over
+    /// scroll state and the marquee cadence matches.
+    private func drawTitleOverlay(in context: CGContext) {
+        let title = core.currentTrack?.title ?? ""
+        guard !title.isEmpty, !BitmapText.canRender(title) else { return }
+        MainTitleMarquee.draw(
+            title: title,
+            in: context,
+            skin: skin,
+            scale: scale,
+            skinHeight: MainWindowLayout.windowHeight,
+            offsetSkinPx: titleScrollOffset
+        )
     }
 
     /// If a control is held, overlay its pressed sprite at its hit-rect origin

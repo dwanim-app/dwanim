@@ -462,6 +462,19 @@ public enum SpriteCoordinates {
 
     private static let text: [SpriteRect] = bitmapFont()
 
+    /// The glyph names the classic `text.bmp` fixed-cell bitmap font actually
+    /// models — the single source of truth for "which characters the bitmap font
+    /// can render". Derived DIRECTLY from `bitmapFont()`, so it can never drift
+    /// from the sprite cells cut from the sheet (A–Z, 0–9, the fixed punctuation
+    /// set, and ÅÖÄ ? *). Space is intentionally absent: the font renders it as a
+    /// blank advance rather than a glyph, so callers treat it separately.
+    ///
+    /// Consumed by `SkinRender.BitmapText.canRender` to decide whether a WHOLE
+    /// title is renderable by the bitmap font (Latin / Nordic / digits / mapped
+    /// punctuation) or must fall back to platform text (CJK / kana / Hangul and any
+    /// other character the font does not model).
+    public static let bitmapFontGlyphNames: Set<String> = Set(text.map(\.name))
+
     // MARK: - Generators
 
     /// Builds `count` vertically stacked slider background frames named
