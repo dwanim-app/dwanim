@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-dwanim is a clean-room, independent implementation. It does not include, use,
+dwanim is an independent implementation. It does not include, use,
 or port any proprietary source code.
 
 This file records third-party material that the project references or depends
@@ -22,7 +22,7 @@ the `.wsz` format:
 - **License:** MIT
 - **Copyright:** © Jordan Eldredge and the Webamp contributors
 
-The `.wsz` parsing and sprite-coordinate code is an independent, clean-room
+The `.wsz` parsing and sprite-coordinate code is an independent
 implementation authored from the public format specification and empirically
 corrected by measuring a local corpus of real skins. **No Webamp — or any other
 third-party — source code is bundled, used, or ported.** This acknowledgment is

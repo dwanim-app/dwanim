@@ -48,11 +48,13 @@ dwanim it loads `.wsz` skin files that *you* provide. It does not host, bundle, 
 redistribute skins of any kind. Publicly archived classic skins can be found
 through open archives such as the [Internet Archive](https://archive.org/).
 
-## Clean-room & licensing
+## Independent implementation & licensing
 
-dwanim it is a clean-room, independent implementation. It does not use, reference,
-or port any proprietary source code. Reading the `.wsz` file format — a file
-format, not a copyrightable work — is the extent of the compatibility goal.
+dwanim it is an independent implementation. The `.wsz` parsing and sprite-coordinate
+code was authored from the public format specification and empirically corrected by
+measuring a local corpus of real skins. No proprietary source code is included or
+ported. Reading the `.wsz` file format — a file format, not a copyrightable work —
+is the extent of the compatibility goal.
 
 The project is open source under the [MIT License](LICENSE). For third-party
 references and the attributions their licenses require, see
