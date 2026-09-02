@@ -31,21 +31,119 @@ import Foundation
 /// - a polygon whose declared vertex count exceeds what the point list could
 ///   ever supply is skipped (parsing continues), so an absurd `NumPoints` value
 ///   can never overflow or crash.
-// TODO: future increment — also parse the `[Equalizer]` and `[WindowShade]`
-//       sections (equalizer window and shade-mode shapes).
+///
+/// All FOUR window-shape sections are parsed by `parseAll` — `[Normal]` (main
+/// window), `[Equalizer]` (EQ window), `[WindowShade]` and `[EqualizerWS]`
+/// (collapsed windowshade shapes). This parser does NOT reuse the shared
+/// `INISection` reader (whose duplicate-header / duplicate-key policy is
+/// last-wins): `region.txt` requires FIRST-wins for both a repeated section
+/// header (12 real skins ship more than one `[Normal]`) and a repeated key, so a
+/// dedicated first-wins reader lives here. It also tolerates three comment
+/// dialects — `;`, `#`, and `//` — where `INISection` only strips `;`.
 public enum RegionParser {
 
     // MARK: - Parsing
 
     /// Parses the `[Normal]` section of `text` into a `SkinRegion`.
+    ///
+    /// Kept as the single-section entry point (its behaviour is pinned by
+    /// `RegionParserTests`); it now shares the first-wins, multi-dialect reader
+    /// with `parseAll`, so `parse(text) == parseAll(text).normal`.
     public static func parse(_ text: String) -> SkinRegion {
-        guard let section = INISection.named("Normal", in: text),
-              let counts = section.value(for: "NumPoints").map(ints(from:)),
-              let coordinates = section.value(for: "PointList").map(ints(from:))
+        region(named: "normal", in: sections(in: text))
+    }
+
+    /// Parses ALL four window-shape sections into a `SkinRegionSet`. A section
+    /// that is absent (or has no usable `NumPoints`/`PointList`) yields an empty
+    /// `SkinRegion`. On a duplicate section header, the FIRST occurrence wins.
+    public static func parseAll(_ text: String) -> SkinRegionSet {
+        let all = sections(in: text)
+        return SkinRegionSet(
+            normal: region(named: "normal", in: all),
+            equalizer: region(named: "equalizer", in: all),
+            windowShade: region(named: "windowshade", in: all),
+            equalizerWS: region(named: "equalizerws", in: all)
+        )
+    }
+
+    // MARK: - Private: section reader (first-wins headers + keys)
+
+    /// One parsed `[Header]` block: its lowercased name and its `key -> value`
+    /// pairs (keys lowercased, FIRST assignment kept).
+    private struct RawSection {
+        let name: String
+        var values: [String: String]
+    }
+
+    /// The `SkinRegion` for the FIRST section named `name` (lowercased) among
+    /// `all`, or an empty region when it is absent or lacks a usable
+    /// `NumPoints`/`PointList` pair.
+    private static func region(named name: String, in all: [RawSection]) -> SkinRegion {
+        guard let section = all.first(where: { $0.name == name }),
+              let counts = section.values["numpoints"].map(ints(from:)),
+              let coordinates = section.values["pointlist"].map(ints(from:))
         else {
             return SkinRegion(polygons: [])
         }
         return SkinRegion(polygons: polygons(counts: counts, coordinates: coordinates))
+    }
+
+    /// Splits `text` into its ordered `[Header]` sections. Within each section the
+    /// FIRST assignment of a key wins; a duplicate section header keeps BOTH blocks
+    /// in order (the caller's `first(where:)` then selects the first by name, so the
+    /// first `[Normal]` wins). Lines before any header belong to no section and are
+    /// dropped. Comments (`;`, `#`, `//`) are stripped before header/key detection,
+    /// so a fully-commented header line is not a header. Any newline (LF, CR, CRLF)
+    /// separates lines.
+    private static func sections(in text: String) -> [RawSection] {
+        var result: [RawSection] = []
+        var current: RawSection?
+
+        for rawLine in text.split(omittingEmptySubsequences: false, whereSeparator: { $0.isNewline }) {
+            let line = stripComment(from: rawLine)
+            if let name = header(of: line) {
+                if let current { result.append(current) }
+                current = RawSection(name: name, values: [:])
+                continue
+            }
+            guard current != nil, let (key, value) = keyValue(of: line) else { continue }
+            // First-wins: only record a key the section has not seen yet.
+            if current!.values[key] == nil {
+                current!.values[key] = value
+            }
+        }
+        if let current { result.append(current) }
+        return result
+    }
+
+    /// Drops a comment (from the first `;`, `#`, or `//` to end-of-line) and trims
+    /// surrounding whitespace, returning the bare content of the line. Region
+    /// values are numeric, so none of the three markers can ever be part of real
+    /// `NumPoints`/`PointList` data.
+    private static func stripComment(from line: Substring) -> String {
+        var content = Substring(line)
+        // `;` and `#` full/inline comments.
+        if let semi = content.firstIndex(of: ";") { content = content[..<semi] }
+        if let hash = content.firstIndex(of: "#") { content = content[..<hash] }
+        // `//` comment: cut at the first "//".
+        if let slash = content.range(of: "//") { content = content[..<slash.lowerBound] }
+        return content.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Returns the lowercased header name of a `[Header]` line, or `nil`.
+    private static func header(of line: String) -> String? {
+        guard line.hasPrefix("["), line.hasSuffix("]"), line.count >= 2 else { return nil }
+        return line.dropFirst().dropLast().trimmingCharacters(in: .whitespaces).lowercased()
+    }
+
+    /// Splits a `Key = Value` line into a lowercased key and trimmed value, or
+    /// `nil` if there is no `=` or the key is empty.
+    private static func keyValue(of line: String) -> (key: String, value: String)? {
+        guard let separator = line.firstIndex(of: "=") else { return nil }
+        let key = line[..<separator].trimmingCharacters(in: .whitespaces).lowercased()
+        let value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty else { return nil }
+        return (key, value)
     }
 
     // MARK: - Private

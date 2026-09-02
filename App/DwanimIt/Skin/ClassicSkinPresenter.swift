@@ -210,23 +210,29 @@ final class ClassicSkinPresenter {
     private var isPresentingPanel = false
 
     /// PRESENTATION scale for the hosted classic windows: POINTS per skin pixel.
-    /// `1.5` is the sweet spot between `1` (authentic 275x116-pt main window —
-    /// too small on modern displays) and `2` (too big). The main window becomes
-    /// 412.5 x 174 points; the playlist / EQ windows scale likewise (fractional
-    /// point sizes are legal for `NSWindow`).
+    /// `1.0` renders the AUTHENTIC 275x116-pt main window at its native 1:1 size —
+    /// the size the owner chose. The playlist / EQ windows scale by the same factor.
     ///
-    /// WHY 1.5 stays pixel-crisp on Retina: the composed bitmap is still upscaled
-    /// by an INTEGER nearest-neighbor factor — the pure
-    /// `PresentationScale.bitmapScale` derives 3 for 1.5 — and on a 2x-backing
-    /// display 1.5 points is EXACTLY 3 device pixels, so the view's draw is a
-    /// 1:1 device-pixel copy of the 3x bitmap (no resampling, no smear). The
-    /// whole scale-aware pipeline (window sizing, hit-testing via
+    /// WHY 1.0 stays pixel-crisp on EVERY display: an INTEGER presentation scale is
+    /// the invariant that matters. The pure `PresentationScale.bitmapScale` derives
+    /// `1` for `1.0`, so the composed bitmap is the skin at native size and the
+    /// view's draw is an integer device-pixel copy on BOTH backings — on a 1x
+    /// display bounds(points) * 1 == bitmap pixels (device ratio 1.0), on a 2x
+    /// display bounds(points) * 2 == 2x the bitmap (device ratio 2.0). Both are
+    /// whole-factor nearest-neighbor: no resampling, no smear.
+    ///
+    /// The earlier `1.5` was NON-integer: crisp on a 2x backing (1.5 pt is exactly
+    /// 3 device px) but on a 1x backing 1.5 device px per skin pixel forced uneven
+    /// 2/1/2/1 nearest-neighbor pixel widths — the pixelation this constant fixes.
+    /// Integer presentation scales have no such fractional-backing failure mode.
+    ///
+    /// The whole scale-aware pipeline (window sizing, hit-testing via
     /// `ControlHitTest`, the `RegionMaskLayer` silhouette, and the title-bar drag
     /// bands) divides/multiplies by this one Double, so all three windows follow
     /// consistently. The SkinHarness has its OWN integer `--scale` CLI argument
     /// (still defaulting to `2`), so the package snapshot output is unaffected by
     /// this app-side constant.
-    private static let scale = 1.5
+    private static let scale = 1.0
 
     /// The hosted classic windows' titles. The classic windows are borderless
     /// (chromeless), so these are invisible — they are kept set for accessibility
@@ -427,8 +433,8 @@ final class ClassicSkinPresenter {
     /// Build the classic MAIN window from `skin`, driven by the shared core, and
     /// hold its handle. A failure surfaces an alert and leaves the handle `nil`.
     private func openMainWindow(skin: Skin) {
-        // Normalize an empty-polygon region to nil (same as the harness path).
-        let region = skin.region.flatMap { $0.polygons.isEmpty ? nil : $0 }
+        // Normalize an empty (unfillable) region to nil (same as the harness path).
+        let region = skin.region.flatMap { $0.isEmpty ? nil : $0 }
         do {
             mainHandle = try showInteractiveWindow(
                 skin: skin,
@@ -550,11 +556,17 @@ final class ClassicSkinPresenter {
     /// so moving a band changes the SAME playing audio.
     private func openEQWindow(skin: Skin) {
         do {
+            // Shape the EQ window when the skin declares an `[Equalizer]` region
+            // (normalized to nil when empty), so a skin that shapes its EQ face
+            // renders shaped through the same mask / hit-test / no-shadow path as
+            // the main window. A skin with no `[Equalizer]` region -> plain rect.
+            let eqRegion = (skin.regions?.equalizer).flatMap { $0.isEmpty ? nil : $0 }
             eqHandle = try showEQWindow(
                 skin: skin,
                 core: core,
                 scale: ClassicSkinPresenter.scale,
                 title: ClassicSkinPresenter.eqWindowTitle,
+                region: eqRegion,
                 terminatesAppOnClose: false,
                 onClose: { [weak self] in self?.eqHandle = nil },
                 onFileDrop: onFileDrop

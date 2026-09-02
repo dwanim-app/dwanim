@@ -27,7 +27,9 @@ public enum SkinLoader {
             sprites: loadSprites(from: archive, decoder: decoder),
             visColors: loadVisColors(from: archive),
             playlist: loadPlaylist(from: archive),
-            region: loadRegion(from: archive)
+            // All four window shapes; `nil` when `region.txt` was absent. The
+            // main-window `skin.region` reads through to `regions?.normal`.
+            regions: loadRegions(from: archive)
         )
     }
 
@@ -81,10 +83,13 @@ public enum SkinLoader {
         return PlaylistEditParser.parse(text)
     }
 
-    /// Parses `region.txt`, or returns `nil` when it is absent/unreadable.
-    private static func loadRegion(from archive: SkinArchive) -> SkinRegion? {
+    /// Parses all four window-shape sections of `region.txt` into a
+    /// `SkinRegionSet`, or returns `nil` when the file is absent/unreadable (so a
+    /// skin with no `region.txt` has `nil` regions, and every shape stays
+    /// rectangular).
+    private static func loadRegions(from archive: SkinArchive) -> SkinRegionSet? {
         guard let text = text(named: "region.txt", in: archive) else { return nil }
-        return RegionParser.parse(text)
+        return RegionParser.parseAll(text)
     }
 
     // MARK: - Text decoding
@@ -96,9 +101,28 @@ public enum SkinLoader {
     /// encoding rather than UTF-8, so UTF-8 is tried first and `isoLatin1` is the
     /// fallback. `isoLatin1` maps every one of the 256 byte values to a scalar,
     /// so it never fails — once the bytes are in hand, decoding always succeeds.
+    ///
+    /// A leading UTF-8 byte-order mark (`EF BB BF`) is STRIPPED from the bytes
+    /// first: Windows editors routinely write one, and `String(data:encoding:
+    /// .utf8)` keeps it as a U+FEFF scalar that would sit in front of the first
+    /// `[Section]` header — defeating the parsers' `hasPrefix("[")` header test
+    /// and silently dropping that whole section. Stripping the BYTES (not the
+    /// decoded scalar) also covers a BOM'd file that falls to the Latin-1 path,
+    /// where the mark would otherwise decode as `ï»¿`. Done here, once, so every
+    /// config file (`region.txt`, `pledit.txt`, `viscolor.txt`) benefits.
     private static func text(named name: String, in archive: SkinArchive) -> String? {
-        guard let bytes = archive.file(named: name) else { return nil }
+        guard let raw = archive.file(named: name) else { return nil }
+        let bytes = strippingByteOrderMark(raw)
         if let utf8 = String(data: bytes, encoding: .utf8) { return utf8 }
         return String(data: bytes, encoding: .isoLatin1)
+    }
+
+    /// The UTF-8 encoding of U+FEFF.
+    private static let utf8ByteOrderMark: [UInt8] = [0xEF, 0xBB, 0xBF]
+
+    /// `bytes` without a leading UTF-8 BOM, unchanged when there is none.
+    private static func strippingByteOrderMark(_ bytes: Data) -> Data {
+        guard bytes.starts(with: utf8ByteOrderMark) else { return bytes }
+        return Data(bytes.dropFirst(utf8ByteOrderMark.count))
     }
 }

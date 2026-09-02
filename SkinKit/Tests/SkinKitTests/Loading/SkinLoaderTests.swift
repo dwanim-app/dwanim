@@ -216,6 +216,78 @@ final class SkinLoaderTests: XCTestCase {
         XCTAssertEqual(skin.playlist?.font, "Café")
     }
 
+    // MARK: - Criterion 9: UTF-8 BOM-prefixed configs still parse (S2)
+
+    /// Windows editors routinely save `region.txt` / `pledit.txt` with a UTF-8
+    /// byte-order mark. `String(data:encoding:.utf8)` keeps the U+FEFF, which
+    /// then sits in front of the first `[Section]` header and defeats the
+    /// `hasPrefix("[")` header test — silently dropping every key of that
+    /// section. The loader must strip a leading BOM for EVERY config file.
+    func testUTF8BOMPrefixedConfigsStillParse() throws {
+        let bom = Data([0xEF, 0xBB, 0xBF])
+        var regionBytes = bom
+        regionBytes.append(contentsOf: Data(regionText.utf8))
+        var pleditBytes = bom
+        pleditBytes.append(contentsOf: Data(pleditText.utf8))
+
+        // Sanity: the decoded text really does start with the BOM scalar.
+        XCTAssertEqual(String(data: regionBytes, encoding: .utf8)?.first, "\u{FEFF}",
+                       "fixture must carry a BOM for this test to mean anything")
+
+        let data = ZipFixtureBuilder.build(entries: [
+            entry("numbers.bmp", sheetBytes(width: 90, height: 13)),
+            entry("region.txt", regionBytes),
+            entry("pledit.txt", pleditBytes)
+        ])
+
+        let skin = try SkinLoader.load(data, decoder: StubDecoder())
+
+        XCTAssertEqual(skin.region?.polygons.count, 1, "the BOM must not hide [Normal]")
+        XCTAssertEqual(skin.region?.polygons.first?.points.count, 4)
+        XCTAssertEqual(skin.playlist?.font, "Arial", "the BOM must not hide [Text]")
+    }
+
+    // MARK: - Criterion 10: every region.txt section is wired into `regions` (S8)
+
+    /// `skin.regions` carries all four sections, `skin.region` is exactly
+    /// `regions?.normal` (a single source of truth), and a skin WITHOUT
+    /// `region.txt` has `regions == nil`.
+    func testRegionsCarriesEqualizerSectionAndRegionIsItsNormal() throws {
+        let text = """
+        [Normal]
+        NumPoints=4
+        PointList=0,3 3,0 275,0 275,116 0,116
+        [Equalizer]
+        NumPoints=3
+        PointList=0,0 10,0 5,10
+        """
+        let data = ZipFixtureBuilder.build(entries: [
+            entry("numbers.bmp", sheetBytes(width: 90, height: 13)),
+            textEntry("region.txt", text)
+        ])
+
+        let skin = try SkinLoader.load(data, decoder: StubDecoder())
+
+        XCTAssertNotNil(skin.regions)
+        XCTAssertEqual(skin.regions?.equalizer.polygons.count, 1, "[Equalizer] must reach regions.equalizer")
+        XCTAssertEqual(skin.regions?.equalizer.polygons.first?.points.count, 3)
+        XCTAssertEqual(skin.regions?.normal.polygons.first?.points.count, 4)
+        XCTAssertEqual(skin.region, skin.regions?.normal, "region is regions?.normal — one source of truth")
+        XCTAssertTrue(skin.regions?.windowShade.isEmpty ?? false)
+        XCTAssertTrue(skin.regions?.equalizerWS.isEmpty ?? false)
+    }
+
+    func testSkinWithoutRegionFileHasNilRegions() throws {
+        let data = ZipFixtureBuilder.build(entries: [
+            entry("numbers.bmp", sheetBytes(width: 90, height: 13))
+        ])
+
+        let skin = try SkinLoader.load(data, decoder: StubDecoder())
+
+        XCTAssertNil(skin.regions)
+        XCTAssertNil(skin.region)
+    }
+
     // MARK: - Criterion 8: decodable-but-empty sheet leaves no entry
 
     func testSheetThatCutsToEmptyIsAbsentOthersStillCut() throws {

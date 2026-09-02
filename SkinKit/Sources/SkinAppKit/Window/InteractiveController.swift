@@ -174,6 +174,7 @@ public final class InteractiveController: SkinWindowController {
         format: TrackFormatProviding?,
         externalFeed: SpectrumFeed? = nil,
         terminatesAppOnClose: Bool = true,
+        isShaped: Bool = false,
         onClose: (() -> Void)? = nil,
         onToggleEQ: (() -> Void)? = nil,
         onTogglePlaylist: (() -> Void)? = nil,
@@ -225,12 +226,24 @@ public final class InteractiveController: SkinWindowController {
         // NOT on a control (minimize / close win over drag) moves the window.
         // The pure `ControlHitTest.hitsTitleBarDragArea` carries the geometry;
         // this closure only maps the view point to skin space at our scale.
-        view.shouldDragWindow = { [weak self] viewX, viewY, viewHeight in
+        let titleBarDragPredicate: (Double, Double, Double) -> Bool = { [weak self] viewX, viewY, viewHeight in
             guard let self else { return false }
             let point = ControlHitTest.skinPoint(
                 viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: self.scale
             )
             return ControlHitTest.hitsTitleBarDragArea(skinX: point.x, skinY: point.y)
+        }
+        // SHAPED windows use the MANUAL title-bar drag (confined to the strip,
+        // never a transparent cut-out, clamped under the menu bar); UNSHAPED
+        // windows keep the AppKit-native `performDrag` path EXACTLY as before, so
+        // the common (~90%) rectangular skin's draggability is unchanged.
+        if isShaped {
+            view.shouldManuallyDragWindow = titleBarDragPredicate
+            // The manual drag keeps at least the title strip on-screen (in POINTS:
+            // the strip's skin height at our presentation scale).
+            view.manualDragGrabStripHeight = Double(ControlHitTest.titleBarHeight()) * scale
+        } else {
+            view.shouldDragWindow = titleBarDragPredicate
         }
         // Dragging the posbar scrubs continuously: wire the drag callback (the EQ
         // sliders are the only other draggable surface). A drag only acts when a

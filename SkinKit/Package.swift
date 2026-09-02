@@ -141,6 +141,19 @@ let package = Package(
             resources: [.process("Resources")],
             swiftSettings: strictConcurrency
         ),
+        // In-process AppKit tests for the shaped-window seam: they build a REAL
+        // NSWindow + ScaledImageView through the production `showInteractiveWindow`
+        // path and drive SYNTHESIZED NSEvents (no mouse / accessibility permission,
+        // no CGEvent posting), so the two owner-unverifiable interactive behaviours
+        // — shaped-window title-bar drag, and cut-out hit-test / click-through
+        // preconditions — become deterministic. Depends on PlayerCore too because
+        // the real window path takes a `PlayerCore` (driven by an in-memory fake
+        // engine here — no audio framework is touched).
+        .testTarget(
+            name: "SkinAppKitTests",
+            dependencies: ["SkinAppKit", "SkinKit", "SkinRender", "PlayerCore"],
+            swiftSettings: strictConcurrency
+        ),
         .executableTarget(
             name: "SkinHarness",
             dependencies: [

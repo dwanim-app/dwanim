@@ -142,21 +142,33 @@ public enum RegionCoverage {
         into mask: inout [Bool],
         width: Int
     ) {
-        let firstCenter = xStart - 0.5
-        let lastCenter = xEnd - 0.5
+        // The inclusive column range, still as Doubles: a `region.txt` vertex can
+        // be as large as `Int.max`, so a crossing x can be ~`Double(Int.max)` — a
+        // value NOT representable as `Int`, which would trap on conversion. All
+        // range logic therefore happens in `Double` (where `Int.max` is
+        // representable) and only the final clamped values are converted.
+        // Non-finite crossings (NaN / ±inf, which a degenerate edge could yield)
+        // are skipped entirely.
+        let firstColumn = (xStart - 0.5).rounded(.up)
+        let lastColumn = (xEnd - 0.5).rounded(.down)
+        guard firstColumn.isFinite, lastColumn.isFinite else { return }
 
-        // A `region.txt` vertex can be as large as `Int.max`, so a crossing x can
-        // be ~`Double(Int.max)` — a value NOT representable as `Int`, which would
-        // trap on conversion. Clamp each crossing into the canvas column range
-        // `[0, width-1]` (as Doubles, where `Int.max` is representable) BEFORE the
-        // `Int(...)` conversion. Non-finite crossings (NaN / ±inf, which a
-        // degenerate edge could yield) are skipped entirely.
-        guard firstCenter.isFinite, lastCenter.isFinite else { return }
+        // A span that lies ENTIRELY off-canvas — every column < 0, or every column
+        // >= width — covers nothing. This overlap test must run BEFORE the clamp:
+        // clamping such a span's ends into `[0, width-1]` would collapse it onto
+        // column 0 (or width-1) and paint a phantom edge line the region never
+        // declared. (It also covers the degenerate `first > last` empty span.)
         let lowerBound = 0.0
         let upperBound = Double(width - 1)
-        let first = Int(clamp(firstCenter.rounded(.up), lowerBound, upperBound))
-        let last = Int(clamp(lastCenter.rounded(.down), lowerBound, upperBound))
-        guard first <= last else { return }
+        guard lastColumn >= lowerBound, firstColumn <= upperBound, firstColumn <= lastColumn else {
+            return
+        }
+
+        // A PARTIALLY on-canvas span is clamped to the canvas — this is the
+        // huge-vertex case, where the far end is astronomically off-canvas but the
+        // near end is real.
+        let first = Int(clamp(firstColumn, lowerBound, upperBound))
+        let last = Int(clamp(lastColumn, lowerBound, upperBound))
 
         let rowStart = y * width
         for x in first...last {

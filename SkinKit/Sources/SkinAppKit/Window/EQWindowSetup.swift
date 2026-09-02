@@ -27,11 +27,13 @@ public struct EQWindowHandle {
 }
 
 /// Build and show the EQ window (a borderless chromeless window — the EQ face is
-/// a fixed 275x116 rectangle whose baked title-bar strip is the drag handle and
-/// whose baked close glyph is the close affordance; no region mask is needed),
-/// start the redraw, and return the controller + window. Throws a `RenderError`
-/// when the EQ face cannot be composed/scaled into an initial frame. The caller
-/// drives the run loop and holds the returned controller.
+/// a fixed 275x116 canvas whose baked title-bar strip is the drag handle and
+/// whose baked close glyph is the close affordance; a skin that declares a real
+/// `[Equalizer]` region additionally shapes it through the same coverage mask /
+/// click-through / manual-drag path as the main window), start the redraw, and
+/// return the controller + window. Throws a `RenderError` when the EQ face cannot
+/// be composed/scaled into an initial frame. The caller drives the run loop and
+/// holds the returned controller.
 ///
 /// `title` is the window's title — invisible on the borderless window but kept
 /// for accessibility / Mission Control labels (a host-supplied label; NO brand
@@ -60,6 +62,7 @@ public func showEQWindow(
     core: PlayerCore,
     scale: Double,
     title: String,
+    region: SkinRegion? = nil,
     terminatesAppOnClose: Bool = true,
     onClose: (() -> Void)? = nil,
     onFileDrop: (([URL]) -> Void)? = nil
@@ -88,29 +91,52 @@ public func showEQWindow(
     // Optional file-URL drop hook (nil for the harness — registers nothing).
     contentView.onFileDrop = onFileDrop
 
+    // Region shaping (item 7): a skin that declares a REAL `[Equalizer]` region
+    // gets the SAME non-rectangular treatment as the main window — a
+    // coverage-derived CAShapeLayer mask, click-through in the cut-outs, no
+    // rectangular shadow, and the manual title-bar drag. The pure
+    // `RegionMaskGeometry.shape` is the one decision point: it computes the
+    // coverage ONCE and answers `nil` for an empty region AND for a full-window
+    // rectangle (an inert `[Equalizer] 0,0 275,0 275,116 0,116`), so both the common
+    // no-region case and the inert-rectangle case keep the EQ window a plain opaque
+    // rectangle with the default shadow — no regression.
+    let shape = region
+        .flatMap { $0.isEmpty ? nil : $0 }
+        .flatMap { RegionMaskGeometry.shape(for: $0, width: base.width, height: base.height) }
+    let maskLayer: CAShapeLayer? = shape.map { RegionMaskLayer.make(for: $0, scale: scale) }
+    if let shape {
+        contentView.regionContainsPoint = { viewX, viewY, viewHeight in
+            let point = ControlHitTest.skinPoint(
+                viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
+            )
+            return RegionHitTest.isInside(
+                mask: shape.mask, width: shape.width, height: shape.height,
+                skinX: point.x, skinY: point.y
+            )
+        }
+    }
+
     let controller = EQController(
         skin: skin, core: core, view: contentView, scale: scale,
-        terminatesAppOnClose: terminatesAppOnClose, onClose: onClose
+        terminatesAppOnClose: terminatesAppOnClose,
+        isShaped: maskLayer != nil, onClose: onClose
     )
 
-    // Chromeless: the EQ face's own title-bar strip is the drag handle and its
-    // baked close glyph the close affordance (wired by `EQController`). The
-    // subclass keeps the borderless window key-capable; `.miniaturizable` adds no
-    // visible chrome but keeps `miniaturize(_:)` functional.
-    let window = ChromelessSkinWindow(
+    // Chromeless window via the shared region builder: always borderless (the EQ
+    // face's own title-bar strip is the drag handle and its baked close glyph the
+    // close affordance, wired by `EQController`); a shaped EQ additionally gets the
+    // non-opaque + clear-background + layer-mask + no-shadow treatment.
+    let window = RegionWindowBuilder.make(
         contentRect: contentRect,
-        styleMask: [.borderless, .miniaturizable],
-        backing: .buffered,
-        defer: false
+        contentView: contentView,
+        maskLayer: maskLayer,
+        title: title
     )
-    // Invisible on a borderless window; kept for accessibility / Mission Control.
-    window.title = title
     window.delegate = controller
     // Host handle (harness `liveController` / app `WindowHandle`) is the sole owner;
     // do not let AppKit release the window on close out from under it (ARC
     // double-release footgun on close / re-skin).
     window.isReleasedWhenClosed = false
-    window.contentView = contentView
     window.center()
     window.makeKeyAndOrderFront(nil)
 

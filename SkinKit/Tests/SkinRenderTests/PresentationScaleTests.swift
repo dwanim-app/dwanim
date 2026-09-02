@@ -67,4 +67,35 @@ final class PresentationScaleTests: XCTestCase {
         XCTAssertEqual(pointWidth * backing, Double(275 * bitmap), accuracy: 1e-9)
         XCTAssertEqual(pointHeight * backing, Double(116 * bitmap), accuracy: 1e-9)
     }
+
+    // MARK: - Window-size arithmetic at 1.0 (the app's native presentation scale)
+
+    /// The app now presents the classic windows at an INTEGER 1.0 points-per-skin-
+    /// pixel — the authentic 275x116-pt main window, backed by a 1x (native)
+    /// bitmap. This is the crispness fix: unlike the fractional 1.5, an integer
+    /// presentation scale yields a WHOLE device-pixel ratio on EVERY backing, so
+    /// nearest-neighbor never produces the uneven 2/1/2/1 pixel widths that 1.5
+    /// forced on a 1x display.
+    func testPointsTimesBackingScaleEqualsBitmapPixelsAtOnePointZero() {
+        let scale = 1.0
+        let bitmap = PresentationScale.bitmapScale(forPresentationScale: scale)
+        XCTAssertEqual(bitmap, 1, "1.0 must derive a native 1x bitmap")
+
+        // Native 1:1 window points.
+        let pointWidth = 275 * scale    // 275.0
+        let pointHeight = 116 * scale   // 116.0
+        XCTAssertEqual(pointWidth, 275.0, accuracy: 1e-9)
+        XCTAssertEqual(pointHeight, 116.0, accuracy: 1e-9)
+
+        // On BOTH a 1x and a 2x backing the device-pixel ratio is a WHOLE number
+        // (points * backing / bitmap): 1.0 on 1x, 2.0 on 2x — never fractional.
+        for backing in [1.0, 2.0] {
+            let widthRatio = pointWidth * backing / Double(275 * bitmap)
+            let heightRatio = pointHeight * backing / Double(116 * bitmap)
+            XCTAssertEqual(widthRatio, backing, accuracy: 1e-9)
+            XCTAssertEqual(heightRatio, backing, accuracy: 1e-9)
+            XCTAssertEqual(widthRatio, widthRatio.rounded(), accuracy: 1e-9,
+                           "device ratio must be integer at backing \(backing)")
+        }
+    }
 }

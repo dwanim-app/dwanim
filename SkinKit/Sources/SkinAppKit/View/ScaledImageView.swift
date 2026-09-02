@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import SkinRender
 
 // MARK: - ScaledImageView
 //
@@ -29,6 +30,12 @@ import Foundation
 open class ScaledImageView: NSView {
     private var image: CGImage
 
+    /// While a shaped-window MANUAL drag is in progress, the grab point in WINDOW
+    /// coordinates (recorded at mouse-down). `nil` when no manual drag is active.
+    /// Its presence is the gesture latch: `mouseDragged` / `mouseUp` route to the
+    /// window move instead of the controller while it is set.
+    private var manualDragAnchorInWindow: NSPoint?
+
     // MARK: Event hooks
 
     /// Called on mouse-DOWN with the click point in this view's coordinate space
@@ -52,6 +59,35 @@ open class ScaledImageView: NSView {
     /// title-bar BUTTON rects (close / minimize) so buttons win over drag. `nil`
     /// (the default) means the view never drags the window.
     public var shouldDragWindow: ((_ viewX: Double, _ viewY: Double, _ viewHeight: Double) -> Bool)?
+
+    /// SHAPED-WINDOW manual drag gate. Asked FIRST on a mouse-down (before
+    /// `shouldDragWindow`), with the same view-space point + height: return `true`
+    /// when the press should MOVE THE WINDOW by a MANUAL drag — the view records the
+    /// grab point and, on each subsequent drag, repositions the window frame,
+    /// CLAMPING it to the union of all screens' visible frames (`WindowDragMath`:
+    /// top under the menu bar, and a grab strip always left on-screen). The whole
+    /// gesture is consumed: no click / slider callback fires, and `mouseDragged` /
+    /// `mouseUp` during the drag do not reach the controller. A SHAPED window wires
+    /// THIS (so its drag is confined to the title-bar strip and can never start in
+    /// a transparent cut-out); an UNSHAPED window leaves it `nil` and keeps its
+    /// existing `shouldDragWindow` (`performDrag`) path unchanged. The predicate must
+    /// return `false` for title-bar BUTTON rects so buttons win over drag.
+    public var shouldManuallyDragWindow: ((_ viewX: Double, _ viewY: Double, _ viewHeight: Double) -> Bool)?
+
+    /// Height, in POINTS, of the window's title-bar drag strip. The manual drag
+    /// keeps at least this much of the window on-screen at the bottom and sides
+    /// (`WindowDragMath.clampedOrigin`), so a shaped window always leaves a grab
+    /// handle reachable. The controller sets it from its layout's strip height
+    /// times the presentation scale; the default is the canonical 14px strip at 1x.
+    public var manualDragGrabStripHeight: Double = 14
+
+    /// SHAPED-WINDOW click-through. When set (a shaped window), a point for which
+    /// this returns `false` is OUTSIDE the region silhouette (a transparent
+    /// cut-out): `hitTest(_:)` returns `nil` there so the click passes THROUGH
+    /// instead of being caught by the window. When `nil` (an unshaped window)
+    /// `hitTest` is entirely normal — no regression. Given the view-space point
+    /// (bottom-left origin, scaled points) and the view height.
+    public var regionContainsPoint: ((_ viewX: Double, _ viewY: Double, _ viewHeight: Double) -> Bool)?
 
     /// Called on each mouse-DRAG with the same view-space point + height. Only the
     /// EQ window wires this (to drag a slider continuously); others leave it nil
@@ -144,12 +180,42 @@ open class ScaledImageView: NSView {
         true
     }
 
+    /// CLICK-THROUGH for a shaped window: a point OUTSIDE the region silhouette (a
+    /// transparent cut-out) returns `nil` so the click passes through to whatever is
+    /// behind, instead of being caught by this opaque view. Inside the region — and
+    /// for an UNSHAPED window (`regionContainsPoint == nil`) — hit-testing is normal,
+    /// so there is no regression for the ~90% of skins with no active region.
+    ///
+    /// `point` arrives in the SUPERVIEW's coordinate system; it is converted into
+    /// this view's (bottom-left origin, scaled) space before the region test, then
+    /// mapped to skin space by the controller's `regionContainsPoint` closure.
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        guard hit != nil, let regionContainsPoint else { return hit }
+        let local = convert(point, from: superview)
+        if regionContainsPoint(Double(local.x), Double(local.y), Double(bounds.height)) {
+            return hit
+        }
+        return nil
+    }
+
     public override func mouseDown(with event: NSEvent) {
+        // A fresh press ALWAYS starts un-latched. If the `mouseUp` that ends a
+        // manual drag is ever lost (AppKit can drop it — e.g. a drag that ends over
+        // another app, or a window ordering change mid-gesture), a stale anchor
+        // would otherwise turn the NEXT slider / posbar drag into a window move.
+        manualDragAnchorInWindow = nil
         let viewPoint = convert(event.locationInWindow, from: nil)
-        // Title-bar drag gate: when the controller's predicate claims the point,
-        // the whole gesture becomes a window move — `performDrag` consumes it
-        // (no drag/up callbacks follow), and no controller state is touched
-        // before it runs, so nothing can be left latched.
+        // Shaped-window MANUAL drag gate (checked FIRST): a press in the title-bar
+        // strip records the grab point and turns the gesture into a window move.
+        // No controller state is touched, and the drag/up callbacks are suppressed
+        // while the latch is set.
+        if shouldManuallyDragWindow?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height)) == true {
+            manualDragAnchorInWindow = event.locationInWindow
+            return
+        }
+        // Unshaped-window title-bar drag gate: hand the gesture to the AppKit-native
+        // `performDrag` (consumes it; no drag/up callbacks follow). Unchanged path.
         if shouldDragWindow?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height)) == true {
             window?.performDrag(with: event)
             return
@@ -162,12 +228,58 @@ open class ScaledImageView: NSView {
     }
 
     public override func mouseDragged(with event: NSEvent) {
+        // A manual window drag in progress consumes the gesture: reposition the
+        // window and forward nothing to the controller.
+        if manualDragAnchorInWindow != nil {
+            moveWindowDuringManualDrag()
+            return
+        }
         let viewPoint = convert(event.locationInWindow, from: nil)
         onMouseDragged?(Double(viewPoint.x), Double(viewPoint.y), Double(bounds.height))
     }
 
     public override func mouseUp(with event: NSEvent) {
+        // End a manual window drag without notifying the controller (the lift only
+        // ends the move gesture).
+        if manualDragAnchorInWindow != nil {
+            manualDragAnchorInWindow = nil
+            return
+        }
         onMouseUp?()
+    }
+
+    /// Reposition the window so the recorded grab point stays under the cursor,
+    /// clamped by the pure `WindowDragMath` to the UNION of every screen's visible
+    /// frame: the top stays under the menu bar and at least the title strip
+    /// (`manualDragGrabStripHeight`) stays on-screen at the bottom and sides. The
+    /// union (not `window.screen`) is what lets the window cross onto a display
+    /// arranged ABOVE — `window.screen` only updates once the frame already
+    /// intersects that display. A no-op if the window or anchor is missing; with
+    /// no screen attached at all the proposed origin is applied unclamped.
+    private func moveWindowDuringManualDrag() {
+        guard let window, let anchor = manualDragAnchorInWindow else { return }
+        let mouseOnScreen = NSEvent.mouseLocation
+        let proposedX = Double(mouseOnScreen.x - anchor.x)
+        let proposedY = Double(mouseOnScreen.y - anchor.y)
+        guard let allowed = WindowDragMath.union(of: NSScreen.screens.map { screen in
+            let frame = screen.visibleFrame
+            return WindowDragMath.Rect(
+                x: Double(frame.origin.x), y: Double(frame.origin.y),
+                width: Double(frame.width), height: Double(frame.height)
+            )
+        }) else {
+            window.setFrameOrigin(NSPoint(x: proposedX, y: proposedY))
+            return
+        }
+        let clamped = WindowDragMath.clampedOrigin(
+            proposedX: proposedX,
+            proposedY: proposedY,
+            windowWidth: Double(window.frame.width),
+            windowHeight: Double(window.frame.height),
+            allowedArea: allowed,
+            grabStripHeight: manualDragGrabStripHeight
+        )
+        window.setFrameOrigin(NSPoint(x: clamped.x, y: clamped.y))
     }
 
     public override func scrollWheel(with event: NSEvent) {

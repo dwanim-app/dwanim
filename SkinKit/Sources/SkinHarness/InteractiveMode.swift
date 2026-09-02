@@ -149,8 +149,8 @@ func runInteractiveMode() -> Never {
     core.load(tracks)
 
     // Open the window via SkinAppKit, reusing the existing scale + region-mask
-    // pipeline.
-    let region = skin.region.flatMap { $0.polygons.isEmpty ? nil : $0 }
+    // pipeline. Normalize an empty (unfillable) region to nil.
+    let region = skin.region.flatMap { $0.isEmpty ? nil : $0 }
 
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)

@@ -23,9 +23,18 @@ public struct Skin: Sendable {
     /// The playlist-window colors/font from `pledit.txt`, or `nil` when that file
     /// was absent or unreadable.
     public let playlist: PlaylistColors?
-    /// The custom window shape from `region.txt`, or `nil` when that file was
-    /// absent or unreadable.
-    public let region: SkinRegion?
+    /// All four `region.txt` window shapes (`[Normal]`, `[Equalizer]`,
+    /// `[WindowShade]`, `[EqualizerWS]`), or `nil` when `region.txt` was absent or
+    /// unreadable. The SINGLE stored source of the skin's shapes: `region` below
+    /// reads through to `regions?.normal`; `regions?.equalizer` shapes the EQ
+    /// window; the two windowshade shapes are stored for a later increment (the
+    /// collapsed mode is not implemented).
+    public let regions: SkinRegionSet?
+
+    /// The custom MAIN-window (`[Normal]`) shape — `regions?.normal` — or `nil`
+    /// when `region.txt` was absent or unreadable. Computed, never stored
+    /// separately, so it can never disagree with `regions`.
+    public var region: SkinRegion? { regions?.normal }
 
     // MARK: - Init
 
@@ -33,12 +42,32 @@ public struct Skin: Sendable {
         sprites: [String: [String: DecodedBitmap]],
         visColors: [RGBColor],
         playlist: PlaylistColors?,
-        region: SkinRegion?
+        regions: SkinRegionSet?
     ) {
         self.sprites = sprites
         self.visColors = visColors
         self.playlist = playlist
-        self.region = region
+        self.regions = regions
+    }
+
+    /// Convenience for a skin whose `region.txt` declares only a main-window
+    /// shape: `region` becomes `regions?.normal` with the other three sections
+    /// empty (rectangular); `nil` leaves `regions` `nil` (no `region.txt`).
+    public init(
+        sprites: [String: [String: DecodedBitmap]],
+        visColors: [RGBColor],
+        playlist: PlaylistColors?,
+        region: SkinRegion?
+    ) {
+        let none = SkinRegion(polygons: [])
+        self.init(
+            sprites: sprites,
+            visColors: visColors,
+            playlist: playlist,
+            regions: region.map {
+                SkinRegionSet(normal: $0, equalizer: none, windowShade: none, equalizerWS: none)
+            }
+        )
     }
 
     // MARK: - Lookup

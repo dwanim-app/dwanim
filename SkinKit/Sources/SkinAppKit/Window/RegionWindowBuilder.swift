@@ -36,11 +36,17 @@ public enum RegionWindowBuilder {
     ///     set for accessibility / Mission Control labels.
     /// - Returns: a configured, not-yet-shown `NSWindow`.
     ///
-    /// Region skins keep `isMovableByWindowBackground` (today's drag-anywhere
-    /// behavior — the region shape usually swallows the title-bar strip, so
-    /// background drag is the reliable handle there). The rectangular window
-    /// relies on the explicit title-bar drag gate wired by the controller
-    /// instead, so its sliders / posbar can never fight a window move.
+    /// DRAG: BOTH shapes now drag ONLY from the skin's title-bar strip (the
+    /// controller's title-bar gate) — NOT from the whole background. The shaped
+    /// window used to set `isMovableByWindowBackground`, which let a press-drag in a
+    /// TRANSPARENT CUT-OUT move the window; that is removed here so the controller
+    /// can confine a shaped window's drag to the title bar (unshaped windows already
+    /// dragged only from the title bar, so their behaviour is unchanged).
+    ///
+    /// SHADOW: a shaped window sets `hasShadow = false` (owner's decision) — a
+    /// layer-masked window otherwise casts the RECTANGULAR window shadow around its
+    /// transparent cut-outs (`invalidateShadow` does not fix this in layer-backed
+    /// mode). The unshaped window keeps the default shadow.
     ///
     /// `@MainActor`: it builds and configures `NSWindow` / `NSView` (main-actor
     /// AppKit). It always ran on the main thread; the annotation makes the AppKit
@@ -66,7 +72,15 @@ public enum RegionWindowBuilder {
             // image is unchanged (opaque); only the LAYER is masked.
             window.isOpaque = false
             window.backgroundColor = .clear
-            window.isMovableByWindowBackground = true
+            // No rectangular drop shadow around the transparent cut-outs.
+            window.hasShadow = false
+            // Rasterize the mask at the window's DEVICE resolution — the actual
+            // backing scale, known only now that the window exists — so the
+            // pixel-grid-aligned rects stay crisp (no upscaling of a point-
+            // resolution mask). A finite, positive scale only (guards a degenerate
+            // value from an odd display configuration).
+            let backingScale = window.backingScaleFactor
+            maskLayer.contentsScale = (backingScale.isFinite && backingScale > 0) ? backingScale : 1
             contentView.wantsLayer = true
             contentView.layer?.mask = maskLayer
         }

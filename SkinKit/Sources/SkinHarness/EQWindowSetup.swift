@@ -32,8 +32,14 @@ func openEQWindow(skin: Skin, core: PlayerCore, scale: Int) -> Never {
     let handle: EQWindowHandle
     do {
         // The integer CLI zoom is an integer PRESENTATION scale, so the bitmap
-        // factor equals it and the window path behaves exactly as before.
-        handle = try showEQWindow(skin: skin, core: core, scale: Double(scale), title: "SkinHarness EQ")
+        // factor equals it and the window path behaves exactly as before. Pass the
+        // skin's `[Equalizer]` region (normalized to nil when empty) so a skin that
+        // shapes its EQ window renders shaped in the harness too — parity with the app.
+        let eqRegion = (skin.regions?.equalizer).flatMap { $0.isEmpty ? nil : $0 }
+        handle = try showEQWindow(
+            skin: skin, core: core, scale: Double(scale),
+            title: "SkinHarness EQ", region: eqRegion
+        )
     } catch {
         eqFail("Failed to render the EQ window: \(error)")
     }

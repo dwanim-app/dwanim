@@ -221,6 +221,47 @@ final class RegionCoverageTests: XCTestCase {
         XCTAssertTrue(at(mask, x: width - 1, y: 5, width: width), "clamped to canvas edge")
     }
 
+    // MARK: - 7b. Fully off-canvas spans mark NOTHING (S3)
+
+    /// A polygon lying entirely LEFT of the canvas (x < 0) or entirely RIGHT of it
+    /// (x >= width) covers no pixel. Clamping such a span's ends into
+    /// `[0, width-1]` BEFORE checking that it actually overlaps the canvas would
+    /// smear it onto the edge column (column 0 / column width-1) — a phantom
+    /// 1px line the region never declared.
+    func testFullyOffCanvasPolygonsMarkNothing() {
+        let width = 6, height = 5
+
+        let left = region([(-10, 0), (-5, 0), (-5, 5), (-10, 5)])
+        let leftMask = RegionCoverage.mask(left, width: width, height: height)
+        XCTAssertEqual(leftMask.count, width * height)
+        XCTAssertFalse(leftMask.contains(true), "a polygon entirely at x < 0 covers nothing")
+
+        let right = region([(300, 0), (310, 0), (310, 5), (300, 5)])
+        let rightMask = RegionCoverage.mask(right, width: width, height: height)
+        XCTAssertFalse(rightMask.contains(true), "a polygon entirely at x >= width covers nothing")
+
+        // Exactly touching the edge from outside is still nothing: [-4, 0) has no
+        // pixel centre in it (column 0's centre is 0.5).
+        let touching = region([(-4, 0), (0, 0), (0, 5), (-4, 5)])
+        XCTAssertFalse(RegionCoverage.mask(touching, width: width, height: height).contains(true))
+    }
+
+    /// A polygon that straddles the left edge still marks only its on-canvas part
+    /// (the clamp is for PARTIAL overlap, not for conjuring coverage).
+    func testPartiallyOffCanvasPolygonMarksOnlyItsOnCanvasColumns() {
+        let width = 6, height = 5
+        let straddling = region([(-3, 0), (2, 0), (2, 5), (-3, 5)])
+
+        let mask = RegionCoverage.mask(straddling, width: width, height: height)
+
+        for y in 0..<height {
+            XCTAssertTrue(at(mask, x: 0, y: y, width: width))
+            XCTAssertTrue(at(mask, x: 1, y: y, width: width))
+            XCTAssertFalse(at(mask, x: 2, y: y, width: width))
+            XCTAssertFalse(at(mask, x: width - 1, y: y, width: width))
+        }
+    }
+
     // MARK: - 8. applyMask
 
     /// A size-mismatched mask leaves the bitmap completely unchanged.

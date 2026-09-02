@@ -108,17 +108,35 @@ public func showInteractiveWindow(
     // `.fileURL` dragging; leaving it `nil` (harness) registers nothing.
     contentView.onFileDrop = onFileDrop
 
-    // Window-level region mask (same as the static window path): the content stays
-    // opaque and the shape is carried by a CAShapeLayer mask, built in the view's
-    // POINT space (skin size * presentation scale).
-    let maskLayer: CAShapeLayer? = region.flatMap { region in
-        RegionMaskLayer.make(
-            for: region,
-            skinHeight: base.height,
-            scale: scale,
-            scaledWidth: pointWidth,
-            scaledHeight: pointHeight
-        )
+    // ONE decision point for "is this window shaped?": the pure
+    // `RegionMaskGeometry.shape` computes the region COVERAGE once (even-odd per
+    // polygon, unioned — the `--png` silhouette) and answers `nil` for an empty
+    // region AND for a full-window rectangle (the inert `[Normal]` most region.txt
+    // files carry). Such a skin gets the plain opaque window with the default
+    // shadow and the native drag, exactly as if region.txt were absent. The shape's
+    // `spans` drive the CAShapeLayer mask (built in the view's POINT space) and its
+    // `mask` drives the click-through hit test, so "what you can click" is exactly
+    // "what you can see" — from a single computation.
+    let shape = region.flatMap {
+        RegionMaskGeometry.shape(for: $0, width: base.width, height: base.height)
+    }
+    let maskLayer: CAShapeLayer? = shape.map { RegionMaskLayer.make(for: $0, scale: scale) }
+
+    // Shaped window: click-through in the transparent cut-outs. The view's
+    // `hitTest` returns nil for a view point OUTSIDE the region silhouette; the
+    // closure maps the view point to skin space (the same flip used everywhere) and
+    // looks the pure `RegionHitTest` up in the precomputed coverage. Left unset for
+    // an unshaped window, so its hit-testing is entirely normal.
+    if let shape {
+        contentView.regionContainsPoint = { viewX, viewY, viewHeight in
+            let point = ControlHitTest.skinPoint(
+                viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: scale
+            )
+            return RegionHitTest.isInside(
+                mask: shape.mask, width: shape.width, height: shape.height,
+                skinX: point.x, skinY: point.y
+            )
+        }
     }
 
     // The shared region-window builder: ALWAYS a borderless (chromeless) window —
@@ -153,7 +171,10 @@ public func showInteractiveWindow(
     let controller = InteractiveController(
         skin: skin, core: core, view: contentView, scale: scale, tap: tap, format: format,
         externalFeed: externalFeed,
-        terminatesAppOnClose: terminatesAppOnClose, onClose: onClose,
+        terminatesAppOnClose: terminatesAppOnClose,
+        // Shaped windows use the manual title-bar drag; unshaped keep performDrag.
+        isShaped: maskLayer != nil,
+        onClose: onClose,
         onToggleEQ: onToggleEQ,
         onTogglePlaylist: onTogglePlaylist,
         onEject: onEject,

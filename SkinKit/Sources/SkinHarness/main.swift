@@ -157,8 +157,8 @@ private func loadComposedImage(at path: String, title: String) -> ComposedResult
 
     // The composed bitmap stays OPAQUE here. The shape (if any) is applied per
     // output mode: baked into alpha for --png, or carried as a window-level
-    // layer mask for the live window. Normalize an empty-polygon region to nil.
-    let region = skin.region.flatMap { $0.polygons.isEmpty ? nil : $0 }
+    // layer mask for the live window. Normalize an empty (unfillable) region to nil.
+    let region = skin.region.flatMap { $0.isEmpty ? nil : $0 }
     return ComposedResult(bitmap: composed, region: region)
 }
 
@@ -217,18 +217,14 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
     let contentRect = NSRect(x: 0, y: 0, width: scaled.width, height: scaled.height)
     let contentView = SkinImageView(image: scaled.image, frame: contentRect)
 
-    // Build the window-level mask first: a region whose polygons cover nothing
-    // fillable yields no mask, so the skin renders as a normal rectangular window.
-    let maskLayer: CAShapeLayer? = region.flatMap { region in
-        RegionMaskLayer.make(
-            for: region,
-            skinHeight: bitmap.height,
-            // Integer CLI scale as a presentation scale: points == scaled pixels.
-            scale: Double(scale),
-            scaledWidth: Double(scaled.width),
-            scaledHeight: Double(scaled.height)
-        )
+    // Build the window-level mask first, through the one pure decision point: a
+    // region that covers nothing fillable OR the full canvas yields no shape, so
+    // the skin renders as a normal rectangular window. The integer CLI scale is
+    // the presentation scale here (points == scaled pixels).
+    let shape = region.flatMap {
+        RegionMaskGeometry.shape(for: $0, width: bitmap.width, height: bitmap.height)
     }
+    let maskLayer: CAShapeLayer? = shape.map { RegionMaskLayer.make(for: $0, scale: Double(scale)) }
 
     // The shared region-window builder: always a chromeless borderless window; a
     // shaped window stays opaque in content but is clipped by the CAShapeLayer
@@ -239,6 +235,11 @@ private func runWindowMode(bitmap: DecodedBitmap, region: SkinRegion?, scale: In
         maskLayer: maskLayer,
         title: "SkinHarness"
     )
+    // This STATIC dev-tool window has no controller and no title-bar drag
+    // predicate (its view is the inert `SkinImageView`), so the builder's
+    // title-bar-only drag policy leaves it immovable. Let it move from anywhere in
+    // its background — harness-only; the interactive windows keep the strip-only drag.
+    window.isMovableByWindowBackground = true
     window.center()
     window.makeKeyAndOrderFront(nil)
 

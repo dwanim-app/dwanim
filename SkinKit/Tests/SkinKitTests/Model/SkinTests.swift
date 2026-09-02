@@ -123,4 +123,42 @@ final class SkinTests: XCTestCase {
         XCTAssertEqual(skin.playlist, playlist)
         XCTAssertEqual(skin.region, region)
     }
+
+    // MARK: - `region` is `regions?.normal` (single source of truth, S8)
+
+    func testRegionIsTheNormalShapeOfRegions() {
+        let normal = SkinRegion(polygons: [
+            SkinRegion.Polygon(points: [.init(x: 0, y: 0), .init(x: 10, y: 0), .init(x: 5, y: 10)])
+        ])
+        let equalizer = SkinRegion(polygons: [
+            SkinRegion.Polygon(points: [.init(x: 1, y: 1), .init(x: 9, y: 1), .init(x: 5, y: 9)])
+        ])
+        let set = SkinRegionSet(
+            normal: normal, equalizer: equalizer,
+            windowShade: SkinRegion(polygons: []), equalizerWS: SkinRegion(polygons: [])
+        )
+
+        let skin = Skin(sprites: [:], visColors: [], playlist: nil, regions: set)
+
+        XCTAssertEqual(skin.region, normal, "region reads through to regions.normal")
+        XCTAssertEqual(skin.regions?.equalizer, equalizer)
+    }
+
+    func testRegionOnlyInitPopulatesRegionsNormal() {
+        let normal = SkinRegion(polygons: [
+            SkinRegion.Polygon(points: [.init(x: 0, y: 0), .init(x: 10, y: 0), .init(x: 5, y: 10)])
+        ])
+
+        let skin = Skin(sprites: [:], visColors: [], playlist: nil, region: normal)
+
+        XCTAssertEqual(skin.regions?.normal, normal)
+        XCTAssertEqual(skin.region, normal)
+        XCTAssertTrue(skin.regions?.equalizer.isEmpty ?? false, "no other section was declared")
+    }
+
+    func testNilRegionMeansNilRegions() {
+        let skin = Skin(sprites: [:], visColors: [], playlist: nil, region: nil)
+        XCTAssertNil(skin.regions)
+        XCTAssertNil(skin.region)
+    }
 }

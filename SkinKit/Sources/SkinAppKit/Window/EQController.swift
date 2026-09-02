@@ -66,6 +66,7 @@ public final class EQController: SkinWindowController {
         view: ScaledImageView,
         scale: Double,
         terminatesAppOnClose: Bool = true,
+        isShaped: Bool = false,
         onClose: (() -> Void)? = nil
     ) {
         self.skin = skin
@@ -92,12 +93,23 @@ public final class EQController: SkinWindowController {
         // NOT on the close button moves the window. The pure
         // `EQWindowLayout.hitsTitleBarDragArea` carries the geometry; this
         // closure only maps the view point to skin space at our scale.
-        view.shouldDragWindow = { [weak self] viewX, viewY, viewHeight in
+        let titleBarDragPredicate: (Double, Double, Double) -> Bool = { [weak self] viewX, viewY, viewHeight in
             guard let self else { return false }
             let point = ControlHitTest.skinPoint(
                 viewX: viewX, viewY: viewY, viewHeight: viewHeight, scale: self.scale
             )
             return EQWindowLayout.hitsTitleBarDragArea(skinX: point.x, skinY: point.y)
+        }
+        // A SHAPED EQ window (skin declares an `[Equalizer]` region) uses the manual
+        // title-bar drag; an UNSHAPED EQ window keeps the native `performDrag` path
+        // unchanged (the common case — most skins do not shape the EQ window).
+        if isShaped {
+            view.shouldManuallyDragWindow = titleBarDragPredicate
+            // The manual drag keeps at least the title strip on-screen (in POINTS:
+            // the strip's skin height at our presentation scale).
+            view.manualDragGrabStripHeight = Double(EQWindowLayout.titleBarHeight) * scale
+        } else {
+            view.shouldDragWindow = titleBarDragPredicate
         }
     }
 
