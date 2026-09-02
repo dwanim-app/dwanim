@@ -166,7 +166,20 @@ struct DwanimItApp: App {
                 // spectrum feed or resets the live playlist.
                 .onAppear {
                     appDelegate.session = session
+                    // Wire the "Open With" / drag-drop THEME apply: the App owns the
+                    // `AppearanceStore` (DwanimItUI stays AppKit-free), so hand the
+                    // session a closure that forwards a read `.dwtheme`/`.dwskin`
+                    // file's (text, filename) into `AppearanceStore.load`.
+                    session.onApplyTheme = { text, filename in
+                        appearance.load(text: text, filename: filename)
+                    }
                     session.start()
+                    // Flush any files that LaunchServices delivered via
+                    // `application(_:open:)` BEFORE this scene appeared (a cold
+                    // `open -a "dwanim it" file…` can fire the open event before the
+                    // session is captured) — now that the session + theme seam are
+                    // wired, route the buffered opens.
+                    appDelegate.flushPendingOpenURLs()
                 }
                 // P2-6 (one-face-at-a-time): capture the default scene's backing
                 // NSWindow into the session at launch. A zero-size accessor view in
@@ -347,6 +360,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The shared session to tear down at termination. Set by the scene's
     /// `.onAppear`. Weak: the App's `@State` is the real owner.
     weak var session: AudioSession?
+
+    /// Files delivered by `application(_:open:)` BEFORE the session was captured
+    /// (a cold `open -a "dwanim it" file…` / Finder "Open With" can fire the open
+    /// event before the scene's `.onAppear` runs). Buffered here and flushed by
+    /// `flushPendingOpenURLs()` once the session is wired, so a launch-time open is
+    /// never dropped. Empty in the common warm case (the session is already set, so
+    /// opens route straight through).
+    private var pendingOpenURLs: [URL] = []
+
+    /// The OS OPEN event: a file opened via Finder ▸ "Open With ▸ dwanim it", a
+    /// double-click on a type we declare (see CFBundleDocumentTypes in Info.plist),
+    /// or `open -a "dwanim it" file…`. All `urls` arrive in ONE call, so a
+    /// multi-file open is handled together. Routes through the session's
+    /// `handleOpenedURLs` (same `DropRouter` classification as a drag-drop, but an
+    /// explicit open also starts the opened audio playing). If the session is not
+    /// captured yet (open fired before `.onAppear`), BUFFER the URLs and let
+    /// `flushPendingOpenURLs()` replay them once it is.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let session else {
+            pendingOpenURLs.append(contentsOf: urls)
+            return
+        }
+        session.handleOpenedURLs(urls)
+    }
+
+    /// Replay any opens buffered before the session was captured (see
+    /// `pendingOpenURLs`). Called from the scene's `.onAppear` right after the
+    /// session + theme seam are wired. Idempotent: clears the buffer, so repeated
+    /// `.onAppear`s (SwiftUI may re-create the scene) do not re-open the same files.
+    /// `@MainActor` (unlike the protocol's `application(_:open:)`, a custom method
+    /// does not inherit the delegate's isolation) so it can drive the main-actor
+    /// `handleOpenedURLs`; both callers (`.onAppear`) are already on the main actor.
+    @MainActor
+    func flushPendingOpenURLs() {
+        guard let session, !pendingOpenURLs.isEmpty else { return }
+        let urls = pendingOpenURLs
+        pendingOpenURLs = []
+        session.handleOpenedURLs(urls)
+    }
 
     /// Closing the default SwiftUI `Window` should quit the app — but ONLY when no
     /// hosted classic window remains. If a classic skin / playlist / EQ window is

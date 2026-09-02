@@ -3,9 +3,11 @@ import UniformTypeIdentifiers
 
 // MARK: - DropRouter
 //
-// The pure, side-effect-free CLASSIFIER for a set of dropped file URLs. It splits
-// the dropped `[URL]` into the three surfaces the app can open — `.wsz` SKINS,
-// `.m3u`/`.m3u8` PLAYLISTS, and AUDIO files — and discards everything else. It
+// The pure, side-effect-free CLASSIFIER for a set of dropped OR opened file URLs
+// (drag-drop AND the "Open With" / `open -a` path both route through it). It splits
+// the `[URL]` into the surfaces the app can open — `.wsz` SKINS, `.m3u`/`.m3u8`
+// PLAYLISTS, `.dwtheme`/`.dwskin` colour THEMES, FOLDERS, and AUDIO files — and
+// discards everything else. It
 // performs NO I/O beyond the cheap UTType / extension probes and mints NO
 // bookmarks: the app layer (`AudioSession`) owns the actual open + security-scoped
 // bookmarking (and the playlist parse), exactly as the open-panel paths do.
@@ -13,11 +15,16 @@ import UniformTypeIdentifiers
 // policy in one readable place.
 //
 // ## Classification rules (mirrors the open panels)
-//   - SKIN: a `.wsz` filename extension (case-insensitive). A `.wsz` carries no
-//     system-declared UTI (this app deliberately does not claim it as a document
-//     type — see project.yml), so the extension IS the signal. A `.zip` whose name
-//     ends in `.wsz` is a skin; a plain `.zip` is NOT treated as a skin (we only
-//     adopt the explicit skin extension to avoid swallowing arbitrary archives).
+//   - SKIN: a `.wsz` filename extension (case-insensitive). The extension is the
+//     signal (the app declares an imported UTI for `.wsz` so it appears in "Open
+//     With", but classification here keys on the extension, uniform with the other
+//     custom kinds). A `.zip` whose name ends in `.wsz` is a skin; a plain `.zip` is
+//     NOT treated as a skin (we only adopt the explicit skin extension to avoid
+//     swallowing arbitrary archives).
+//   - THEME: a `.dwtheme` / `.dwskin` filename extension (case-insensitive) — a
+//     nine-token COLOUR theme for the default face, applied via the App-owned
+//     AppearanceStore. Distinct from a `.wsz` bitmap skin. Checked BEFORE the audio
+//     probe (a theme is not audio).
 //   - PLAYLIST: a `.m3u` / `.m3u8` filename extension (case-insensitive). Like
 //     `.wsz` these carry no reliable system UTI, so the extension IS the signal.
 //     The dropped playlist FILE is parsed to its listed tracks by the caller — a
@@ -51,17 +58,27 @@ enum DropRouter {
     struct Classification: Equatable {
         var skins: [URL]
         var playlists: [URL]
+        var themes: [URL]
         var folders: [URL]
         var audio: [URL]
 
         /// True when the drop contained nothing the app can open.
         var isEmpty: Bool {
-            skins.isEmpty && playlists.isEmpty && folders.isEmpty && audio.isEmpty
+            skins.isEmpty && playlists.isEmpty && themes.isEmpty
+                && folders.isEmpty && audio.isEmpty
         }
     }
 
     /// The `.wsz` skin extension (lowercased for a case-insensitive compare).
     private static let skinExtension = "wsz"
+
+    /// The colour-THEME extensions (lowercased, case-insensitive): the current
+    /// `.dwtheme` and the legacy `.dwskin` (still opened for backward compat — see
+    /// `AudioSession.appearanceContentTypes`). Like `.wsz`, a theme file carries no
+    /// reliable system UTI, so the extension IS the signal. NOTE `.dwskin` is a
+    /// COLOUR theme, distinct from the `.wsz` bitmap skin above — the two never
+    /// collide (different extensions).
+    private static let themeExtensions: Set<String> = ["dwtheme", "dwskin"]
 
     /// The `.m3u` / `.m3u8` playlist extensions (lowercased for a case-insensitive
     /// compare). Like `.wsz`, a playlist file carries no reliable system UTI, so
@@ -91,18 +108,22 @@ enum DropRouter {
     static func classify(_ urls: [URL]) -> Classification {
         var skins: [URL] = []
         var playlists: [URL] = []
+        var themes: [URL] = []
         var folders: [URL] = []
         var audio: [URL] = []
         for url in urls {
-            // Check order per URL: skin → playlist → folder → audio. A `.m3u` is
-            // not audio, but classifying playlists BEFORE the audio probe keeps the
-            // intent explicit; a directory is recognised BEFORE the audio probe so a
-            // dropped folder routes to enumeration instead of being discarded as a
-            // non-audio type (a directory's content type never conforms to audio).
+            // Check order per URL: skin → playlist → theme → folder → audio. A
+            // `.m3u` / `.dwtheme` is not audio, but classifying them BEFORE the audio
+            // probe keeps the intent explicit; a directory is recognised BEFORE the
+            // audio probe so a dropped folder routes to enumeration instead of being
+            // discarded as a non-audio type (a directory's content type never
+            // conforms to audio).
             if isSkin(url) {
                 skins.append(url)
             } else if isPlaylist(url) {
                 playlists.append(url)
+            } else if isTheme(url) {
+                themes.append(url)
             } else if isFolder(url) {
                 folders.append(url)
             } else if isAudio(url) {
@@ -110,7 +131,10 @@ enum DropRouter {
             }
             // else: unsupported — ignored gracefully.
         }
-        return Classification(skins: skins, playlists: playlists, folders: folders, audio: audio)
+        return Classification(
+            skins: skins, playlists: playlists, themes: themes,
+            folders: folders, audio: audio
+        )
     }
 
     // MARK: Probes
@@ -125,6 +149,13 @@ enum DropRouter {
     /// `.wsz`, a playlist has no declared UTI, so the extension is the signal).
     private static func isPlaylist(_ url: URL) -> Bool {
         playlistExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// A `.dwtheme` / `.dwskin` COLOUR-theme file (by case-insensitive extension —
+    /// like `.wsz`, a theme has no declared system UTI, so the extension is the
+    /// signal). Distinct from `isSkin` (`.wsz` bitmap skin).
+    private static func isTheme(_ url: URL) -> Bool {
+        themeExtensions.contains(url.pathExtension.lowercased())
     }
 
     /// A DIRECTORY (dropped folder) whose audio files the caller should enumerate.

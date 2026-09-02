@@ -133,6 +133,15 @@ final class AudioSession {
     /// one of these panels is open at a time. Benign today but keeps the flows tidy.
     private var isPresentingPanel = false
 
+    /// Apply a colour theme read from a `.dwtheme` / `.dwskin` file opened via drag-drop
+    /// or "Open With". The App layer (`DwanimItApp`) owns the `AppearanceStore` (so
+    /// DwanimItUI stays AppKit-free), so it injects this closure at launch —
+    /// `AudioSession` reads the file's text (inside its security scope) and hands
+    /// `(text, filename)` here, and the closure forwards to `AppearanceStore.load`.
+    /// `nil` until wired (then `applyThemeFile` is a graceful no-op). Main-actor, like
+    /// every other session touch.
+    var onApplyTheme: ((_ text: String, _ filename: String) -> Void)?
+
     /// Spectrum bar count for the compact default-skin row (matches the harness).
     private static let barCount = 24
     /// ~22 Hz feed cadence (matches the harness default-skin player).
@@ -515,45 +524,117 @@ final class AudioSession {
     ///     loose audio are appended.
     ///   - unsupported types: ignored gracefully (an empty classification is a no-op).
     func handleDroppedURLs(_ urls: [URL]) {
+        // A passive drop ADDS (append, non-interrupting) — only an empty-queue drop
+        // auto-plays. All the routing (skin / theme / playlist / folder / audio) is
+        // shared with the "Open With" path via `routeAndAppend`.
+        _ = routeAndAppend(urls)
+    }
+
+    /// Handle a set of file URLs delivered by the OS OPEN event — a Finder
+    /// right-click ▸ "Open With ▸ dwanim it", a double-click on a type we own, or
+    /// `open -a "dwanim it" file…`. Files arrive with a LaunchServices (Powerbox)
+    /// grant, exactly like an open-panel pick, so the routing mints + persists
+    /// security-scoped bookmarks the same way (via `routeAndAppend`).
+    ///
+    /// Same CLASSIFICATION and side effects as a drop (one source of truth —
+    /// `DropRouter` + `routeAndAppend`): a `.wsz` applies as the classic skin, a
+    /// `.dwtheme`/`.dwskin` applies as a colour theme, `.m3u`/folder audio + loose
+    /// audio are appended, unsupported types are ignored. The ONE difference from a
+    /// passive drop: an EXPLICIT open should START PLAYING the opened audio even when
+    /// the queue already had tracks — parity with "Open Audio…". So after appending,
+    /// the first opened audio track is selected + played (a drop instead only
+    /// auto-plays into an empty queue). Opening ONLY a skin/theme (no audio) starts
+    /// no playback. Multiple URLs are all handled (mixed skin + theme + audio in one
+    /// open event each take effect).
+    func handleOpenedURLs(_ urls: [URL]) {
+        guard let firstAudio = routeAndAppend(urls) else { return }
+        // Select + play the first opened audio track. `core.append` de-duplicates, so
+        // the opened file may already sit at an earlier index — locate it by canonical
+        // URL rather than assuming it landed at the end. `select` bounds-checks and
+        // plays it (a no-op if, improbably, it is not found).
+        if let index = core.playlist.firstIndex(where: {
+            $0.url.standardizedFileURL == firstAudio.standardizedFileURL
+        }) {
+            core.select(index)
+        }
+    }
+
+    /// SHARED routing for both the drag-drop (`handleDroppedURLs`) and OS-open
+    /// (`handleOpenedURLs`) entry points — one source of truth for classifying a set
+    /// of URLs and applying every non-audio side effect, then APPENDING the ordered
+    /// audio. Returns the FIRST audio URL that was appended (playlist tracks, then
+    /// folder audio, then loose audio, in that order) so the open path can start it
+    /// playing; returns `nil` when the set contained no audio (only a skin/theme, or
+    /// nothing openable).
+    ///
+    /// Side effects (see `DropRouter`):
+    ///   - `.wsz` skin(s): apply the FIRST as the classic skin (a re-skin rebuilds
+    ///     the cluster). Applied first so a mixed set ends with the fresh skin
+    ///     showing the opened song.
+    ///   - `.dwtheme`/`.dwskin` theme(s): apply each via the App-owned
+    ///     `AppearanceStore` (through the `onApplyTheme` seam), read inside a
+    ///     security-scoped bracket like every other file read.
+    ///   - `.m3u`/`.m3u8` playlist file(s): EXPANDED into their listed tracks.
+    ///   - folder(s): ENUMERATED (recursive, path-sorted `audioFiles(under:)`).
+    ///   - audio file(s): appended (order preserved).
+    /// The combined audio is APPENDED (non-interrupting); `appendToPlaylist`
+    /// auto-plays only when the queue was empty. `core.append` de-duplicates.
+    @discardableResult
+    private func routeAndAppend(_ urls: [URL]) -> URL? {
         let classification = DropRouter.classify(urls)
-        guard !classification.isEmpty else { return }
+        guard !classification.isEmpty else { return nil }
         // Apply the skin first (a re-skin rebuilds the cluster), then start audio so
-        // a mixed drop ends with the freshly-applied skin showing the dropped song.
+        // a mixed set ends with the freshly-applied skin showing the opened song.
         if let skin = classification.skins.first {
             classicSkin.openDropped(url: skin)
         }
-        // Expand any dropped playlist files into their listed tracks — each read +
-        // parsed inside a security-scoped bracket (like `recordPlaylist`).
+        // Apply any colour theme(s) via the App-owned AppearanceStore seam. A drop /
+        // open of a `.dwtheme` now retints the default face, uniform with the
+        // Appearance popover's "Open Theme…".
+        for theme in classification.themes {
+            applyThemeFile(at: theme)
+        }
+        // Expand any playlist files into their listed tracks — each read + parsed
+        // inside a security-scoped bracket (like `recordPlaylist`).
         var playlistTracks: [URL] = []
         for listURL in classification.playlists {
             playlistTracks.append(contentsOf: expandPlaylist(at: listURL))
         }
-        // Enumerate each dropped FOLDER's audio files via the SAME recursive,
-        // path-sorted scan the "Add Folder…" panel uses (`audioFiles(under:)`), so a
-        // dropped directory contributes its songs exactly like the panel — and does
-        // so whether the queue is empty or not. The drop grants sandbox access to the
-        // folder for this launch, so the walk can read its contents.
+        // Enumerate each FOLDER's audio files via the SAME recursive, path-sorted scan
+        // the "Add Folder…" panel uses (`audioFiles(under:)`), so a folder contributes
+        // its songs exactly like the panel — whether the queue is empty or not. The
+        // grant (drop or LaunchServices open) reaches the folder's contents.
         var folderAudio: [URL] = []
         for folder in classification.folders {
             folderAudio.append(contentsOf: AudioSession.audioFiles(under: folder))
         }
         // Combine the expanded sources into one ordered append list (pure
         // `DropAppendPlanner`): playlist tracks, then folder audio, then loose audio.
-        // A drop ADDS to the queue (append, non-interrupting) rather than replacing
-        // it; only an empty-queue drop auto-plays from the top, and `core.append`
-        // de-duplicates so files already queued are skipped.
         let combined = DropAppendPlanner.appendOrder(
             playlistTracks: playlistTracks,
             folderAudio: folderAudio,
             looseAudio: classification.audio
         )
-        if !combined.isEmpty {
-            // Append + persist; `appendToPlaylist` itself auto-plays from the first
-            // added track ONLY when the queue was empty before the append (the
-            // non-interrupting "a drop/add ADDS" rule), so a drop onto an empty
-            // queue starts playing while a drop onto a live queue just enqueues.
-            appendToPlaylist(urls: combined)
-        }
+        guard let first = combined.first else { return nil }
+        // Append + persist; `appendToPlaylist` auto-plays from the first added track
+        // ONLY when the queue was empty before the append (the non-interrupting "a
+        // drop/add ADDS" rule).
+        appendToPlaylist(urls: combined)
+        return first
+    }
+
+    /// Read a `.dwtheme` / `.dwskin` colour-theme file's TEXT inside its security
+    /// scope (uniform with `expandPlaylist` / the "Open Theme…" panel) and hand
+    /// `(text, filename)` to the App-owned `onApplyTheme` seam, which parses + applies
+    /// it via the `AppearanceStore`. An unreadable file (or an unwired seam) is a
+    /// graceful no-op. The App layer owns the store (DwanimItUI stays AppKit-free), so
+    /// the apply is injected as a closure rather than reached directly here.
+    private func applyThemeFile(at url: URL) {
+        guard let onApplyTheme else { return }
+        guard let text = try? access.withAccess(to: url, perform: {
+            try String(contentsOf: url, encoding: .utf8)
+        }) else { return }
+        onApplyTheme(text, url.lastPathComponent)
     }
 
     // MARK: View menu (Playlist / Equalizer toggles)

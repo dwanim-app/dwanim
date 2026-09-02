@@ -56,8 +56,152 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 
-	<!-- Intentionally NO network usage keys and NO CFBundleDocumentTypes / UTI:
-	     the app makes no network connections, and .wsz is opened only via the
-	     user-selected file panel (it is not a registered document type). -->
+	<!-- Intentionally NO network usage keys: the app makes no network
+	     connections. -->
+
+	<!-- DOCUMENT TYPES — so "dwanim it" appears in Finder's right-click
+	     "Open With" menu for the file kinds it can actually open, and a file
+	     opened that way (or via `open -a`) is routed to the matching action by
+	     the app's open-event handler (AppDelegate.application(_:open:)).
+	     POLITE handler ranks: audio / playlists / .wsz are declared "Alternate"
+	     so we appear in Open With WITHOUT hijacking the system defaults (Music
+	     etc.); only our OWN theme files (.dwtheme / legacy .dwskin) are "Owner"
+	     so double-clicking one opens us. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<!-- AUDIO. System-declared UTIs; the same concrete types the "Open
+		     Audio…" panel accepts (mp3 / m4a-aac / raw-aac / wav / aiff / flac).
+		     Viewer role (we play, never save the file); Alternate rank so Music
+		     stays the default. -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.mp3</string>
+				<string>public.mpeg-4-audio</string>
+				<string>public.aac-audio</string>
+				<string>com.microsoft.waveform-audio</string>
+				<string>public.aiff-audio</string>
+				<string>org.xiph.flac</string>
+			</array>
+		</dict>
+		<!-- PLAYLIST (.m3u / .m3u8). References the imported type declared
+		     below. Viewer role; Alternate rank. -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio Playlist</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.m3u-playlist</string>
+			</array>
+		</dict>
+		<!-- OUR THEME FILES (.dwtheme + legacy .dwskin). References the EXPORTED
+		     type declared below (our own format). Owner rank: double-clicking a
+		     theme opens us. -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>dwanim it Theme</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>tw.com.yuzhitech.dwanimit.theme</string>
+			</array>
+		</dict>
+		<!-- WINAMP SKIN (.wsz). References the imported type declared below (NOT
+		     our format — a zip archive). Viewer role; Alternate rank. -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Winamp Skin</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.nullsoft.winamp.skin</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- EXPORTED type — our OWN colour-theme format. Both extensions map to one
+	     UTI. Conforms to public.text: a `.dwtheme` / `.dwskin` is UTF-8 text
+	     (either JSON or `key: value` lines — see AppearanceParser), so `text`
+	     is the honest supertype (it already conforms to public.data). -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>tw.com.yuzhitech.dwanimit.theme</string>
+			<key>UTTypeDescription</key>
+			<string>dwanim it Theme</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>dwtheme</string>
+					<string>dwskin</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+
+	<!-- IMPORTED types — formats OWNED BY OTHERS that we can open: the m3u
+	     playlist (text) and the Winamp skin (a zip archive). Declared imported
+	     (not exported) because they are not our formats. -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>public.m3u-playlist</string>
+			<key>UTTypeDescription</key>
+			<string>Audio Playlist</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>m3u</string>
+					<string>m3u8</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.nullsoft.winamp.skin</string>
+			<key>UTTypeDescription</key>
+			<string>Winamp Skin</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.pkware.zip-archive</string>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wsz</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
