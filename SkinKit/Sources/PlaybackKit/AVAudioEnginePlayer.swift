@@ -114,8 +114,9 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         // change later via `applyEqualizer`, so the band layout is stable.
         EQConfig.configure(eq)
         // playerNode -> eq -> mainMixerNode. `format: nil` lets each connection
-        // adopt the upstream format; `reconnect(using:)` re-wires the whole
-        // chain with the loaded file's format on every `load`.
+        // adopt the upstream format; `rewireIfFormatChanged(to:)` re-wires the
+        // whole chain with the loaded file's format whenever a `load` brings a
+        // different sample rate or channel count.
         engine.connect(playerNode, to: eq, format: nil)
         engine.connect(eq, to: engine.mainMixerNode, format: nil)
     }
@@ -139,7 +140,7 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         // and synchronous, so kHz is reported now and kbps reads blank.
 
         resetPositionState()
-        reconnect(using: format)
+        rewireIfFormatChanged(to: format)
     }
 
     // MARK: - Transport
@@ -303,6 +304,15 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         PlaybackMath.duration(frames: totalFrames, sampleRate: sampleRate)
     }
 
+    /// TEST-ONLY visibility (internal, reached via `@testable import`): whether
+    /// the underlying `AVAudioEngine` is running. The format-change tests must
+    /// assert that a SAME-format `load` never stops the engine (no gap between
+    /// same-format tracks) while a format-CHANGE `load` may — `isPlaying` alone
+    /// cannot distinguish those because `load` always stops the player node.
+    /// Exposing this one read keeps the `engine` itself private instead of
+    /// widening the public API or weakening production encapsulation.
+    var isEngineRunningForTesting: Bool { engine.isRunning }
+
     public var isPlaying: Bool {
         // The player node can report `isPlaying == true` even when the engine
         // never actually started rendering (e.g. a no-output-device/route
@@ -326,7 +336,8 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
     /// already filtered out there, but the clamp keeps a stray value in range).
     ///
     /// Applied on `playerNode` (the source) rather than the mixer so it is
-    /// independent of the EQ/tap chain and survives a `reconnect(using:)` — the
+    /// independent of the EQ/tap chain and survives a format-change re-wire
+    /// (`rewireIfFormatChanged(to:)`) — the
     /// node identity is stable across track-change re-wires, so the pan persists
     /// (and `PlayerCore.playCurrent` re-applies it on each load as a belt-and-
     /// suspenders against any node reset).
@@ -428,15 +439,60 @@ public final class AVAudioEnginePlayer: AudioPlaybackEngine, @unchecked Sendable
         }
     }
 
-    private func reconnect(using format: AVAudioFormat) {
-        // Re-wire the WHOLE chain (playerNode -> eq -> mainMixer) with the
-        // loaded file's format. Disconnecting only the player output and
-        // reconnecting straight to the mixer would silently drop the EQ node
-        // from the graph, so both hops are re-made through `eq`.
+    /// The format the `playerNode -> eq -> mainMixer` chain is currently wired
+    /// with, or `nil` before the first load (the `init` connections use
+    /// `format: nil` and are always replaced by the first real wire-up).
+    /// Compared by sample rate + channel count — the two axes an `AVAudioFile`
+    /// `processingFormat` can actually vary on (it is always deinterleaved
+    /// float32) and exactly the mismatch that made the old always-rewire crash.
+    private var wiredFormat: AVAudioFormat?
+
+    /// Re-wires the whole chain (`playerNode -> eq -> mainMixer`) with the
+    /// loaded file's format — but ONLY when the format actually changed.
+    ///
+    /// ## Why the running-engine guard (crash -10868, do not regress)
+    /// Re-wiring while the engine is RUNNING made AVFoundation throw an
+    /// uncatchable ObjC exception — kAudioUnitErr_FormatNotSupported (-10868)
+    /// from `AVAudioEngineGraph::UpdateGraphAfterReconfig` — whenever the new
+    /// track's format differed from the wired one (e.g. a 44.1 kHz stereo MP3
+    /// dropped into a queue of 48 kHz mono files). In the app, AppKit swallowed
+    /// the exception mid-event, leaving a half-disconnected graph: "playing"
+    /// with a frozen 0:00 clock and silence. So on a format CHANGE the engine
+    /// is stopped first (the player node is already stopped by
+    /// `resetPositionState`), then both hops are re-made, matching the
+    /// verified-safe sequence: stop node -> stop engine -> rewire -> restart.
+    ///
+    /// The RESTART is deliberately left to `startEngineIfNeeded()` in `play()`
+    /// (and in `seek(to:)`'s resume path), not done here: the only production
+    /// caller (`PlayerCore.playCurrent`) always calls `load` then `play`
+    /// back-to-back, `pause -> load(other format) -> play` reaches the same
+    /// `startEngineIfNeeded()`, and a plain `load` with no intent to play
+    /// should not spin up the render hardware at all.
+    ///
+    /// A SAME-format load skips the re-wire entirely and never touches the
+    /// running engine, so consecutive same-format tracks keep today's gapless
+    /// behaviour. Skipping is safe because the chain is already wired for this
+    /// exact format, the node identities are stable, and the EQ state /
+    /// volume / pan are re-pushed by `PlayerCore` on every load anyway.
+    ///
+    /// Disconnecting only the player output and reconnecting straight to the
+    /// mixer would silently drop the EQ node from the graph, so both hops are
+    /// re-made through `eq` (GRAPH-ORDER PIN: playerNode -> eq -> mainMixer,
+    /// tap on the mixer input = post-EQ; see `AudioEqualizing`).
+    private func rewireIfFormatChanged(to format: AVAudioFormat) {
+        if let wired = wiredFormat,
+           wired.sampleRate == format.sampleRate,
+           wired.channelCount == format.channelCount {
+            return
+        }
+        if engine.isRunning {
+            engine.stop()
+        }
         engine.disconnectNodeOutput(playerNode)
         engine.disconnectNodeOutput(eq)
         engine.connect(playerNode, to: eq, format: format)
         engine.connect(eq, to: engine.mainMixerNode, format: format)
+        wiredFormat = format
     }
 
     private func resetPositionState() {
