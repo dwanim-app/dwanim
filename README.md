@@ -25,7 +25,7 @@ choose to load your own `.wsz` file.
 ### Features
 
 - Native macOS app (macOS 14+), universal binary, no third-party dependencies.
-- Local audio playback: MP3, AAC, ALAC, FLAC, WAV, AIFF (via AVFoundation).
+- Local audio playback: MP3, AAC (`.m4a`/`.aac`), ALAC, FLAC (native `.flac` only — Ogg-wrapped FLAC does not play), WAV, AIFF, CAF (via AVFoundation).
 - Transport controls: play, pause, stop, seek, previous / next, volume, balance,
   shuffle and repeat.
 - A playlist with add / remove / reorder / sort, drag and drop, and `.m3u`
@@ -34,7 +34,7 @@ choose to load your own `.wsz` file.
 - Spectrum visualizer.
 - Two faces for the player: the built-in default view, and classic `.wsz` skins
   loaded from your own files (file picker + drag and drop).
-- Colour themes for the default view — several built in, plus loadable
+- Colour themes for the default view — three built in, plus loadable
   `.dwtheme` / `.json` theme files.
 - Runs in the macOS App Sandbox with no network access at all.
 
