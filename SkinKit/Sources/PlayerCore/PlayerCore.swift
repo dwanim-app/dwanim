@@ -281,7 +281,50 @@ public final class PlayerCore {
         }
     }
 
-    // MARK: - Playlist reorder (sort / reverse / randomize)
+    // MARK: - Playlist reorder (move / sort / reverse / randomize)
+
+    /// Move the rows at `offsets` so they land, in their existing relative
+    /// order, immediately before the row that sat at `destination` in the
+    /// ORIGINAL list — the `Array.move(fromOffsets:toOffset:)` convention, which
+    /// is exactly what SwiftUI's `onMove` hands a `List` (so the default face's
+    /// drag-to-reorder forwards its arguments untouched). `destination` may be
+    /// `playlist.count` to move to the very end.
+    ///
+    /// The EDIT RULE holds: the selection FOLLOWS THE PLAYING TRACK — drag the
+    /// playing row and the now-playing marker moves with it; drag other rows
+    /// across it and `currentIndex` is remapped so it still names the same
+    /// track. The engine is never touched (no reload, no stop), so the audio
+    /// never skips, and next / previous afterwards walk the NEW order.
+    ///
+    /// Guarded no-ops: an empty or fully out-of-range `offsets` (out-of-range
+    /// members of a partly valid set are dropped, like `remove(at:)`), a
+    /// `destination` outside `0...playlist.count`, and a move whose result is
+    /// the same order (the block would land where it already is) — the latter
+    /// returns before mutating `playlist`, so observers see no change at all.
+    public func move(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        let valid = offsets.intersection(IndexSet(playlist.indices))
+        guard !valid.isEmpty, (0...playlist.count).contains(destination) else { return }
+
+        let permutation = Self.movePermutation(count: playlist.count, lifting: valid, before: destination)
+        guard permutation != Array(playlist.indices) else { return }
+
+        applyReorder(permutation)
+    }
+
+    /// The permutation (new position -> old index) that lifts `lifted` out of
+    /// `0..<count`, keeps their relative order, and re-inserts them before the
+    /// element that sat at `destination` — `MutableCollection.move(fromOffsets:
+    /// toOffset:)`'s exact semantics, re-derived here because that method ships
+    /// in the SwiftUI overlay, which this Foundation-only tier cannot import.
+    /// The insertion point in the staying rows is `destination` minus the lifted
+    /// rows that sat before it (they no longer occupy those slots).
+    nonisolated private static func movePermutation(
+        count: Int, lifting lifted: IndexSet, before destination: Int
+    ) -> [Int] {
+        let staying = (0..<count).filter { !lifted.contains($0) }
+        let insertion = destination - lifted.count(in: 0..<destination)
+        return Array(staying[..<insertion]) + Array(lifted) + Array(staying[insertion...])
+    }
 
     /// Sort the playlist by display title (case-insensitive; a track with no
     /// title sorts by its filename, matching what the list draws). The selection

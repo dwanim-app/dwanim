@@ -15,6 +15,8 @@ import SwiftUI
 /// - double-click plays (the `contextMenu(…, primaryAction:)` hook — a `TapGesture`
 ///   would swallow the selection click, so double-click lives on the container);
 /// - Delete removes the selection, Return plays the first selected row;
+/// - drag a row (or the multi-selection) to a new position to reorder (`onMove` →
+///   `PlayerCore.move`; the now-playing marker and the selection follow the tracks);
 /// - a right-click context menu: **Play / Remove / Select All / Select None** plus
 ///   the queue-management actions that used to live in the gear menu —
 ///   **Sort by Title / Sort by Filename / Reverse / Randomize / Clear Queue**.
@@ -115,6 +117,20 @@ struct CadencePlaylist: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(rowBackground(index: index))
             }
+            // Drag-to-reorder. On macOS a `List` supports row drag-and-drop through
+            // `onMove` alone (no EditMode); dragging a row that is part of the
+            // selection drags the whole selection. The `(IndexSet, Int)` pair is
+            // SwiftUI's `Array.move(fromOffsets:toOffset:)` convention, which
+            // `PlayerCore.move` mirrors exactly — so it is forwarded untouched and the
+            // core keeps `currentIndex` on the SAME playing track (the now-playing
+            // marker follows the dragged row; nothing restarts). The selection follows
+            // via the URL-keyed `onChange` below. Re-persisted like every other edit.
+            // This is the List's INTERNAL drag type only: an EXTERNAL file drag never
+            // matches it, so it still reaches the container's `.dropDestination`.
+            .onMove { offsets, destination in
+                core.move(fromOffsets: offsets, toOffset: destination)
+                onPlaylistEdited?()
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -199,14 +215,21 @@ struct CadencePlaylist: View {
             core.select(first)
             return .handled
         }
-        // Clear the selection on STRUCTURAL changes only (add / remove / reorder),
-        // keyed on the track URLs rather than the whole `playlist` value: an async
+        // Carry the index-based selection across STRUCTURAL changes only, keyed on
+        // the track URLs rather than the whole `playlist` value: an async
         // `setDuration` write-back mutates `playlist` in place to fill the Time
         // column, and keying on the full value would wipe the user's selection every
         // time a duration lands while a queue of files resolves. The URL list changes
         // on add/remove/reorder (when the index-based selection genuinely goes stale)
-        // but not on a duration fill-in, so the selection now survives the resolve.
-        .onChange(of: core.playlist.map(\.url)) { selection.removeAll() }
+        // but not on a duration fill-in, so the selection survives the resolve.
+        // On a pure REORDER (drag-to-reorder, Sort, Reverse, Randomize) the pure
+        // `PlaylistSelection` seam remaps each selected row to its track's new index,
+        // so the highlight follows the dragged rows; on add / remove it clears, as
+        // before. The `List` itself keeps its selection by row position (the row ids
+        // are offsets), which is exactly why the remap lives here, not in `onMove`.
+        .onChange(of: core.playlist.map(\.url)) { old, new in
+            selection = PlaylistSelection.following(selection, from: old, to: new)
+        }
         .frame(height: listHeight)
     }
 

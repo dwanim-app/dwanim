@@ -53,6 +53,24 @@ final class PersistedBookmarksTests: XCTestCase {
         XCTAssertEqual(store.playlist, ordered, "order is meaningful and preserved")
     }
 
+    /// A drag-to-reorder re-persists the WHOLE live queue (the same
+    /// `persistCurrentPlaylist` path an add / remove / sort takes), so the store
+    /// must REPLACE its order — never merge with or append to the old one — and
+    /// the moved order must survive the encode → decode the next launch does.
+    func testRePersistingAMovedOrderReplacesTheStoredOrder() throws {
+        var store = PersistedBookmarks()
+        store.setPlaylist([bytes("a"), bytes("b"), bytes("c")])
+
+        store.setPlaylist([bytes("c"), bytes("a"), bytes("b")]) // "c" dragged to the top
+
+        XCTAssertEqual(store.playlist, [bytes("c"), bytes("a"), bytes("b")])
+        let decoded = try JSONDecoder().decode(
+            PersistedBookmarks.self, from: JSONEncoder().encode(store)
+        )
+        XCTAssertEqual(decoded.playlist, [bytes("c"), bytes("a"), bytes("b")],
+                       "the moved order is what the next launch reopens")
+    }
+
     func testClearPlaylistLeavesRoles() {
         var store = PersistedBookmarks()
         store.setBookmark(bytes("skin"), for: .lastSkin)
