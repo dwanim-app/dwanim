@@ -123,6 +123,9 @@ struct DwanimItApp: App {
                 // completion is threaded back. Distinct from onOpenAppearanceFile
                 // above, which loads a nine-token COLOUR theme for the default face.
                 onOpenSkin: { session.presentOpenSkinPanel() },
+                // F7: the empty state's "Play Sample" appends the bundled sample and
+                // plays it. Nil (button hidden) when the resource does not ship.
+                onPlaySample: session.canPlaySample ? { session.playSample() } : nil,
                 // fix-5 dynamic size: the scene measures its panel's intrinsic SIZE
                 // (pure SwiftUI) and reports it here whenever it changes (first
                 // layout + EQ/queue expand/collapse). The session resizes the

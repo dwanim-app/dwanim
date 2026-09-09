@@ -19,7 +19,7 @@ import PlayerCore
 // load() never throws: a missing key (first launch) or corrupt bytes (older /
 // truncated payload) both yield an empty `PersistedBookmarks`, so the app
 // always boots into a clean, usable state and simply re-records on next open.
-final class BookmarkStore {
+final class BookmarkStore: PersistedQueueProbe {
 
     /// The stable UserDefaults key the encoded `PersistedBookmarks` JSON lives
     /// under. Namespaced to this concern so it cannot collide with any future
@@ -33,6 +33,16 @@ final class BookmarkStore {
     ///   suite, though no package tests touch this app-layer type.
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+    }
+
+    // MARK: First-launch probe
+
+    /// Whether a persisted queue has EVER been written under this key — the
+    /// "not a first launch" input `FirstLaunchSampleSeeder` reads (through
+    /// `PersistedQueueProbe`). Distinct from "the decoded playlist is empty": a
+    /// user who cleared their queue still has a key.
+    var hasPersistedQueue: Bool {
+        defaults.object(forKey: BookmarkStore.defaultsKey) != nil
     }
 
     // MARK: Load

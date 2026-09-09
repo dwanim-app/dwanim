@@ -80,19 +80,25 @@ public struct EQState: Equatable, Sendable {
     // MARK: - Clamping setters
 
     /// Sets the preamp gain, clamped to `gainRange`. A non-finite value is
-    /// ignored (no-op), matching the engine's undefined-input policy.
-    public mutating func setPreamp(_ dB: Double) {
-        guard dB.isFinite else { return }
+    /// ignored (no-op), matching the engine's undefined-input policy. Returns
+    /// whether the value was ACCEPTED, so a caller can tell a real adjustment
+    /// from a rejected one (`PlayerCore` enables the EQ only on the former).
+    @discardableResult
+    public mutating func setPreamp(_ dB: Double) -> Bool {
+        guard dB.isFinite else { return false }
         preamp = EQState.clamp(dB)
+        return true
     }
 
     /// Sets band `index`'s gain in dB, clamped to `gainRange`. An out-of-range
     /// index or a non-finite value is a guarded no-op, so the fixed-size `bands`
-    /// array can never be corrupted.
-    public mutating func setBand(_ index: Int, dB: Double) {
-        guard bands.indices.contains(index) else { return }
-        guard dB.isFinite else { return }
+    /// array can never be corrupted. Returns whether the value was accepted.
+    @discardableResult
+    public mutating func setBand(_ index: Int, dB: Double) -> Bool {
+        guard bands.indices.contains(index) else { return false }
+        guard dB.isFinite else { return false }
         bands[index] = EQState.clamp(dB)
+        return true
     }
 
     // MARK: - Helpers

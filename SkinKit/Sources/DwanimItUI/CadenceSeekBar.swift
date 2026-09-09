@@ -21,6 +21,17 @@ struct CadenceSeekBar: View {
     let duration: TimeInterval
     /// Called on click / drag-end with the absolute seek time in seconds.
     let onSeek: (TimeInterval) -> Void
+    /// F4 — whether ANY track is loaded. With nothing loaded the time readouts show
+    /// dashes rather than a fake `0:00` / `−0:00` clock (see `timeLabel`).
+    var hasTrack: Bool = true
+
+    /// The text a seek readout shows: the formatted clock while a track is loaded,
+    /// a dash when nothing is. Pure, so the empty-queue readout is unit-tested
+    /// without rendering. `remaining` adds the leading `−` to the clock form only.
+    static func timeLabel(_ seconds: TimeInterval, hasTrack: Bool, remaining: Bool = false) -> String {
+        guard hasTrack else { return "—" }
+        return (remaining ? "−" : "") + CadenceTime.format(seconds)
+    }
 
     @State private var isScrubbing = false
     @State private var scrubFraction: Double = 0
@@ -49,7 +60,7 @@ struct CadenceSeekBar: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Text(CadenceTime.format(shownElapsed))
+            Text(Self.timeLabel(shownElapsed, hasTrack: hasTrack))
                 .font(.system(size: 10))
                 .monospacedDigit()
                 .foregroundStyle(AppearanceTheme.secondary)
@@ -57,7 +68,7 @@ struct CadenceSeekBar: View {
 
             track
 
-            Text("−" + CadenceTime.format(remaining))
+            Text(Self.timeLabel(remaining, hasTrack: hasTrack, remaining: true))
                 .font(.system(size: 10))
                 .monospacedDigit()
                 .foregroundStyle(AppearanceTheme.secondary)

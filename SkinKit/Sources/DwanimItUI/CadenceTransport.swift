@@ -45,7 +45,7 @@ import SwiftUI
 ///   drawer's On checkbox: both read/drive the same `core.equalizer.enabled`. The
 ///   drawer is always visible (no collapse), so this button only enables/disables.
 /// - ◀◀ / ▶▶ → `core.previous()` / `core.next()`, and they are DISABLED (dimmed to
-///   0.5, the same treatment the EQ drawer uses for its inert controls) exactly when
+///   `TransportIconButton.disabledOpacity`) exactly when
 ///   `core.canGoPrevious` / `core.canGoNext` say the press could not act — an empty
 ///   queue for both, plus the end of the queue for ▶▶ while repeat is off and the
 ///   queue is not shuffled. The condition is READ from the model, never re-derived
@@ -58,12 +58,16 @@ import SwiftUI
 /// - play-pause → `core.togglePlayPause()`.
 /// - ■ (stop) → pause + seek to 0 (`PlayerCore.stop()` is private; this reproduces
 ///   its user-visible effect: playback halts and the position resets). ■ — not ▶▶ —
-///   is how a listener stops at the end of the queue.
+///   is how a listener stops at the end of the queue. DISABLED (the same dim as the
+///   skips) while `core.currentTrack` is nil: with nothing loaded there is nothing
+///   to halt, and a full-strength button that changes nothing is a dead control.
 /// - volume → `core.volume` / `core.setVolume(_:)`.
 struct CadenceTransport: View {
 
     @Bindable var core: PlayerCore
     let theme: AppearanceTheme
+    /// Test-support geometry probe (see `CadenceControlProbe`); `nil` in production.
+    var probe: CadenceControlProbe? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -82,13 +86,20 @@ struct CadenceTransport: View {
                 ) {
                     core.previous()
                 }
+                .cadenceControl(.previous, probe: probe)
                 PlayButton(isPlaying: core.isPlaying) {
                     core.togglePlayPause()
                 }
-                TransportIconButton(systemName: "stop.fill", label: "Stop") {
+                .cadenceControl(.playPause, probe: probe)
+                TransportIconButton(
+                    systemName: "stop.fill",
+                    label: "Stop",
+                    isEnabled: core.currentTrack != nil
+                ) {
                     core.pause()
                     core.seek(to: 0)
                 }
+                .cadenceControl(.stop, probe: probe)
                 TransportIconButton(
                     systemName: "forward.fill",
                     label: "Next track",
@@ -96,6 +107,7 @@ struct CadenceTransport: View {
                 ) {
                     core.next()
                 }
+                .cadenceControl(.next, probe: probe)
             }
             .frame(maxWidth: .infinity)
 
@@ -469,11 +481,12 @@ struct TransportToggle: View {
 /// on hover.
 ///
 /// ## The disabled state
-/// A skip button whose press could not act is dimmed to 0.5 and `.disabled`, the
-/// same pairing the EQ drawer uses for its inert presets/sliders — so "this control
-/// cannot do anything right now" looks the same everywhere in the face. The dim is
-/// applied ONCE, to the whole button, rather than by darkening the glyph colour, so
-/// the glyph and its (empty) background stay in proportion.
+/// A skip button whose press could not act is dimmed to 0.3 and `.disabled`. It
+/// used to be 0.5, which App Review read as STYLING rather than "disabled" on a
+/// fresh install (F6) — at 0.3 the glyph is unmistakably a ghost of its live self
+/// while still legible enough to say what it would do. The dim is applied ONCE, to
+/// the whole button, rather than by darkening the glyph colour, so the glyph and
+/// its (empty) background stay in proportion, and the ENABLED look is untouched.
 ///
 /// A disabled button also drops its live affordances: the hover brighten and hover
 /// fill are gated on `isEnabled`, and `.disabled` stops `CadencePressStyle`'s press
@@ -493,10 +506,11 @@ struct TransportIconButton: View {
 
     @State private var hovering = false
 
-    /// The dimming applied to a button that cannot act — the same 0.5 the EQ
-    /// drawer uses for its inert controls, named once so the view and the test
-    /// that measures the rendered pixels agree on the number.
-    static let disabledOpacity: Double = 0.5
+    /// The dimming applied to a button that cannot act, named once so the view
+    /// and the tests that measure the rendered pixels agree on the number. 0.3:
+    /// low enough to read as disabled at a glance (0.5 read as styling), high
+    /// enough that the glyph still says what the button would do.
+    static let disabledOpacity: Double = 0.3
 
     /// Hover styling applies only while the button can actually act. A pure
     /// function of the two inputs so the GATE itself is unit-testable: real

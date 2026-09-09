@@ -59,6 +59,13 @@ final class AudioSession {
     private let store: BookmarkStore
     private let resolver: BookmarkResolver
 
+    /// F7 — the bundled sample track, or `nil` when the resource does not ship
+    /// (then nothing is seeded and the empty state hides Play Sample).
+    private let sampleTrack: BundledTrack?
+    /// F7 — the persisted "sample already seeded" flag `FirstLaunchSampleSeeder`
+    /// reads and sets.
+    private let seedStore: SampleSeedStore
+
     /// The optional classic `.wsz` skin window coordinator. It drives the SAME
     /// shared `core` (and the same engine tap/format sources + bookmark seams), so
     /// the classic main window — when opened via "Open Skin…" — is just a second
@@ -160,6 +167,8 @@ final class AudioSession {
         self.access = access
         self.store = store
         self.resolver = resolver
+        self.sampleTrack = BundledSampleTrack.locate()
+        self.seedStore = SampleSeedStore()
         self.analyzer = SpectrumAnalyzer(barCount: AudioSession.barCount)
 
         // The classic-skin coordinator shares this session's transport + engine
@@ -224,6 +233,13 @@ final class AudioSession {
         // `onFileDrop`.
         classicSkin.onEject = { [weak self] in
             self?.presentOpenPanel()
+        }
+
+        // F2 — Play on an EMPTY queue is not a dead button: the core asks, and the
+        // app answers with the add-files panel (the same flow the queue's footer,
+        // its context menu, and the empty-state call to action use).
+        core.onPlayWithEmptyQueue = { [weak self] in
+            self?.presentAddFilesPanel()
         }
 
         // PLAYLIST BOTTOM BAR: the classic playlist window's ADD / LIST OPTS
@@ -763,31 +779,10 @@ final class AudioSession {
     /// playlist (it still plays THIS launch via the session scope); a file with no
     /// bookmark just won't reopen on the next launch.
     private func recordPlaylist(_ urls: [URL]) {
-        var current = store.load()
-        var playlistData: [Data] = []
-        for url in urls {
-            // Belt-and-suspenders bracket: the panel already grants access, but
-            // bracketing the mint keeps the contract uniform with the resolve path.
-            if let data = try? access.withAccess(to: url, perform: {
-                try access.bookmarkData(for: url)
-            }) {
-                playlistData.append(data)
-            }
-        }
-        current.setPlaylist(playlistData)
-        // Keep the single-slot `.lastAudio` coherent with the playlist head.
-        if let first = urls.first {
-            current = (try? access.withAccess(to: first) {
-                try resolver.record(url: first, as: .lastAudio, in: current)
-            }) ?? current
-        } else {
-            // Queue emptied (Clear Queue / Remove All): drop the single
-            // `.lastAudio` slot too, so a cleared queue does NOT resurrect the
-            // last track on the next launch — with an empty playlist it would
-            // otherwise be the launch-resolve fallback.
-            current.clearBookmark(for: .lastAudio)
-        }
-        store.save(current)
+        // The marker-vs-bookmark and `.lastAudio` rules are resolver policy
+        // (`BookmarkResolver.recordPlaylist`, pinned under `swift test`); this is
+        // only the I/O around it.
+        store.save(resolver.recordPlaylist(urls, in: store.load(), bundledTrack: sampleTrack))
     }
 
     // MARK: Append (the playlist window's ADD menu + mini eject)
@@ -879,6 +874,29 @@ final class AudioSession {
         // Start playback ONLY when the queue was empty before this append, from the
         // first added track — the same non-interrupting rule the drop path used.
         if wasEmpty { core.play() }
+    }
+
+    // MARK: The bundled sample (F7)
+
+    /// Whether the app can offer the sample at all (the resource ships). The
+    /// scene hides its Play Sample button when this is `false`.
+    var canPlaySample: Bool { sampleTrack != nil }
+
+    /// The empty state's "Play Sample": append the bundled sample track (through
+    /// the same persisted, de-duplicated append every add path uses — so it
+    /// survives relaunch via its marker) and play it. If it is already queued,
+    /// just play that row.
+    func playSample() {
+        guard let sampleTrack else { return }
+        if let index = core.playlist.firstIndex(where: { sampleTrack.matches($0.url) }) {
+            core.select(index)
+            return
+        }
+        appendToPlaylist(urls: [sampleTrack.url])
+        if !core.isPlaying,
+           let index = core.playlist.firstIndex(where: { sampleTrack.matches($0.url) }) {
+            core.select(index)
+        }
     }
 
     /// Re-persist the LIVE queue's bookmarks — after an append here or any edit
@@ -1031,10 +1049,32 @@ final class AudioSession {
     /// `.lastAudio` slot. Either way the store is persisted when the resolver
     /// refreshed (stale re-mint) or dropped (failed resolve) anything.
     private func resolveLastAudioOnLaunch() {
+        // F7 — the seeder reads the first-launch signal NOW, before the restore
+        // below can write the key; the decision itself (exactly once, never for a
+        // user who has or had a queue, only when the resource ships, loaded READY
+        // not playing) is `FirstLaunchSampleSeeder`, pinned under `swift test`.
+        let seeder = FirstLaunchSampleSeeder(queueStore: store, seedFlag: seedStore, sample: sampleTrack)
+        restorePersistedQueue()
+
+        if let seeded = seeder.seedIfNeeded(into: core, track: trackForURL) {
+            // The bundle needs no security scope; just fill the duration and
+            // persist the row (as its marker) so it survives relaunch.
+            loadDurations(for: [seeded])
+            persistCurrentPlaylist()
+        }
+    }
+
+    /// Reopen the last session's queue (ready/paused), preferring the ordered
+    /// playlist and falling back to the single `.lastAudio` slot — see
+    /// `resolveLastAudioOnLaunch` for the policy.
+    private func restorePersistedQueue() {
         let loaded = store.load()
 
-        // Prefer the playlist.
-        let playlist = resolver.resolvePlaylist(in: loaded)
+        // Prefer the playlist. A `BundledTrackMarker` entry (the sample) resolves
+        // through the bundle, not through a bookmark.
+        let playlist = resolver.resolvePlaylist(in: loaded) { [sampleTrack] name in
+            sampleTrack?.resolve(resourceName: name)
+        }
         if !playlist.urls.isEmpty {
             if playlist.store != loaded {
                 store.save(playlist.store)

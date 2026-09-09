@@ -101,6 +101,14 @@ public final class PlayerCore {
     /// subsequent `play()` resumes rather than restarting from 0.
     @ObservationIgnored private var loadedIndex: Int?
 
+    /// F2 — what a `play()` on an EMPTY queue asks the owner to do. A fresh
+    /// install has nothing loaded, and a Play press that silently returns reads as
+    /// a dead button (App Review, 2.1(a)); the App tier wires this to its add-files
+    /// panel so the press produces content instead. Consulted ONLY when the queue
+    /// is empty — with tracks loaded `play()` is exactly what it always was. `nil`
+    /// (the headless / harness default) keeps the old guarded no-op.
+    @ObservationIgnored public var onPlayWithEmptyQueue: (() -> Void)?
+
     // MARK: Silent-finish detection state
     //
     // Three pieces of bookkeeping behind ONE judgement: did the track that just
@@ -555,7 +563,12 @@ public final class PlayerCore {
     ///   behavior). Only a paused current track resumes without reload.
     public func play() {
         guard !playlist.isEmpty, let index = currentIndex,
-              playlist.indices.contains(index) else { return }
+              playlist.indices.contains(index) else {
+            // F2 — an EMPTY queue: not a silent no-op. Ask the owner for content
+            // (the app opens its add-files panel); nothing touches the engine.
+            if playlist.isEmpty { onPlayWithEmptyQueue?() }
+            return
+        }
 
         silentSinceLastCommand.removeAll()
 
@@ -702,15 +715,30 @@ public final class PlayerCore {
 
     /// Set the preamp gain in dB (clamped to `EQState.gainRange`) and mirror the
     /// change to the engine. Non-finite values are ignored (no-op).
+    ///
+    /// F5 — an ACCEPTED adjustment also turns the equalizer ON ("interaction
+    /// enables"): dragging a slider is an intent to hear the result, and a bank
+    /// that only takes effect after a separate checkbox reads as dead (App
+    /// Review, 2.1(a)). The state is assembled and assigned ONCE so the engine
+    /// receives a single, consistent push. A rejected (no-op) adjustment changes
+    /// nothing — including the switch.
     public func setEQPreamp(_ dB: Double) {
-        equalizer.setPreamp(dB)
+        var next = equalizer
+        guard next.setPreamp(dB) else { return }
+        next.enabled = true
+        equalizer = next
     }
 
     /// Set band `index`'s gain in dB (clamped to `EQState.gainRange`) and mirror
     /// the change to the engine. An out-of-range index or a non-finite value is
-    /// a guarded no-op.
+    /// a guarded no-op. An accepted adjustment turns the equalizer ON — see
+    /// `setEQPreamp` for the rule; a preset applied band-by-band through this
+    /// setter therefore enables it too.
     public func setEQBand(_ index: Int, dB: Double) {
-        equalizer.setBand(index, dB: dB)
+        var next = equalizer
+        guard next.setBand(index, dB: dB) else { return }
+        next.enabled = true
+        equalizer = next
     }
 
     /// Replace the whole equalizer state at once (e.g. to apply a preset) and

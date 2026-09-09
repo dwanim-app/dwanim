@@ -20,6 +20,14 @@ import SwiftUI
 /// - `PlayerViewModel` — the live clock (`currentTime` / `duration`) and spectrum
 ///   `levels`, which `PlayerCore` does not publish observably.
 ///
+/// ## The empty queue (App Review 2.1(a), build 6)
+/// With nothing loaded the face must never look like a live player whose buttons
+/// are dead: the hero well becomes the call to action (`CadenceEmptyWell`), the
+/// title reads "Nothing loaded" with dashed clocks, Play opens the add-files flow
+/// (`PlayerCore.onPlayWithEmptyQueue`, wired by the app), the EQ bank stays live,
+/// and the disabled skips are unmistakably dim. `FirstRunAcceptanceTests` clicks
+/// through all of it on the real view.
+///
 /// ## AppKit-free
 /// `DwanimItUI` still imports only SwiftUI + `PlayerCore`. App-layer file panels and
 /// drop routing stay behind closures (`onAddFiles` / `onAddFolder` / `onPlaylistEdited`
@@ -52,6 +60,12 @@ public struct DefaultPlayerView: View {
     /// swaps the whole face. A no-op `{}` in the headless harness. Forwarded to
     /// `CadenceAppearanceButton`.
     private let onOpenSkin: () -> Void
+    /// F7 — the empty-queue call to action's "Play Sample" button: append the
+    /// bundled sample track and play it (`session.playSample()`). `nil` hides the
+    /// button (resource missing, or the headless harness).
+    private let onPlaySample: (() -> Void)?
+    /// Test-support geometry probe (see `CadenceControlProbe`); `nil` in production.
+    private let probe: CadenceControlProbe?
 
     /// The fixed panel width (design: 560 px). A definite width keeps the scene's
     /// fitting size compact so the window hugs the panel (see `DwanimItPlayerScene`).
@@ -71,7 +85,34 @@ public struct DefaultPlayerView: View {
         onPlaylistEdited: (() -> Void)? = nil,
         onAddURLs: (([URL]) -> Void)? = nil,
         onOpenAppearanceFile: OpenAppearanceFileAction? = nil,
-        onOpenSkin: @escaping () -> Void = {}
+        onOpenSkin: @escaping () -> Void = {},
+        onPlaySample: (() -> Void)? = nil
+    ) {
+        self.init(
+            core: core, model: model, appearance: appearance,
+            onAddFiles: onAddFiles, onAddFolder: onAddFolder,
+            onPlaylistEdited: onPlaylistEdited, onAddURLs: onAddURLs,
+            onOpenAppearanceFile: onOpenAppearanceFile, onOpenSkin: onOpenSkin,
+            onPlaySample: onPlaySample, probe: nil
+        )
+    }
+
+    /// The test-support initializer: identical to the public one plus a
+    /// `CadenceControlProbe` that receives every opted-in control's laid-out frame,
+    /// so an in-process click harness can drive the REAL face. Internal, reached via
+    /// `@testable import` only.
+    init(
+        core: PlayerCore,
+        model: PlayerViewModel,
+        appearance: AppearanceStore,
+        onAddFiles: (() -> Void)? = nil,
+        onAddFolder: (() -> Void)? = nil,
+        onPlaylistEdited: (() -> Void)? = nil,
+        onAddURLs: (([URL]) -> Void)? = nil,
+        onOpenAppearanceFile: OpenAppearanceFileAction? = nil,
+        onOpenSkin: @escaping () -> Void = {},
+        onPlaySample: (() -> Void)? = nil,
+        probe: CadenceControlProbe?
     ) {
         self._core = Bindable(core)
         self._model = Bindable(model)
@@ -82,6 +123,8 @@ public struct DefaultPlayerView: View {
         self.onAddURLs = onAddURLs
         self.onOpenAppearanceFile = onOpenAppearanceFile
         self.onOpenSkin = onOpenSkin
+        self.onPlaySample = onPlaySample
+        self.probe = probe
     }
 
     private var theme: AppearanceTheme { appearance.current }
@@ -103,7 +146,7 @@ public struct DefaultPlayerView: View {
             // EQ section is ALWAYS visible (no collapse). When EQ is off it greys
             // out in place (see CadenceEQDrawer); the transport EQ button and the
             // drawer's On checkbox both toggle `core.equalizer.enabled`.
-            CadenceEQDrawer(core: core, theme: theme)
+            CadenceEQDrawer(core: core, theme: theme, probe: probe)
         }
         .frame(width: Self.compactWidth)
         .background {
@@ -151,7 +194,23 @@ public struct DefaultPlayerView: View {
 
     private var hero: some View {
         VStack(spacing: Self.heroColumnGap) {
-            CadenceVisualizer(theme: theme, levels: model.levels, playing: core.isPlaying)
+            // F1 / F3 — with an EMPTY queue the hero well IS the call to action:
+            // a headline, one line of guidance, and the Add files… / Add Folder… /
+            // Play Sample buttons. The spectrum well (and its idle drift, which read
+            // as "playing" to App Review) only exists once something is loaded.
+            if core.playlist.isEmpty {
+                CadenceEmptyWell(
+                    theme: theme,
+                    onAddFiles: onAddFiles,
+                    onAddFolder: onAddFolder,
+                    onPlaySample: onPlaySample,
+                    probe: probe
+                )
+                .cadenceControl(.emptyWell, probe: probe)
+            } else {
+                CadenceVisualizer(theme: theme, levels: model.levels, playing: core.isPlaying)
+                    .cadenceControl(.visualizerWell, probe: probe)
+            }
 
             VStack(spacing: Self.heroColumnGap) {
                 nowPlaying
@@ -159,11 +218,12 @@ public struct DefaultPlayerView: View {
                     theme: theme,
                     currentTime: model.currentTime,
                     duration: model.duration,
-                    onSeek: { core.seek(to: $0) }
+                    onSeek: { core.seek(to: $0) },
+                    hasTrack: core.currentTrack != nil
                 )
             }
 
-            CadenceTransport(core: core, theme: theme)
+            CadenceTransport(core: core, theme: theme, probe: probe)
         }
         .padding(.horizontal, 14)
         .padding(.top, 14)
@@ -172,12 +232,13 @@ public struct DefaultPlayerView: View {
 
     private var nowPlaying: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(nowTitle)
+            nowTitle
                 .font(.system(size: 17, weight: .semibold))
                 .tracking(-0.25)
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .cadenceControl(.nowTitle, probe: probe)
             if let artist = nowArtist {
                 Text(artist)
                     .font(.system(size: 12.5))
@@ -194,18 +255,37 @@ public struct DefaultPlayerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The now-playing `(title, artist)` pair, split via the shared `TrackTitle` seam
-    /// (the same split the playlist rows use). The quiet "dwanim it" fallback for an
-    /// empty queue stays HERE at the call site — only the `Artist - Title` split logic
-    /// is shared; `Track` carries no artist field, so the artist is display-only.
-    private var nowParts: (title: String, artist: String?) {
-        guard let raw = core.currentTrack?.title, !raw.isEmpty else { return ("dwanim it", nil) }
-        return TrackTitle.split(raw)
+    /// The now-playing line's two halves. F4 — with nothing loaded the title is the
+    /// LOCALIZED "Nothing loaded" state, never the app's name (which App Review read
+    /// as a playing track); with a track it is the shared `TrackTitle` split (the
+    /// same split the playlist rows use). `Track` carries no artist field, so the
+    /// artist is display-only.
+    private var nowTitle: Text {
+        switch Self.nowPlaying(for: core.currentTrack) {
+        case .nothingLoaded: return Text("Nothing loaded", bundle: .module)
+        case .track(let title, _): return Text(verbatim: title)
+        }
     }
 
-    /// The live now-playing title (the quiet "dwanim it" when nothing is loaded).
-    private var nowTitle: String { nowParts.title }
+    private var nowArtist: String? {
+        if case .track(_, let artist) = Self.nowPlaying(for: core.currentTrack) { return artist }
+        return nil
+    }
 
-    /// The now-playing artist half (nil unless the title follows `Artist - Title`).
-    private var nowArtist: String? { nowParts.artist }
+    /// F4 — what the now-playing line shows for the current track. Pure, so the
+    /// empty-queue state is unit-tested without rendering.
+    enum NowPlaying: Equatable {
+        /// Nothing is loaded: the line shows the localized "Nothing loaded" state,
+        /// never the app's name (which read as a playing track to App Review).
+        case nothingLoaded
+        /// A track, already split into its `Artist - Title` halves.
+        case track(title: String, artist: String?)
+    }
+
+    static func nowPlaying(for track: Track?) -> NowPlaying {
+        guard let raw = track?.title, !raw.isEmpty else { return .nothingLoaded }
+        let parts = TrackTitle.split(raw)
+        return .track(title: parts.title, artist: parts.artist)
+    }
+
 }

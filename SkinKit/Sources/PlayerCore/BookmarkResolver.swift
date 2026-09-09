@@ -101,10 +101,29 @@ public struct BookmarkResolver {
     /// throws, or its stale re-mint throws) is **dropped** without disturbing the
     /// surviving entries' order. The returned store's `playlist` is the surviving
     /// bytes in the same order (refreshed where stale).
-    public func resolvePlaylist(in store: PersistedBookmarks) -> PlaylistResolution {
+    ///
+    /// A `BundledTrackMarker` entry (a bundle-resident row such as the built-in
+    /// sample) is NOT a bookmark: it is resolved through `bundledResource`, which
+    /// maps the marker's resource name to that resource's CURRENT `URL` (the app
+    /// passes `Bundle.main.url(forResource:…)`). A resolvable marker is kept
+    /// byte-identical (there is nothing to re-mint); one whose resource no longer
+    /// ships — or any marker when no lookup is supplied — is dropped exactly like a
+    /// vanished file. Markers never reach `access.resolveBookmark`.
+    public func resolvePlaylist(
+        in store: PersistedBookmarks,
+        bundledResource: (String) -> URL? = { _ in nil }
+    ) -> PlaylistResolution {
         var urls: [URL] = []
         var survivingData: [Data] = []
         for data in store.playlist {
+            if let name = BundledTrackMarker.resourceName(in: data) {
+                // A bundle-resident row: look the resource up, never mint or
+                // resolve a bookmark for it. Missing resource -> dropped.
+                guard let url = bundledResource(name) else { continue }
+                urls.append(url)
+                survivingData.append(data)
+                continue
+            }
             guard let resolved = try? access.resolveBookmark(data) else {
                 continue // drop: failed to resolve, omit from order
             }
@@ -136,6 +155,50 @@ public struct BookmarkResolver {
         let data = try access.bookmarkData(for: url)
         var updated = store
         updated.setBookmark(data, for: role)
+        return updated
+    }
+
+    // MARK: - Record the live queue
+
+    /// Persists the live queue `urls` into `store` as the ordered playlist, and
+    /// keeps the single-slot `.lastAudio` coherent with the queue's head. Pure
+    /// policy over the injected `access` — the app writes the returned store.
+    ///
+    /// - Every user file is minted inside its own access bracket. A per-file mint
+    ///   failure simply drops that file from the persisted playlist (it still plays
+    ///   THIS launch); a file with no bookmark just will not reopen next launch.
+    /// - The bundled track (F7, the sample) is persisted as a `BundledTrackMarker`,
+    ///   never as a bookmark to a path inside the app bundle (which moves with every
+    ///   update and would only ever resolve stale); it is neither minted nor
+    ///   bracketed, and keeps its slot between the user's files.
+    /// - `.lastAudio` is re-pointed at the head via `record(url:as:in:)` (a failed
+    ///   head mint leaves the slot as it was — that method's contract). When the
+    ///   head is the bundled track, or the queue is empty, the slot is CLEARED: the
+    ///   sample is restored through its marker, and a cleared queue must not
+    ///   resurrect the last track as the launch-resolve fallback.
+    public func recordPlaylist(
+        _ urls: [URL], in store: PersistedBookmarks, bundledTrack: BundledTrack? = nil
+    ) -> PersistedBookmarks {
+        var updated = store
+        var playlistData: [Data] = []
+        for url in urls {
+            if let bundledTrack, bundledTrack.matches(url) {
+                playlistData.append(bundledTrack.marker)
+                continue
+            }
+            if let data = try? access.withAccess(to: url, perform: { try access.bookmarkData(for: url) }) {
+                playlistData.append(data)
+            }
+        }
+        updated.setPlaylist(playlistData)
+
+        if let first = urls.first, !(bundledTrack?.matches(first) ?? false) {
+            updated = (try? access.withAccess(to: first) {
+                try record(url: first, as: .lastAudio, in: updated)
+            }) ?? updated
+        } else {
+            updated.clearBookmark(for: .lastAudio)
+        }
         return updated
     }
 

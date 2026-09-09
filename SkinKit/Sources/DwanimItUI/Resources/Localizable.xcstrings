@@ -169,6 +169,54 @@
         }
       }
     },
+    "Add audio files from your Mac to start listening." : {
+      "comment" : "Empty-queue hero guidance line, when no bundled sample is available.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add audio files from your Mac to start listening."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac から音声ファイルを追加して再生を始めましょう。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Mac 加入音訊檔案即可開始聆聽。"
+          }
+        }
+      }
+    },
+    "Add audio files from your Mac, or try the built-in sample." : {
+      "comment" : "Empty-queue hero guidance line, when the bundled sample is available.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add audio files from your Mac, or try the built-in sample."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac から音声ファイルを追加するか、内蔵サンプルを試してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Mac 加入音訊檔案，或試聽內建範例。"
+          }
+        }
+      }
+    },
     "Add files…" : {
       "comment" : "Footer and empty-state action to add audio files.",
       "extractionState" : "manual",
@@ -529,6 +577,54 @@
         }
       }
     },
+    "No music loaded. Add files, add a folder, or play the sample." : {
+      "comment" : "Accessibility label for the empty-queue hero well.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No music loaded. Add files, add a folder, or play the sample."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音楽が読み込まれていません。ファイルを追加、フォルダを追加、またはサンプルを再生してください。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未載入音樂。加入檔案、加入資料夾，或播放範例。"
+          }
+        }
+      }
+    },
+    "No music yet" : {
+      "comment" : "Empty-queue hero headline (default face).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No music yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ音楽がありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "還沒有音樂"
+          }
+        }
+      }
+    },
     "No songs in your library" : {
       "comment" : "Empty-state headline.",
       "extractionState" : "manual",
@@ -549,6 +645,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "資料庫中沒有歌曲"
+          }
+        }
+      }
+    },
+    "Nothing loaded" : {
+      "comment" : "Now-playing title when the queue is empty.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing loaded"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "何も読み込まれていません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未載入"
           }
         }
       }
@@ -669,6 +789,30 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放"
+          }
+        }
+      }
+    },
+    "Play Sample" : {
+      "comment" : "Empty-queue hero button: add the bundled sample track and play it.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play Sample"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サンプルを再生"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放範例"
           }
         }
       }

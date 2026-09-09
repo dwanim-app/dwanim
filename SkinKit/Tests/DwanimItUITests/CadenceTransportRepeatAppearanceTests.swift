@@ -419,7 +419,7 @@ final class CadenceTransportRepeatAppearanceTests: XCTestCase {
     /// MUTANT-KILLER (M12a: `.opacity(isEnabled ? 1 : disabledOpacity)` deleted).
     /// Parked on the last track with repeat off, the rendered `▶▶` really is
     /// dimmer — by the documented factor — while its neighbour `■`, which is
-    /// always live, is untouched. That neighbour is the control: it proves the
+    /// live whenever a track is loaded (as one is here), is untouched. That neighbour is the control: it proves the
     /// change came from the disabled state and not from the whole row being
     /// re-rendered differently.
     func testTheDisabledNextButtonRendersDimmedAndItsLiveNeighbourDoesNot() {
@@ -441,7 +441,7 @@ final class CadenceTransportRepeatAppearanceTests: XCTestCase {
         XCTAssertEqual(nextDim / nextLive, TransportIconButton.disabledOpacity, accuracy: 0.08,
                        "and dimmed by the documented factor")
         XCTAssertEqual(stopDim, stopLive, accuracy: 0.001,
-                       "■ is always live and must render identically in both passes")
+                       "■ is live with a track loaded and must render identically in both passes")
     }
 
     /// The empty queue dims BOTH skips at once — the other disabled case the

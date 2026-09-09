@@ -7,9 +7,13 @@ import SwiftUI
 /// `PlayerCore.equalizer` — the SAME authoritative `EQState` the classic `.wsz` EQ
 /// drives — so dragging here changes the playing audio immediately (once EQ is on).
 ///
-/// This section never collapses/hides. When EQ is OFF the sliders + their labels
-/// grey out in place; the **On** checkbox here and the transport **EQ** button both
-/// read/drive the same `core.equalizer.enabled`, so either turns the section on/off.
+/// This section never collapses/hides, and (F5) it is NEVER a dead block: the
+/// presets and sliders stay fully interactive while EQ is off, and touching any of
+/// them turns the equalizer ON — the rule lives in the model
+/// (`PlayerCore.setEQBand` / `setEQPreamp`), not here. The only OFF cue is the
+/// thumbs' grey `eqThumbOff` fill; nothing is dimmed or `.disabled`. The **On**
+/// checkbox here and the transport **EQ** button both read/drive the same
+/// `core.equalizer.enabled`, so either turns the section on/off explicitly.
 ///
 /// Contents (design §1d):
 /// - a header row ("Equalizer");
@@ -18,7 +22,7 @@ import SwiftUI
 ///   10-band gain array (via `core.setEQBand`, so the sliders visibly move to match)
 ///   AND highlights that tab; dragging any band manually clears the highlight. The
 ///   preset curves live in the pure, unit-tested `EQPreset`. Presets do NOT touch the
-///   preamp and do NOT force EQ on — the dialed-in gains apply audibly once EQ is On;
+///   preamp; applying one turns EQ ON like any other adjustment (model rule);
 /// - a **Pre** preamp slider wired to `core.setEQPreamp`;
 /// - the 10 band sliders wired to `core.setEQBand(_:dB:)`.
 ///
@@ -28,6 +32,8 @@ struct CadenceEQDrawer: View {
 
     @Bindable var core: PlayerCore
     let theme: AppearanceTheme
+    /// Test-support geometry probe (see `CadenceControlProbe`); `nil` in production.
+    var probe: CadenceControlProbe? = nil
 
     /// The highlighted preset, DERIVED from the live `core.equalizer.bands` rather
     /// than stored: a preset is highlighted only while the bands EXACTLY match its
@@ -97,15 +103,13 @@ struct CadenceEQDrawer: View {
             .buttonStyle(CadencePressStyle())
             .accessibilityLabel(Text("Equalizer on", bundle: .module))
             .accessibilityAddTraits(core.equalizer.enabled ? .isSelected : [])
+            .cadenceControl(.eqOn, probe: probe)
 
             Spacer(minLength: 0)
 
-            // While EQ is OFF the presets ADJUST the EQ, so they are inert (matching
-            // the dimmed sliders below) — only the On checkbox above stays live so the
-            // user can turn EQ back on. The 0.5-opacity dim on the whole drawer is the
-            // visual cue; `.disabled` makes the dimmed area genuinely non-interactive.
+            // F5 — the presets stay LIVE while EQ is off: choosing one applies its
+            // curve through `core.setEQBand`, which turns the equalizer on.
             segmentedPresets
-                .disabled(!core.equalizer.enabled)
         }
     }
 
@@ -131,6 +135,7 @@ struct CadenceEQDrawer: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(CadencePressStyle())
+                .cadenceControl(.eqPreset(preset), probe: probe)
             }
         }
         .padding(2)
@@ -156,6 +161,7 @@ struct CadenceEQDrawer: View {
                     showCenterLine: false,
                     trackHeight: Self.trackHeight
                 ) { core.setEQPreamp($0) }
+                .cadenceControl(.eqPreamp, probe: probe)
                 // "Pre" is a fixed-frame preamp abbreviation (data, not prose) — verbatim.
                 Text(verbatim: "Pre")
                     .font(.system(size: 10))
@@ -178,6 +184,7 @@ struct CadenceEQDrawer: View {
                         ) { newGain in
                             core.setEQBand(index, dB: newGain)
                         }
+                        .cadenceControl(.eqBand(index), probe: probe)
                         // Hz band labels (60…16K) are frequency DATA — verbatim.
                         Text(verbatim: Self.bandLabels[index])
                             .font(.system(size: 9.5))
@@ -187,16 +194,9 @@ struct CadenceEQDrawer: View {
                 }
             }
         }
-        // OFF greys the whole slider block in place (thumbs already switch to the
-        // grey `eqThumbOff`; this dims the Pre / band labels with them) — the
-        // section never collapses. The On checkbox above stays at full strength so
-        // it is always an obvious way to turn EQ back on.
-        .opacity(core.equalizer.enabled ? 1 : 0.5)
-        // ...and OFF makes the Pre + band sliders non-interactive too (they ADJUST
-        // the EQ), so the dimmed area is genuinely inert rather than merely greyed.
-        // The On checkbox (in `headerControls`) is deliberately outside this block,
-        // so it stays enabled.
-        .disabled(!core.equalizer.enabled)
+        // F5 — NOT dimmed and NOT disabled while EQ is off. The thumbs' grey
+        // `eqThumbOff` fill is the one subtle OFF cue; every slider stays
+        // full-strength and hit-testable, and the first drag turns EQ on.
     }
 
     private func band(_ index: Int) -> Double {
@@ -204,10 +204,10 @@ struct CadenceEQDrawer: View {
     }
 
     /// Apply `preset`: push every band gain through the SAME `core.setEQBand` call
-    /// the sliders use (so the thumbs visibly move to match the curve and the playing
-    /// audio changes once EQ is on). The tab highlight follows automatically —
-    /// `activePreset` re-derives from the now-matching bands. The preamp is untouched
-    /// and EQ is NOT force-enabled (a preset only dials in gains).
+    /// the sliders use (so the thumbs visibly move to match the curve). The tab
+    /// highlight follows automatically — `activePreset` re-derives from the
+    /// now-matching bands. The preamp is untouched; EQ turns ON through the model's
+    /// interaction rule, exactly as a slider drag does.
     private func apply(_ preset: EQPreset) {
         let gains = preset.bands
         for index in 0..<EQState.bandCount where index < gains.count {

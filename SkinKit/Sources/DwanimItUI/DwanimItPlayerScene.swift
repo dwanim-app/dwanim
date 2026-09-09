@@ -80,6 +80,10 @@ public struct DwanimItPlayerScene: View {
     /// completion is threaded back. Forwarded to `DefaultPlayerView`. Distinct from
     /// `onOpenAppearanceFile` (the nine-token COLOUR theme for the default face).
     private let onOpenSkin: () -> Void
+    /// F7 — the empty state's "Play Sample" action: append the bundled sample track
+    /// and play it. `nil` when the app cannot find the resource (the button is then
+    /// hidden) and in the headless harness. Forwarded to `DefaultPlayerView`.
+    private let onPlaySample: (() -> Void)?
 
     /// The player's theme store, INJECTED by the owner (F16). The App tier creates it
     /// wired to UserDefaults persistence (`restoring:` + `onPersist`) and owns it as
@@ -115,6 +119,7 @@ public struct DwanimItPlayerScene: View {
         onAddURLs: (([URL]) -> Void)? = nil,
         onOpenAppearanceFile: OpenAppearanceFileAction? = nil,
         onOpenSkin: @escaping () -> Void = {},
+        onPlaySample: (() -> Void)? = nil,
         onContentSizeChange: ((CGSize) -> Void)? = nil
     ) {
         self.core = core
@@ -126,6 +131,7 @@ public struct DwanimItPlayerScene: View {
         self.onAddURLs = onAddURLs
         self.onOpenAppearanceFile = onOpenAppearanceFile
         self.onOpenSkin = onOpenSkin
+        self.onPlaySample = onPlaySample
         self.onContentSizeChange = onContentSizeChange
     }
 
@@ -145,7 +151,8 @@ public struct DwanimItPlayerScene: View {
             onPlaylistEdited: onPlaylistEdited,
             onAddURLs: onAddURLs,
             onOpenAppearanceFile: onOpenAppearanceFile,
-            onOpenSkin: onOpenSkin
+            onOpenSkin: onOpenSkin,
+            onPlaySample: onPlaySample
         )
         .fixedSize()
         // Measure the panel's intrinsic size (pure SwiftUI) and report it up so the

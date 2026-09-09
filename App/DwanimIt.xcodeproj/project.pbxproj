@@ -13,6 +13,7 @@
 		317ED84F56BB18A0434754DF /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 21FBF14B0825AC5901F79573 /* InfoPlist.strings */; };
 		3CCDF99FC645AABCA7B03473 /* AudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC4F231F7B7936205B9F05E /* AudioSession.swift */; };
 		4FD451133BB73C0C54203526 /* PlayerControl in Frameworks */ = {isa = PBXBuildFile; productRef = 0EA5EFE4797FE1B1184A1537 /* PlayerControl */; };
+		562D35F17E5FEAE5A8D346C3 /* BundledSampleTrack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73868BA35742EF3C19F09030 /* BundledSampleTrack.swift */; };
 		591796A3DBB1818C861FF71B /* PlaybackKit in Frameworks */ = {isa = PBXBuildFile; productRef = A5C8673990E84EE874839191 /* PlaybackKit */; };
 		5BB067CC42F7CC209CE9D20F /* SecurityScopedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */; };
 		5CEB8EB7F227B2ACE2D1BA27 /* ClassicSkinPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64D97B8B8AE9FE4963213058 /* ClassicSkinPresenter.swift */; };
@@ -23,6 +24,7 @@
 		A7698DD348B8C62FF396BE69 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */; };
 		A9503B389DE331F25FE21084 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6E2DFC4CBC5293B378C88667 /* Localizable.xcstrings */; };
 		BE84E7454A3F38B84D03016B /* SkinRender in Frameworks */ = {isa = PBXBuildFile; productRef = 0159AB74B541644A2F7407C9 /* SkinRender */; };
+		E6014884A1EE6DA09C140125 /* dwanim it - Sample.m4a in Resources */ = {isa = PBXBuildFile; fileRef = FD909A4F0579DAE5144CE384 /* dwanim it - Sample.m4a */; };
 		E779080FEB0423885C63D5F9 /* AppearancePersistenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6B80DD44ACD8F1A8072727D /* AppearancePersistenceStore.swift */; };
 		E7AF16046C18820C0B05821A /* DwanimItUI in Frameworks */ = {isa = PBXBuildFile; productRef = B88EACC74230D16FD3718B43 /* DwanimItUI */; };
 		F14427448890A9535000FA59 /* SkinKitImageIO in Frameworks */ = {isa = PBXBuildFile; productRef = 6E1363065C6BEA8BB2BD5889 /* SkinKitImageIO */; };
@@ -39,12 +41,14 @@
 		617CBA2E0C937FEDCFE4A5EE /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		64D97B8B8AE9FE4963213058 /* ClassicSkinPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassicSkinPresenter.swift; sourceTree = "<group>"; };
 		6E2DFC4CBC5293B378C88667 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		73868BA35742EF3C19F09030 /* BundledSampleTrack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledSampleTrack.swift; sourceTree = "<group>"; };
 		88959338971C569718784169 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
 		8B22EBF96972CBC44217AE60 /* DwanimIt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DwanimIt.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C87EF84C87D1F53083532DB6 /* DwanimItApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwanimItApp.swift; sourceTree = "<group>"; };
 		DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityScopedFileAccess.swift; sourceTree = "<group>"; };
 		F6B80DD44ACD8F1A8072727D /* AppearancePersistenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePersistenceStore.swift; sourceTree = "<group>"; };
 		FAC4F231F7B7936205B9F05E /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
+		FD909A4F0579DAE5144CE384 /* dwanim it - Sample.m4a */ = {isa = PBXFileReference; path = "dwanim it - Sample.m4a"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +75,7 @@
 			isa = PBXGroup;
 			children = (
 				345014DA6B29E81C78724A57 /* Assets.xcassets */,
+				FD909A4F0579DAE5144CE384 /* dwanim it - Sample.m4a */,
 				6E2DFC4CBC5293B378C88667 /* Localizable.xcstrings */,
 				21FBF14B0825AC5901F79573 /* InfoPlist.strings */,
 			);
@@ -128,6 +133,7 @@
 			children = (
 				F6B80DD44ACD8F1A8072727D /* AppearancePersistenceStore.swift */,
 				88959338971C569718784169 /* BookmarkStore.swift */,
+				73868BA35742EF3C19F09030 /* BundledSampleTrack.swift */,
 				4F39C5CC79A1DA4285A38835 /* DropRouter.swift */,
 				DCDDE759BB84080555A45140 /* SecurityScopedFileAccess.swift */,
 			);
@@ -220,6 +226,7 @@
 				174B6C052A3200CA10A62ECC /* Assets.xcassets in Resources */,
 				317ED84F56BB18A0434754DF /* InfoPlist.strings in Resources */,
 				A9503B389DE331F25FE21084 /* Localizable.xcstrings in Resources */,
+				E6014884A1EE6DA09C140125 /* dwanim it - Sample.m4a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -233,6 +240,7 @@
 				E779080FEB0423885C63D5F9 /* AppearancePersistenceStore.swift in Sources */,
 				3CCDF99FC645AABCA7B03473 /* AudioSession.swift in Sources */,
 				0F6E70F57BAE6358FE8871AA /* BookmarkStore.swift in Sources */,
+				562D35F17E5FEAE5A8D346C3 /* BundledSampleTrack.swift in Sources */,
 				5CEB8EB7F227B2ACE2D1BA27 /* ClassicSkinPresenter.swift in Sources */,
 				7FA078E98D9828E5CFFCF9F8 /* DropRouter.swift in Sources */,
 				697ABCBACCE2DA7D7F4E9585 /* DwanimItApp.swift in Sources */,
