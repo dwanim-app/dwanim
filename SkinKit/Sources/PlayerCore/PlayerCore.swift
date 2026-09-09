@@ -12,16 +12,51 @@ import Observation
 /// injected as a strategy closure so tests can force a deterministic order.
 ///
 /// ## Boundary choices (documented)
+/// The rule in one line: **explicit `next`/`previous` wrap whenever repeat is ON
+/// (`.all` or `.one`); only `.off` has ends.**
 /// - `next` past the last track with `.off`: the engine is stopped and
 ///   `isPlaying` becomes `false`; the selection **clamps to the last track**
 ///   (it does not advance off the end or clear), so the listener can replay or
 ///   step back.
 /// - `previous` before the first track with `.off`: the selection **stays at
 ///   the first track** and that track is (re)loaded and played, i.e. "restart".
-/// - With `.all`, both `next` and `previous` wrap around the ends.
-/// - `.one` only matters for `onPlaybackFinished` (replay the same track);
-///   explicit `next`/`previous` always move to a different track so the listener
-///   can still navigate.
+///   That `.off` asymmetry — stop at the end, restart at the front — is
+///   DELIBERATE and matches Music / iTunes / Spotify. Do not "fix" it.
+/// - With `.all` **and** `.one`, both `next` and `previous` wrap around the ends:
+///   `next` on the last track lands on the first, `previous` on the first lands
+///   on the last. Mid-list both simply step to the neighbouring track, so an
+///   explicit skip under `.one` is never a replay in place.
+/// - `.one` differs from `.all` in AUTO-ADVANCE only: when the engine reports the
+///   track finished, `.one` replays the SAME track (see `handlePlaybackFinished`)
+///   while `.all` advances with wrap and `.off` stops at the end. Wrapping is an
+///   explicit-navigation rule; repeating is an end-of-track rule.
+/// - `canGoNext` / `canGoPrevious` publish the SAME policy as a predicate, so a
+///   view can dim a skip button that could not act instead of leaving it looking
+///   live. They are derived from this transport logic, never re-derived in a view.
+///
+/// ## Unplayable files (documented)
+/// A track is unplayable in TWO ways, and both are handled the same:
+/// 1. **It will not open** — `engine.load(_:)` throws.
+/// 2. **It opens but renders nothing** — the load succeeds and the engine then
+///    reports a natural finish before it could possibly have played anything
+///    (`finishLooksLikeSilence`). An Ogg-wrapped FLAC does exactly this on
+///    macOS: it opens, claims 100 s for an 8-second clip, and drains in ~18 ms.
+///    Without this case a "finish" that fast was taken at face value and
+///    auto-advance ran FORWARD, so a `◀◀` onto such a file bounced the listener
+///    back to the track they had just left, and under `.one` it parked them on
+///    silence for ever.
+///
+/// Either way the skip walks the way the PRESS pointed: `▶▶` (and `play()`,
+/// `select()`, auto-advance) forward, `◀◀` backward. Both use the same wrap
+/// policy — `.all` wraps, `.off`/`.one` come to rest at the end they reached —
+/// so the two directions differ only in which way they move. Recovering a `◀◀`
+/// forwards would make every track before a dead file unreachable; that was a
+/// real defect, not a theoretical one.
+///
+/// The limit worth stating: case 2 is judged by TIMING, not by inspecting the
+/// audio. A file that renders a little and then stops early, or renders
+/// silence for its full length, is indistinguishable from music the listener
+/// chose and is left alone.
 ///
 /// ## Shuffle choice (documented)
 /// When `isShuffle` is on, `next` consults `shuffleStrategy(count, current)` to
@@ -43,11 +78,18 @@ public final class PlayerCore {
     /// deterministic in tests, exactly like `ShuffleStrategy` for `next()`.
     public typealias PermutationStrategy = (_ count: Int) -> [Int]
 
+    /// Reads a monotonically increasing number of seconds. Injected — like the
+    /// two strategies above — so the "that finish arrived too fast to be real"
+    /// judgement (see `finishLooksLikeSilence`) can be tested deterministically
+    /// instead of by sleeping. The core keeps no other notion of time.
+    public typealias MonotonicClock = () -> TimeInterval
+
     // MARK: - Dependencies
 
     @ObservationIgnored private let engine: AudioPlaybackEngine
     @ObservationIgnored private let shuffleStrategy: ShuffleStrategy
     @ObservationIgnored private let permutationStrategy: PermutationStrategy
+    @ObservationIgnored private let now: MonotonicClock
 
     /// The playlist index currently loaded into the engine, or `nil` when the
     /// engine holds no track (never loaded, stopped, or playlist replaced).
@@ -58,6 +100,31 @@ public final class PlayerCore {
     /// and cleared by `stop()` and `load(_:)`; `pause()` leaves it intact so a
     /// subsequent `play()` resumes rather than restarting from 0.
     @ObservationIgnored private var loadedIndex: Int?
+
+    // MARK: Silent-finish detection state
+    //
+    // Three pieces of bookkeeping behind ONE judgement: did the track that just
+    // reported "finished" actually render any audio? See `finishLooksLikeSilence`.
+
+    /// The clock reading at which the current track started producing audio (or
+    /// at which a `seek` re-based that), or `nil` when nothing is loaded.
+    @ObservationIgnored private var playbackStartedAt: TimeInterval?
+
+    /// How many seconds of audio the engine promised from `playbackStartedAt` —
+    /// the loaded file's duration, less any seek offset.
+    @ObservationIgnored private var promisedSeconds: TimeInterval = 0
+
+    /// Which way the walk that reached the current track was heading, so a track
+    /// discovered to be silent AFTER it loaded can carry on the same way the
+    /// press pointed. Set on every `playCurrent`.
+    @ObservationIgnored private var lastSkipDirection: SkipDirection = .forward
+
+    /// Indices found to render nothing since the last explicit transport command.
+    /// It bounds the silent-file walk exactly as `playCurrent`'s `visited` set
+    /// bounds the failed-load walk — without it a queue of silent files under
+    /// `.all` would sweep round for ever. Cleared by every command that
+    /// represents fresh listener intent.
+    @ObservationIgnored private var silentSinceLastCommand: Set<Int> = []
 
     // MARK: - Observable state
 
@@ -98,6 +165,79 @@ public final class PlayerCore {
         return playlist[index]
     }
 
+    // MARK: Skip availability
+    //
+    // These two answer ONE question for a view: *would pressing this skip button
+    // produce an observable change?* They exist so a transport row can dim a
+    // control that cannot act, instead of leaving it looking live — the reported
+    // complaint. They restate the `next()` / `previous()` policy rather than
+    // inventing a second one; `PlayerCoreTransportAvailabilityTests` sweeps every
+    // (count, index, repeatMode, isShuffle) combination and fails if the two ever
+    // disagree with what the transport actually does.
+
+    /// Whether `next()` would do something the listener can perceive.
+    ///
+    /// - No selection (an empty queue) — `next()` is a guarded no-op: `false`.
+    /// - Shuffling — `next()` always picks another track, with no end-of-list
+    ///   stop, so it is available on any queue longer than one track.
+    /// - Mid-list — always available.
+    /// - On the LAST track — available only while repeat is ON, because that is
+    ///   exactly when `next()` wraps. With `.off` the call would merely `stop()`
+    ///   the engine; that is a real effect while playing, but the owner's choice
+    ///   is that `▶▶` is not a stop button (■ is), so the end of the queue reads
+    ///   as "nowhere further to go" and the control dims.
+    public var canGoNext: Bool {
+        guard !playlist.isEmpty, let index = currentIndex,
+              playlist.indices.contains(index) else { return false }
+        if isShuffle { return playlist.count > 1 }
+        if index < playlist.count - 1 { return true }
+        return repeatMode != .off
+    }
+
+    /// Whether `previous()` would do something the listener can perceive.
+    ///
+    /// It reads the SAME `previousTargetIndex(from:)` the transport does, so the
+    /// predicate cannot drift from the move: true exactly when that target
+    /// exists. Mid-list the target is the row above; on the FIRST track it is the
+    /// last row (repeat on) or that same first row re-started from the top
+    /// (repeat off) — and a restart IS observable, which is why `◀◀` does not dim
+    /// at the front the way `▶▶` dims at the end. Only an empty queue (no
+    /// selection) has no target and disables it.
+    ///
+    /// - Note: This is a POLICY predicate over indices, not a playability oracle.
+    ///   Whether the target file actually decodes is discovered only when the
+    ///   engine is asked to load it (and whether it then renders anything is
+    ///   discovered later still), so neither skip predicate can promise sound —
+    ///   that limit is identical in both directions. What the model DOES
+    ///   guarantee is that the recovery walk runs the same way the press pointed
+    ///   (see `previousPlayableCursor(before:)` and `skipPastSilentTrack(at:)`),
+    ///   so a `◀◀` onto a file that will not open — or that opens and plays
+    ///   nothing — steps further BACK rather than returning the listener to the
+    ///   track they just left.
+    public var canGoPrevious: Bool {
+        guard !playlist.isEmpty, let index = currentIndex,
+              playlist.indices.contains(index) else { return false }
+        return previousTargetIndex(from: index) != nil
+    }
+
+    /// The index an explicit `previous()` selects when pressed at `index` — the
+    /// single definition both `previous()` and `canGoPrevious` read.
+    ///
+    /// - Mid-list: the row above.
+    /// - First row, repeat ON (`.all` or `.one`): the last row (wrap).
+    /// - First row, repeat OFF: the first row again (restart in place — the
+    ///   deliberate `.off` asymmetry documented at the top of this file).
+    ///
+    /// `nil` only for an out-of-range index, i.e. nothing selected.
+    private func previousTargetIndex(from index: Int) -> Int? {
+        guard playlist.indices.contains(index) else { return nil }
+        if index > 0 { return index - 1 }
+        switch repeatMode {
+        case .all, .one: return playlist.count - 1
+        case .off:       return 0
+        }
+    }
+
     // MARK: - Init
 
     public convenience init(engine: AudioPlaybackEngine) {
@@ -107,11 +247,13 @@ public final class PlayerCore {
     public init(
         engine: AudioPlaybackEngine,
         shuffleStrategy: @escaping ShuffleStrategy,
-        permutationStrategy: @escaping PermutationStrategy = PlayerCore.defaultPermutationStrategy
+        permutationStrategy: @escaping PermutationStrategy = PlayerCore.defaultPermutationStrategy,
+        now: @escaping MonotonicClock = PlayerCore.defaultClock
     ) {
         self.engine = engine
         self.shuffleStrategy = shuffleStrategy
         self.permutationStrategy = permutationStrategy
+        self.now = now
         self.volume = engine.volume
         self.balance = engine.pan
         self.engine.onPlaybackFinished = { [weak self] in
@@ -140,6 +282,16 @@ public final class PlayerCore {
         Array(0..<count).shuffled()
     }
 
+    // MARK: - Default clock
+
+    /// Seconds since boot — monotonic, so it cannot run backwards when the wall
+    /// clock is adjusted. `nonisolated` for the same reason
+    /// `defaultPermutationStrategy` is: it touches no state, so it converts
+    /// cleanly to the nonisolated `MonotonicClock` type as an init default.
+    nonisolated public static func defaultClock() -> TimeInterval {
+        ProcessInfo.processInfo.systemUptime
+    }
+
     // MARK: - Playlist commands
 
     /// Replace the playlist. If playback is in progress, the engine is stopped
@@ -152,6 +304,9 @@ public final class PlayerCore {
             isPlaying = false
         }
         loadedIndex = nil
+        playbackStartedAt = nil
+        promisedSeconds = 0
+        silentSinceLastCommand.removeAll()
         playlist = tracks
         currentIndex = tracks.isEmpty ? nil : 0
     }
@@ -402,9 +557,17 @@ public final class PlayerCore {
         guard !playlist.isEmpty, let index = currentIndex,
               playlist.indices.contains(index) else { return }
 
+        silentSinceLastCommand.removeAll()
+
         if !isPlaying, loadedIndex == index {
             // Resuming the already-loaded, paused current track: do not reload,
             // so the engine preserves its current position.
+            //
+            // The silent-finish window is deliberately NOT re-opened here. Time
+            // spent paused counts towards the elapsed side of that test, which
+            // can only make a finish look SLOWER than it was — a missed verdict,
+            // never a false one. Re-basing on resume would instead risk
+            // condemning a track the listener paused a moment before its end.
             engine.play()
             isPlaying = true
             return
@@ -430,8 +593,14 @@ public final class PlayerCore {
     }
 
     /// Advance to the next track per `repeatMode` / `isShuffle`, then play it.
+    /// At the LAST track this wraps to the first whenever repeat is on (`.all` or
+    /// `.one`) and stops only under `.off`. `canGoNext` is the matching predicate.
     public func next() {
         guard !playlist.isEmpty, let index = currentIndex else { return }
+
+        // Fresh intent (a press, or an honest end-of-track): forget which rows
+        // were found silent during the previous walk.
+        silentSinceLastCommand.removeAll()
 
         if isShuffle {
             // Intentional for now: while shuffling, `next` always picks another
@@ -450,35 +619,36 @@ public final class PlayerCore {
             currentIndex = index + 1
             playCurrent()
         } else {
-            // At the last track.
+            // At the last track: repeat ON (either mode) wraps to the front;
+            // only `.off` stops here.
             switch repeatMode {
-            case .all:
+            case .all, .one:
                 currentIndex = 0
                 playCurrent()
-            case .off, .one:
+            case .off:
                 stop()
             }
         }
     }
 
-    /// Retreat to the previous track per `repeatMode`, then play it.
+    /// Retreat to the previous track per `repeatMode`, then play it. At the FIRST
+    /// track this wraps to the last whenever repeat is on (`.all` or `.one`) and
+    /// restarts the track in place only under `.off`. `canGoPrevious` is the
+    /// matching predicate, and `previousTargetIndex(from:)` is the single
+    /// definition of where the press lands that they both read.
+    ///
+    /// If that target turns out to be UNPLAYABLE — whether it refuses to open or
+    /// opens and renders nothing (see "Unplayable files" at the top of this file)
+    /// — the recovery walk runs BACKWARD, mirroring `next()`'s forward walk: a
+    /// `◀◀` press never moves the listener forward, and one file the engine
+    /// cannot play cannot make everything before it unreachable.
     public func previous() {
-        guard !playlist.isEmpty, let index = currentIndex else { return }
+        guard !playlist.isEmpty, let index = currentIndex,
+              let target = previousTargetIndex(from: index) else { return }
 
-        if index > 0 {
-            currentIndex = index - 1
-            playCurrent()
-        } else {
-            // At the first track.
-            switch repeatMode {
-            case .all:
-                currentIndex = playlist.count - 1
-                playCurrent()
-            case .off, .one:
-                // Restart the first track in place.
-                playCurrent()
-            }
-        }
+        silentSinceLastCommand.removeAll()
+        currentIndex = target
+        playCurrent(walking: .backward)
     }
 
     /// Seek the engine to an absolute time in seconds.
@@ -490,6 +660,12 @@ public final class PlayerCore {
     ///   policy.
     public func seek(to time: TimeInterval) {
         engine.seek(to: time)
+        // A seek re-bases the silent-finish window: after jumping to 99.9 s of a
+        // 100 s track the engine owes only 0.1 s of audio, and finishing a moment
+        // later is honest rather than suspicious.
+        silentSinceLastCommand.removeAll()
+        playbackStartedAt = now()
+        promisedSeconds = max(0, engine.duration - engine.currentTime)
     }
 
     /// Set the volume, clamped to `0...1`, on both the observable state and the
@@ -557,6 +733,7 @@ public final class PlayerCore {
     /// guarded no-op.
     public func select(_ index: Int) {
         guard playlist.indices.contains(index) else { return }
+        silentSinceLastCommand.removeAll()
         currentIndex = index
         playCurrent()
     }
@@ -564,26 +741,111 @@ public final class PlayerCore {
     // MARK: - Engine callback
 
     /// Called when the engine finishes the current track.
+    ///
+    /// A finish that arrived too fast to be real is not a finish at all — it is
+    /// an unplayable track that happened to LOAD (see `finishLooksLikeSilence`),
+    /// and it is handled by the skip machinery instead of by repeat policy.
+    /// Otherwise the repeat rules are exactly as they always were:
     /// - `.one`: reload and replay the same track.
     /// - `.all`: advance with wrap.
     /// - `.off`: advance, or stop if already at the last track.
     private func handlePlaybackFinished() {
-        guard !playlist.isEmpty, currentIndex != nil else { return }
+        guard !playlist.isEmpty, let index = currentIndex else { return }
+
+        if finishLooksLikeSilence() {
+            skipPastSilentTrack(at: index)
+            return
+        }
+
         switch repeatMode {
         case .one:
-            playCurrent()
+            // Replay the same track, still walking the way the listener's press
+            // pointed should this reload now fail (the file may have vanished).
+            playCurrent(walking: lastSkipDirection)
         case .all, .off:
             next()
         }
     }
 
+    /// Whether the finish just reported can be believed.
+    ///
+    /// The engine promised `promisedSeconds` of audio and then claimed to have
+    /// played it in less than `silentFinishWindow` of real time. No decoder can
+    /// do that: the segment drained without rendering. The `promisedSeconds`
+    /// floor keeps a genuinely tiny track (a jingle, a gapless fragment) from
+    /// being condemned for the crime of being short, and because the window is a
+    /// quarter of a second, a listener who seeks to the very end still gets an
+    /// honest finish — `seek(to:)` re-bases the promise for exactly that reason.
+    ///
+    /// - Note: The clock is the injected `now`, so this is testable without
+    ///   sleeping, and it is monotonic, so a wall-clock adjustment cannot make a
+    ///   real finish look instant.
+    private func finishLooksLikeSilence() -> Bool {
+        guard let startedAt = playbackStartedAt else { return false }
+        guard promisedSeconds > Self.silentFinishMinimumPromise else { return false }
+        return now() - startedAt < Self.silentFinishWindow
+    }
+
+    /// Treat `index` as unplayable and keep walking the way the press pointed —
+    /// the same recovery `playCurrent` runs for a load that threw, reached from
+    /// the finish callback instead of from the `catch`.
+    ///
+    /// The candidate is refused if it is ALREADY known silent, which is what
+    /// makes an all-silent queue come to rest instead of sweeping round under
+    /// `.all`.
+    ///
+    /// Like the failed-load recovery it mirrors, this steps LINEARLY even while
+    /// shuffling: recovering from a dead file is a repair, not a pick, and the
+    /// next real `next()` press resumes shuffling normally.
+    private func skipPastSilentTrack(at index: Int) {
+        silentSinceLastCommand.insert(index)
+        let direction = lastSkipDirection
+        let candidate = direction == .forward
+            ? nextPlayableCursor(after: index)
+            : previousPlayableCursor(before: index)
+        guard let candidate, !silentSinceLastCommand.contains(candidate) else {
+            stop()
+            return
+        }
+        currentIndex = candidate
+        playCurrent(walking: direction)
+    }
+
     // MARK: - Helpers
 
-    /// Load the current track and start the engine, skipping unplayable tracks.
-    /// If every remaining track is unplayable, stop.
-    private func playCurrent() {
+    /// Which way the unplayable-file recovery walk steps.
+    ///
+    /// It follows the PRESS, not the playlist: `▶▶` (and `play()`, `select()`,
+    /// auto-advance) walk forward; `◀◀` walks backward. Recovering in the wrong
+    /// direction is not merely inelegant — a backward press that recovers forward
+    /// lands the listener back on the track they just left, which makes every
+    /// track before a dead file permanently unreachable.
+    private enum SkipDirection { case forward, backward }
+
+    // MARK: Silent-finish thresholds
+
+    /// A natural finish arriving sooner than this after the track started
+    /// rendering did not play anything. A quarter of a second is far longer than
+    /// the millisecond-scale drain of a container the decoder opens but cannot
+    /// read, and far shorter than any audible fragment a listener could have
+    /// heard, so nothing real falls between the two.
+    private static let silentFinishWindow: TimeInterval = 0.25
+
+    /// Below this much promised audio, a fast finish is simply a short track and
+    /// is believed. Only a file claiming MORE than a second and delivering it
+    /// instantly is condemned.
+    private static let silentFinishMinimumPromise: TimeInterval = 1.0
+
+    /// Load the current track and start the engine, skipping unplayable tracks in
+    /// `direction`. If no track reachable that way is playable, stop.
+    private func playCurrent(walking direction: SkipDirection = .forward) {
         guard !playlist.isEmpty, let index = currentIndex,
               playlist.indices.contains(index) else { return }
+
+        // Remember which way this walk was heading: a track that loads fine and
+        // only reveals itself as unplayable when it finishes instantly has to
+        // carry on the same way (see `skipPastSilentTrack(at:)`).
+        lastSkipDirection = direction
 
         var visited = Set<Int>()
         var cursor = index
@@ -614,11 +876,19 @@ public final class PlayerCore {
                 loadedIndex = cursor
                 engine.play()
                 isPlaying = true
+                // Open the window in which a "finished" report would be a lie:
+                // from now, for as many seconds as the engine says this file
+                // holds.
+                playbackStartedAt = now()
+                promisedSeconds = engine.duration
                 return
             } catch {
-                // Unplayable: skip forward to the next track.
-                if let nextCursor = nextPlayableCursor(after: cursor) {
-                    cursor = nextCursor
+                // Unplayable: keep walking the way the press pointed.
+                let recovery = direction == .forward
+                    ? nextPlayableCursor(after: cursor)
+                    : previousPlayableCursor(before: cursor)
+                if let recovery {
+                    cursor = recovery
                 } else {
                     stop()
                     return
@@ -629,6 +899,12 @@ public final class PlayerCore {
 
     /// The index to try after an unplayable track, honoring `.all` wrap. With
     /// `.off`/`.one` it does not wrap past the end.
+    ///
+    /// This is the UNPLAYABLE-FILE skip, not navigation, and it deliberately did
+    /// NOT adopt the `.one` wrap: a queue of dead files under `.one` must come to
+    /// rest rather than sweep the list a second time. (`playCurrent`'s `visited`
+    /// set already bounds the walk, so this is belt-and-braces.) The listener's
+    /// own `next()` press still wraps — that is a different code path.
     private func nextPlayableCursor(after cursor: Int) -> Int? {
         if cursor < playlist.count - 1 {
             return cursor + 1
@@ -636,6 +912,26 @@ public final class PlayerCore {
         switch repeatMode {
         case .all:
             return 0
+        case .off, .one:
+            return nil
+        }
+    }
+
+    /// The index to try BEFORE an unplayable track — the mirror image of
+    /// `nextPlayableCursor(after:)`, used when the walk was started by `◀◀`.
+    ///
+    /// It honours exactly the same wrap policy: `.all` wraps round to the last
+    /// track, `.off`/`.one` come to rest at the front rather than sweeping the
+    /// queue a second time. (`playCurrent`'s `visited` set already bounds the
+    /// walk; this keeps the two directions' POLICY identical so a listener cannot
+    /// tell them apart except by which way they move.)
+    private func previousPlayableCursor(before cursor: Int) -> Int? {
+        if cursor > 0 {
+            return cursor - 1
+        }
+        switch repeatMode {
+        case .all:
+            return playlist.count - 1
         case .off, .one:
             return nil
         }
@@ -656,5 +952,8 @@ public final class PlayerCore {
         engine.stop()
         isPlaying = false
         loadedIndex = nil
+        // Nothing is rendering, so there is no finish left to disbelieve.
+        playbackStartedAt = nil
+        promisedSeconds = 0
     }
 }

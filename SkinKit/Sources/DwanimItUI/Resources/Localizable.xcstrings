@@ -794,7 +794,7 @@
       }
     },
     "Repeat" : {
-      "comment" : "Transport toggle: repeat the current track.",
+      "comment" : "Transport toggle: the repeat control. The SAME word in all three repeat states (off / all / one) — the repeat-one state is marked by an overlaid \"1\" badge, not by a longer string, so the toggle row never re-flows. Keep it short: the row has a 176 pt budget.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -813,6 +813,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重複播放"
+          }
+        }
+      }
+    },
+    "Repeat all" : {
+      "comment" : "Accessibility label for the repeat toggle in its ALL state (play the whole queue, wrapping at the ends).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repeat all"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全曲リピート"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重複播放：全部"
+          }
+        }
+      }
+    },
+    "Repeat off" : {
+      "comment" : "Accessibility label for the repeat toggle in its OFF state.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repeat off"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リピートオフ"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重複播放：關閉"
+          }
+        }
+      }
+    },
+    "Repeat one" : {
+      "comment" : "Accessibility label for the repeat toggle in its ONE state (a finished track replays).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repeat one"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1曲リピート"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重複播放：單曲"
           }
         }
       }

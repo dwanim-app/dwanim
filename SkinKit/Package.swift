@@ -58,9 +58,20 @@ let package = Package(
             dependencies: ["PlayerCore"],
             swiftSettings: strictConcurrency
         ),
+        // `DwanimItUI` is a TEST-ONLY dependency here, for the end-to-end
+        // click-through test that drives the REAL `CadenceTransport` buttons over a
+        // REAL multi-format queue on the REAL `AVAudioEnginePlayer`
+        // (`RealQueueTransportClickThroughTests`). It lives in this target rather
+        // than in `DwanimItUITests` because what it proves is a PLAYBACK property —
+        // that every manual ▶▶ / ◀◀ step across a 44.1k<->48k and mono<->stereo
+        // boundary really plays — so it belongs beside
+        // `AVAudioEnginePlayerFormatChangeTests` and reuses this target's
+        // `AudioOutputDeviceProbe` device guard rather than duplicating it.
+        // The PRODUCT graph is untouched: `DwanimItUI` still depends only on
+        // `PlayerCore`, and `PlaybackKit` does not depend on `DwanimItUI`.
         .testTarget(
             name: "PlaybackKitTests",
-            dependencies: ["PlaybackKit", "PlayerCore"],
+            dependencies: ["PlaybackKit", "PlayerCore", "DwanimItUI"],
             swiftSettings: strictConcurrency
         ),
         .target(

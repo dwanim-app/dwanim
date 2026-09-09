@@ -33,8 +33,52 @@ final class LocalizationBundleTests: XCTestCase {
         "Volume": ["en": "Volume", "ja": "音量", "zh-Hant": "音量"],
         "Add files…": ["en": "Add files…", "ja": "ファイルを追加…", "zh-Hant": "加入檔案…"],
         "Open Theme…": ["en": "Open Theme…", "ja": "テーマを開く…", "zh-Hant": "開啟佈景主題…"],
-        "Rock": ["en": "Rock", "ja": "ロック", "zh-Hant": "搖滾"]
+        "Rock": ["en": "Rock", "ja": "ロック", "zh-Hant": "搖滾"],
+        // The 3-state Repeat pill: ONE visible word (the pill shows the same
+        // string in every state — the repeat-one "1" is an overlaid badge, not a
+        // longer label, because a state-dependent width re-flowed the toggle row
+        // and overflowed its 176 pt zone in Japanese) plus one accessibility
+        // label per state, which is where the three states are actually SAID.
+        // They are listed here (rather than only in a content-only test) so the
+        // xcodebuild half of this file proves they RESOLVE at runtime too — a
+        // SwiftUI literal inside the package silently falls back to English if it
+        // ever loses its `bundle: .module`.
+        //
+        // The Japanese state labels use the vocabulary a Japanese music player
+        // actually uses — 全曲リピート / 1曲リピート / リピートオフ — rather than
+        // the earlier "リピート: 全曲" calque of the English word order.
+        "Repeat": ["en": "Repeat", "ja": "リピート", "zh-Hant": "重複播放"],
+        "Repeat all": ["en": "Repeat all", "ja": "全曲リピート", "zh-Hant": "重複播放：全部"],
+        "Repeat off": ["en": "Repeat off", "ja": "リピートオフ", "zh-Hant": "重複播放：關閉"],
+        "Repeat one": ["en": "Repeat one", "ja": "1曲リピート", "zh-Hant": "重複播放：單曲"]
     ]
+
+    /// The repeat labels must be DISTINCT in every locale, in both directions:
+    /// three accessibility labels that collapsed to one string would leave a
+    /// VoiceOver user unable to tell `.all` from `.one`, and a translation that
+    /// duplicated another key's value would be a silent copy-paste error. Asserted
+    /// on catalog CONTENT, so it holds under `swift test` as well as xcodebuild.
+    func testRepeatStateLabelsAreDistinctInEveryLocale() throws {
+        let stateKeys = ["Repeat off", "Repeat all", "Repeat one"]
+        for lang in ["en", "ja", "zh-Hant"] {
+            let values = stateKeys.map { key -> String in
+                Self.expected[key]?[lang] ?? ""
+            }
+            XCTAssertFalse(values.contains(""), "missing a repeat-state label for \(lang)")
+            XCTAssertEqual(Set(values).count, stateKeys.count,
+                           "the three repeat-state labels collapse in \(lang): \(values)")
+        }
+
+        // ...and the VISIBLE pill text is deliberately the same in all three
+        // states, so no locale's row width can depend on the repeat mode. What
+        // tells ALL from ONE on screen is the badge
+        // (`CadenceTransport.repeatBadge(for:)`), measured in
+        // `CadenceTransportRepeatAppearanceTests`; the catalog's job here is only
+        // to keep that one word short enough for the 176 pt zone, which
+        // `CadenceTransportRepeatWidthTests` measures per locale.
+        XCTAssertNil(Self.expected["Repeat 1"],
+                     "the per-state pill string is gone: the ONE state is a badge, not a label")
+    }
 
     // MARK: Part A — catalog is a reachable resource of Bundle.module with correct content
 

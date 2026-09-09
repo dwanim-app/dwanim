@@ -122,7 +122,7 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
         let monoA = try synth(duration: 0.5, sampleRate: 48_000, channels: 1)
         let stereoB = try synth(duration: 0.4, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(monoA)
         player.play()
         try requireRealPlayback(player)
@@ -156,7 +156,7 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
         let stereoB = try synth(duration: 0.5, sampleRate: 44_100, channels: 2)
         let monoC = try synth(duration: 0.5, sampleRate: 48_000, channels: 1)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(monoA)
         player.play()
         try requireRealPlayback(player)
@@ -189,7 +189,7 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
         let mono = try synth(duration: 0.5, sampleRate: 48_000, channels: 1)
         let stereo = try synth(duration: 0.5, sampleRate: 48_000, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(mono)
         player.play()
         try requireRealPlayback(player)
@@ -222,7 +222,7 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
         let first = try synth(duration: 0.5, sampleRate: 48_000, channels: 1)
         let second = try synth(duration: 0.5, sampleRate: 48_000, channels: 1)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(first)
         player.play()
         try requireRealPlayback(player)
@@ -252,7 +252,7 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
         let monoA = try synth(duration: 2.0, sampleRate: 48_000, channels: 1)
         let stereoB = try synth(duration: 0.5, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(monoA)
         player.play()
         try requireRealPlayback(player)
@@ -313,6 +313,13 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
     /// with `state` applied (re-pushed after the load, exactly as
     /// `PlayerCore.playCurrent` does), capturing ~0.3 s through the production
     /// tap; returns the RMS of the captured signal (near-zero silence excluded).
+    ///
+    /// The one scenario in this file that MEASURES the tap, so it cannot use the
+    /// muted player: the tap sits after the volume fader, so muting would return
+    /// an RMS of 0 for both the flat and the boosted capture. It runs attenuated
+    /// instead — see `SilentRealPlayback.tapMeasuringVolume`. The assertion is a
+    /// RATIO of two captures taken at the same level, so the attenuation cancels
+    /// out of it entirely.
     private func postFormatChangeToneRMS(applying state: EQState) throws -> Double {
         let mono48 = try synth(duration: 0.3, sampleRate: 48_000, channels: 1)
         let tone = try synth(
@@ -322,7 +329,7 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
             frequency: 1_000
         )
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makeTapMeasuringPlayer()
         try player.load(mono48)
         player.applyEqualizer(state)
 
@@ -376,7 +383,7 @@ final class AVAudioEnginePlayerFormatChangeTests: XCTestCase {
         )
 
         let mono48 = try synth(duration: 0.5, sampleRate: 48_000, channels: 1)
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(mono48)
         player.play()
         try requireRealPlayback(player)

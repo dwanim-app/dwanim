@@ -188,7 +188,7 @@ final class AVAudioEnginePlayerTests: XCTestCase {
     /// needs no output device: whatever the transient, the value stays `>= 0`.
     func testCurrentTimeNeverNegativeDuringPlayTransient() throws {
         let url = try synthWAV(duration: 1.0)
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(url)
 
         player.play()
@@ -212,7 +212,7 @@ final class AVAudioEnginePlayerTests: XCTestCase {
     /// gracefully when there is no audio output device (e.g. headless CI).
     func testPauseFreezesAtPlayedPositionNotZero() throws {
         let url = try synthWAV(duration: 5.0, sampleRate: 44_100)
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(url)
 
         player.play()
@@ -247,7 +247,7 @@ final class AVAudioEnginePlayerTests: XCTestCase {
     /// Deterministic — the finish is synthesized, no real audio drain needed.
     func testSeekToEndWhilePlayingFiresPlaybackFinished() throws {
         let url = try synthWAV(duration: 1.0)
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(url)
 
         let finished = expectation(description: "onPlaybackFinished on seek-to-end")
@@ -294,7 +294,7 @@ final class AVAudioEnginePlayerTests: XCTestCase {
     /// Deterministic — the finish is synthesized, no real audio drain needed.
     func testPlayAfterPausedSeekToEndFiresPlaybackFinishedOnce() throws {
         let url = try synthWAV(duration: 1.0)
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(url)
 
         let finished = expectation(description: "onPlaybackFinished on play after paused seek-to-end")
@@ -345,7 +345,7 @@ final class AVAudioEnginePlayerTests: XCTestCase {
     /// `false` even though `play()` was called — the engine-running guard (Bug
     /// 2) prevents a no-device/empty engine from masquerading as playing.
     func testIsPlayingFalseWhenEngineNotRunning() {
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         player.play() // no file loaded, engine never starts rendering
         XCTAssertFalse(
             player.isPlaying,
@@ -435,7 +435,7 @@ final class AVAudioEnginePlayerTests: XCTestCase {
 
     func testStopDoesNotInvokePlaybackFinished() throws {
         let url = try synthWAV(duration: 1.0)
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(url)
 
         finishedCount = 0
@@ -459,7 +459,7 @@ final class AVAudioEnginePlayerTests: XCTestCase {
 
     func testSeekDoesNotInvokePlaybackFinished() throws {
         let url = try synthWAV(duration: 1.0)
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(url)
 
         finishedCount = 0

@@ -35,17 +35,24 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
 
     // MARK: - Fixtures & helpers
 
+    /// - Parameter amplitude: peak amplitude of the tone. Pass `0` (digital
+    ///   silence) for a scenario that cannot use the shared muted player because
+    ///   the VOLUME ITSELF is the subject under test; every other scenario keeps
+    ///   the default signal and is silenced at the output instead
+    ///   (`SilentRealPlayback`).
     private func synth(
         duration: Double,
         sampleRate: Double,
         channels: Int,
-        frequency: Double = 440
+        frequency: Double = 440,
+        amplitude: Double = 0.5
     ) throws -> URL {
         let url = try SineWAVFactory.write(
             duration: duration,
             sampleRate: sampleRate,
             channels: channels,
-            frequency: frequency
+            frequency: frequency,
+            amplitude: amplitude
         )
         tempURLs.append(url)
         return url
@@ -87,7 +94,7 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
         let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
         let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(mono)
         player.play()
         XCTAssertTrue(player.isEngineRunningForTesting, "engine must run on first play")
@@ -108,7 +115,7 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
         let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
         let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         for _ in 0..<2 {
             try player.load(mono)
             player.play()
@@ -130,7 +137,7 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
         let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
         let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(mono)
         player.play()
         player.seek(to: 3.0)
@@ -152,7 +159,7 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
         let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
         let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(mono)
         player.play()
         XCTAssertTrue(advances(player, past: 0.05))
@@ -174,7 +181,7 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
         let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
         let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         var finishes = 0
         player.onPlaybackFinished = { finishes += 1 }
 
@@ -197,10 +204,17 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
 
     // MARK: - Volume and pan survive the re-wire
 
+    /// The ONE scenario that cannot be silenced with `SilentRealPlayback`: its
+    /// subject IS the volume, and a probe value of 0 would stop it catching the
+    /// plausible regression "the re-wire mutes the graph and never restores it".
+    /// So the probe stays at 0.37 and the SOURCE is silenced instead — the sine
+    /// files are written at amplitude 0, which changes nothing these assertions
+    /// look at (the render clock counts frames, not loudness) while keeping the
+    /// daily CI run quiet.
     func testVolumeAndPanSurviveFormatChange() throws {
         try requireOutputDevice()
-        let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
-        let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2)
+        let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1, amplitude: 0)
+        let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2, amplitude: 0)
 
         let player = AVAudioEnginePlayer()
         try player.load(mono)
@@ -225,6 +239,12 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
     /// (visualizer) installs it ONCE at startup. If the re-wire silenced or
     /// broke a pre-installed tap, the spectrum would die on the first format
     /// change.
+    ///
+    /// One of the two tests in the target that MEASURE the tap, so it cannot use
+    /// the muted player: the tap sits after the volume fader, and at volume 0 it
+    /// delivers its full 14 400 samples as zeros. It runs attenuated instead —
+    /// see `SilentRealPlayback.tapMeasuringVolume`, whose doc carries the
+    /// measurement.
     func testPreInstalledTapStillDeliversAfterFormatChange() throws {
         try requireOutputDevice()
         let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
@@ -232,7 +252,7 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
             duration: 5.0, sampleRate: 44_100, channels: 2, frequency: 1_000
         )
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makeTapMeasuringPlayer()
         let collector = LockedProbeCollector()
         player.installTap { mono, _ in collector.append(mono) }
 
@@ -261,7 +281,7 @@ final class AVAudioEnginePlayerEngineProbeTests: XCTestCase {
         let mono = try synth(duration: 5.0, sampleRate: 48_000, channels: 1)
         let stereo = try synth(duration: 5.0, sampleRate: 44_100, channels: 2)
 
-        let player = AVAudioEnginePlayer()
+        let player = SilentRealPlayback.makePlayer()
         try player.load(mono)
         player.play()
         XCTAssertTrue(advances(player, past: 0.2))

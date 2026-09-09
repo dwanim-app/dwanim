@@ -714,8 +714,12 @@ public final class InteractiveController: SkinWindowController {
 
     /// Whether a control's live toggle state is "on": shuffle reflects
     /// `core.isShuffle`; repeat is on for any mode other than `.off` (both `.all`
-    /// and `.one` light the button — a distinct repeat-one indicator is a later
-    /// refinement, deferred); the EQ / PL buttons light while their window is open
+    /// and `.one` light the same LED — `overlayRepeatOneBadge` is what tells the
+    /// two apart, by stamping a "1" for `.one`, and the Cadence face now mirrors
+    /// that vocabulary exactly: the same lit pill in both on-states, with a "1"
+    /// badge overlaid for `.one`, so neither face changes size with the mode);
+    /// the EQ / PL buttons light
+    /// while their window is open
     /// (the injected `isEQWindowOpen` / `isPlaylistWindowOpen` queries). The other
     /// host actions (eject / minimize) and the transport buttons have no on/off
     /// state, so they are never "active".

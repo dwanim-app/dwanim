@@ -27,7 +27,12 @@ choose to load your own `.wsz` file.
 - Native macOS app (macOS 14+), universal binary, no third-party dependencies.
 - Local audio playback: MP3, AAC (`.m4a`/`.aac`), ALAC, FLAC (native `.flac` only — Ogg-wrapped FLAC does not play), WAV, AIFF, CAF (via AVFoundation).
 - Transport controls: play, pause, stop, seek, previous / next, volume, balance,
-  shuffle and repeat.
+  shuffle, and a three-state repeat (off / repeat all / repeat one). With repeat
+  on, next and previous wrap around the ends of the queue; with repeat off, next
+  stops at the last track and the skip buttons dim when they cannot act. A file
+  the player cannot play — one that will not open, or one that opens and produces
+  no sound — is skipped in the direction you pressed, so going back never drops
+  you on the track you just left.
 - A playlist with add / remove / reorder / sort, drag and drop, and `.m3u`
   open and save.
 - A 10-band equalizer with real DSP and built-in presets.

@@ -66,11 +66,12 @@ public enum PlayerControl {
     // MARK: - Repeat cycle
 
     /// The next repeat mode in the off -> all -> one -> off cycle.
+    ///
+    /// Delegates to `RepeatMode.nextInCycle`, the SINGLE definition of the press
+    /// order, so the classic face's `.toggleRepeat` control and the Cadence face's
+    /// Repeat pill cannot drift apart. Kept as a named entry point because it is
+    /// this module's published mapping surface (and its tests').
     public static func nextRepeatMode(_ mode: RepeatMode) -> RepeatMode {
-        switch mode {
-        case .off: return .all
-        case .all: return .one
-        case .one: return .off
-        }
+        mode.nextInCycle
     }
 }

@@ -32,6 +32,12 @@ final class FakePlaybackEngine: AudioPlaybackEngine {
     /// URLs whose `load(_:)` should throw, simulating an unplayable file.
     var unloadableURLs: Set<URL> = []
 
+    /// Per-URL length in seconds, published through `duration` once that URL is
+    /// loaded — the fake's stand-in for a real decoder reading a file header.
+    /// A URL absent from this map leaves `duration` untouched, so every test
+    /// written before this existed keeps its old (zero) duration.
+    var durations: [URL: TimeInterval] = [:]
+
     // MARK: - AudioPlaybackEngine state
 
     var currentTime: TimeInterval = 0
@@ -51,6 +57,10 @@ final class FakePlaybackEngine: AudioPlaybackEngine {
         loadedURLs.append(url)
         if unloadableURLs.contains(url) {
             throw FakeError.unloadable
+        }
+        if let length = durations[url] {
+            duration = length
+            currentTime = 0
         }
     }
 
@@ -75,6 +85,16 @@ final class FakePlaybackEngine: AudioPlaybackEngine {
     }
 
     // MARK: - Test helpers
+
+    /// Forget every recorded call so a test can assert on the traffic of ONE
+    /// step (e.g. a single `previous()`) rather than on the whole run-up to it.
+    func resetRecordedCalls() {
+        loadedURLs = []
+        playCount = 0
+        pauseCount = 0
+        stopCount = 0
+        seekedTimes = []
+    }
 
     /// Simulate the engine finishing the current track end-to-end. `@MainActor`
     /// because the stored handler is now main-actor-isolated (it drives the
