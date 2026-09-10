@@ -1,5 +1,7 @@
 import AppKit
 import DwanimItUI
+import os
+import SkinAppKit
 import SwiftUI
 
 // MARK: - DwanimItApp
@@ -371,6 +373,115 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// never dropped. Empty in the common warm case (the session is already set, so
     /// opens route straight through).
     private var pendingOpenURLs: [URL] = []
+
+    /// PIN THE APP DARK (appearance fix). dwanim it is deliberately a dark
+    /// product: all three built-in themes are dark (Graphite / Amber Deck /
+    /// Indigo Glass), the classic `.wsz` face is skin-drawn bitmap art, and there
+    /// is no light theme. Until this pin existed the app declared no appearance,
+    /// so the app's CONTENT was unconditionally dark while every SYSTEM-drawn
+    /// surface followed the MAC's appearance — on a Light Mac that painted a pure
+    /// white 16 pt titlebar strip (measured luminance 255) straight above the
+    /// dark deck (~59) and read as a broken window.
+    ///
+    /// WHY `willFinishLaunching` AND NOT `didFinishLaunching`: an NSWindow that
+    /// ALREADY EXISTS does not re-resolve its appearance when `NSApp.appearance`
+    /// changes afterwards (pinned by `DarkAppearancePinTests.testB2_*`). This hook
+    /// runs before AppKit/SwiftUI has built the default `Window` scene, so every
+    /// window the app ever creates inherits the pin from birth — including the
+    /// classic `.wsz` main / playlist / EQ cluster the presenter opens later.
+    ///
+    /// WHY ON `NSApp` AND NOT ON THE WINDOW: appearance is inherited, so one
+    /// app-level pin covers the system-drawn surfaces the app OWNS (titlebar and
+    /// traffic-light well, the theme popover, the playlist context menu, alerts
+    /// and sheets, the open panel, scroller knobs) instead of a per-window pin
+    /// that the next new window would silently miss. The user's system-appearance
+    /// switching is untouched — a live Light/Dark switch still reaches the app,
+    /// the pin just keeps winning.
+    ///
+    /// WHAT IT DOES NOT COVER — THE MENU BAR. The menu bar is OS-owned chrome:
+    /// its menus follow the SYSTEM appearance, so on a Light Mac the "dwanim it"
+    /// / File / 檔案 menus drop down light over the dark deck. That is not a bug
+    /// in this pin and it is not fixable from here — a menu stops honouring even
+    /// an explicit `NSMenu.appearance` the moment it is installed as
+    /// `NSApp.mainMenu` (measured; asserted by
+    /// `DarkAppearancePinTests.testE1_menuBarMenusOverrideThePinWithTheSystemAppearance`),
+    /// and the private `_NSMenuWindow` route is off-limits for a Mac App Store
+    /// build. The app's own right-click context menus are a different object and
+    /// DO take the pin (`testE2_*`).
+    ///
+    /// WHAT GUARDS THIS ONE LINE: the App target has no unit-test bundle, so a
+    /// deletion here is invisible to `swift test` unless something reaches across
+    /// the tier boundary. Two things now do —
+    ///   • `AppDarkPinCallSiteTests` (SkinAppKitTests) reads this very file and
+    ///     asserts the pin is called from THIS hook, so deleting or relocating
+    ///     the call fails a plain `swift test`;
+    ///   • `applicationDidFinishLaunching(_:)` below re-reads the resolved
+    ///     appearance and REPAIRS it if the pin did not take.
+    /// The pixels themselves are still evidence only a visual sweep can produce.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        DarkAppearance.pin(on: NSApplication.shared)
+    }
+
+    /// LAUNCH-TIME SELF-REPAIR for the pin above. `pin(on:)` sets an appearance;
+    /// this asks what the window server will actually READ BACK once launch is
+    /// complete and the first window exists. The two can disagree — a pin applied
+    /// to the wrong object, overwritten later in launch, or landing after a window
+    /// was already built leaves the call site looking right in review while the
+    /// app draws the white-titlebar defect again. When that happens, this re-pins
+    /// whatever came up light instead of merely complaining about it.
+    ///
+    /// WHY IT REPAIRS AND DOES NOT ASSERT. This hook ended in `assertionFailure`
+    /// for one iteration, and that was wrong in both configurations — the app
+    /// hard-crashed twice on a Light Mac during ordinary acceptance testing
+    /// (EXC_BREAKPOINT out of this method on the Apple-event open path):
+    ///   • DEBUG — a purely COSMETIC condition became a dead app plus a macOS
+    ///     crash-report dialog. Wildly disproportionate to a light titlebar.
+    ///   • RELEASE — `assertionFailure` is compiled out under `-O`, so the exact
+    ///     same condition silently restored the ORIGINAL defect. The check did
+    ///     nothing whatsoever for the build that ships.
+    /// Repairing is better in both: the shipped build heals itself and the
+    /// developer build behaves identically instead of dying. Guarded by
+    /// `AppDarkPinCallSiteTests.testDidFinishLaunchingDoesNotTrapOnACosmeticCondition`.
+    ///
+    /// WHY THE WINDOWS ARE HANDED OVER TOO: a window that already existed when
+    /// `NSApp` was pinned never re-resolves (`DarkAppearancePinTests.testB2_*`),
+    /// so a launch where only the window came up light looks perfectly healthy
+    /// from `NSApp` alone — and that is precisely the launch the user sees the
+    /// defect on. Hosts that already resolve dark are left untouched, so the
+    /// normal launch mutates nothing.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let hosts: [NSAppearanceCustomization] =
+            [NSApplication.shared] + NSApplication.shared.windows
+        // NB: `Logger` messages take an `OSLogMessage`, built from a string
+        // LITERAL — a `+`-concatenated `String` does not type-check here. Hence the
+        // multi-line literals with line continuations rather than concatenation.
+        switch DarkAppearance.repairIfNeeded(on: hosts) {
+        case .alreadyDark:
+            break  // the normal launch: the pin took, nothing was touched.
+        case .repaired:
+            Self.appearanceLog.notice(
+                """
+                dwanim it came up resolving a LIGHT appearance despite the dark \
+                pin in applicationWillFinishLaunching; re-pinned at didFinishLaunching.
+                """
+            )
+        case .failed:
+            Self.appearanceLog.fault(
+                """
+                dwanim it is resolving a LIGHT appearance and would not take the \
+                dark pin. System-drawn chrome (titlebar, popovers, sheets) will \
+                not match the dark deck.
+                """
+            )
+        }
+    }
+
+    /// Subsystem log for the appearance self-repair above. Scoped to this
+    /// delegate because it is the only thing in the app that logs today.
+    private static let appearanceLog = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "tw.com.yuzhitech.dwanimit",
+        category: "appearance"
+    )
 
     /// The OS OPEN event: a file opened via Finder ▸ "Open With ▸ dwanim it", a
     /// double-click on a type we declare (see CFBundleDocumentTypes in Info.plist),
