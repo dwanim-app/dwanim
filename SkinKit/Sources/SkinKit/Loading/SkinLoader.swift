@@ -102,14 +102,21 @@ public enum SkinLoader {
     /// fallback. `isoLatin1` maps every one of the 256 byte values to a scalar,
     /// so it never fails — once the bytes are in hand, decoding always succeeds.
     ///
-    /// A leading UTF-8 byte-order mark (`EF BB BF`) is STRIPPED from the bytes
-    /// first: Windows editors routinely write one, and `String(data:encoding:
-    /// .utf8)` keeps it as a U+FEFF scalar that would sit in front of the first
+    /// A leading UTF-8 byte-order mark (`EF BB BF`) is STRIPPED from the raw
+    /// bytes, before any String decode: Windows editors routinely write one,
+    /// and a surviving U+FEFF scalar would sit in front of the first
     /// `[Section]` header — defeating the parsers' `hasPrefix("[")` header test
-    /// and silently dropping that whole section. Stripping the BYTES (not the
-    /// decoded scalar) also covers a BOM'd file that falls to the Latin-1 path,
-    /// where the mark would otherwise decode as `ï»¿`. Done here, once, so every
-    /// config file (`region.txt`, `pledit.txt`, `viscolor.txt`) benefits.
+    /// and silently dropping that whole section. Whether a decoder keeps the
+    /// mark cannot be relied on: on macOS 26.6.2 / Swift 6.2.4
+    /// `String(data:encoding:.utf8)` and `NSString(data:encoding:)` both drop
+    /// it, while `String(decoding:as: UTF8.self)` keeps it — and on macOS 15
+    /// the `String(data:encoding:)` path kept it. Stripping the BYTES makes the
+    /// result independent of the OS version and of which decoding API is used,
+    /// and also covers a BOM'd file that falls to the Latin-1 path, where the
+    /// mark would otherwise decode as `ï»¿`. Done here, once, so every config
+    /// file (`region.txt`, `pledit.txt`, `viscolor.txt`) benefits.
+    /// `SkinLoaderTests.testUTF8BOMPrefixedConfigsStillParse` asserts its
+    /// fixture's BOM at the byte level for the same reason.
     private static func text(named name: String, in archive: SkinArchive) -> String? {
         guard let raw = archive.file(named: name) else { return nil }
         let bytes = strippingByteOrderMark(raw)

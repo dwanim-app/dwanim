@@ -219,8 +219,8 @@ final class SkinLoaderTests: XCTestCase {
     // MARK: - Criterion 9: UTF-8 BOM-prefixed configs still parse (S2)
 
     /// Windows editors routinely save `region.txt` / `pledit.txt` with a UTF-8
-    /// byte-order mark. `String(data:encoding:.utf8)` keeps the U+FEFF, which
-    /// then sits in front of the first `[Section]` header and defeats the
+    /// byte-order mark. `String(data:encoding:.utf8)` (on macOS 15) keeps the
+    /// U+FEFF, which then sits in front of the first `[Section]` header and defeats the
     /// `hasPrefix("[")` header test — silently dropping every key of that
     /// section. The loader must strip a leading BOM for EVERY config file.
     func testUTF8BOMPrefixedConfigsStillParse() throws {
@@ -230,9 +230,13 @@ final class SkinLoaderTests: XCTestCase {
         var pleditBytes = bom
         pleditBytes.append(contentsOf: Data(pleditText.utf8))
 
-        // Sanity: the decoded text really does start with the BOM scalar.
-        XCTAssertEqual(String(data: regionBytes, encoding: .utf8)?.first, "\u{FEFF}",
-                       "fixture must carry a BOM for this test to mean anything")
+        // Sanity: the fixture BYTES really do start with the BOM. Checked at the
+        // byte level because macOS 26 Foundation's `String(data:encoding:.utf8)`
+        // strips a leading BOM (macOS 15 kept it), so a String-based check is OS-dependent.
+        XCTAssertTrue(regionBytes.starts(with: [0xEF, 0xBB, 0xBF]),
+                      "fixture must carry a BOM for this test to mean anything")
+        XCTAssertTrue(pleditBytes.starts(with: [0xEF, 0xBB, 0xBF]),
+                      "fixture must carry a BOM for this test to mean anything")
 
         let data = ZipFixtureBuilder.build(entries: [
             entry("numbers.bmp", sheetBytes(width: 90, height: 13)),
