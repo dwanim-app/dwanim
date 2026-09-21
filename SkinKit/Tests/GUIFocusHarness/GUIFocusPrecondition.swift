@@ -198,25 +198,34 @@ public enum GUIFocusHarness {
     /// skippable while this process IS the front application. In that state
     /// nothing outside the process is denying anything, so whatever took key is
     /// in here with us and the test must RUN and be allowed to fail.
+    /// - Parameter secureInput: the "who holds secure event input" line, as an
+    ///   `@autoclosure` so it is evaluated ONLY when a message is actually
+    ///   composed. A green click never pays for it: both `.proceed` branches
+    ///   return before the argument is touched. Injectable so the gate's own
+    ///   tests can compose a message without reading the machine.
     public static func verdict(
         for observation: Observation,
         harness: String,
-        phase: Phase = .precondition
+        phase: Phase = .precondition,
+        secureInput: @autoclosure () -> String = SecureEventInputProbe.diagnosticLine()
     ) -> Verdict {
         if observation.windowIsKey { return .proceed }
         if observation.applicationIsActive || observation.processIsActive { return .proceed }
-        return .skip(skipMessage(for: observation, harness: harness, phase: phase))
+        return .skip(skipMessage(for: observation, harness: harness, phase: phase,
+                                 secureInput: secureInput()))
     }
 
     public static func skipMessage(
         for observation: Observation,
         harness: String,
-        phase: Phase = .precondition
+        phase: Phase = .precondition,
+        secureInput: @autoclosure () -> String = SecureEventInputProbe.diagnosticLine()
     ) -> String {
         """
         \(skipMarker) \(harness): \(headline(for: phase))
           precondition : window.isKeyWindow == true, re-checked immediately before and after every synthesized event
           observed     : \(observation.summary)
+          secure input : \(secureInput())
           why          : macOS grants a key window only to an application it lets come to the front. \
         A locked screen or an active screen saver revokes that permission process-wide — WindowServer \
         logs "Denying xctest the right to be in front because cursor securing is active" — and without \
@@ -252,16 +261,30 @@ public enum GUIFocusHarness {
     /// the text after `] : ` on XCTest's diagnostic line), so that line has to
     /// stand alone: what happened, that it is not a product bug, and what to do
     /// about it. The rest is for whoever opens `swift_test.log`.
-    public static func environmentFailureMessage(observation: Observation, denials: [Denial]) -> String {
+    ///
+    /// The holder line is appended to that FIRST line on purpose. On 2026-09-21
+    /// the denial reason was "cursor securing is active" and the owner had no
+    /// way to learn WHO was securing it — the unified log had rolled and
+    /// `EnableSecureEventInput` is not logged by default. A holder named in the
+    /// body would have been one `swift_test.log` away, i.e. an archaeology
+    /// session away; named on this line, it arrives in the mail.
+    public static func environmentFailureMessage(
+        observation: Observation,
+        denials: [Denial],
+        secureInput: @autoclosure () -> String = SecureEventInputProbe.diagnosticLine()
+    ) -> String {
         let harnesses = Array(Set(denials.map(\.harness))).sorted()
+        let holderLine = secureInput()
         var lines = [
             "\(environmentMarker) the GUI click environment was denied to this run: "
             + "\(denials.count) gated click(s) were skipped across \(harnesses.count) harness(es). "
             + "This is NOT a product failure — the acceptance layer never ran, so nothing was verified. "
             + "Run with the screen unlocked and the session at the keyboard; an unattended job must "
-            + "re-exec under `caffeinate -d -i -m -s -u` (or the whole GUI tier stays unverified)."
+            + "re-exec under `caffeinate -d -i -m -s -u` (or the whole GUI tier stays unverified). "
+            + holderLine
         ]
         lines.append("  sentinel probe : \(observation.summary)")
+        lines.append("  secure input   : \(holderLine)")
         if harnesses.isEmpty {
             lines.append("  denied harnesses: (none recorded — this sentinel's own probe never became key)")
         } else {
@@ -271,7 +294,8 @@ public enum GUIFocusHarness {
                 lines.append("    - \(harness): \(count) skipped click(s)")
             }
         }
-        lines.append("  detail         : grep \(skipMarker) in swift_test.log for each skipped case.")
+        lines.append("  detail         : grep \(skipMarker) in swift_test.log for each skipped case, "
+                     + "and \(SecureEventInputProbe.holderMarker) for who was holding secure event input.")
         lines.append("  WHY THIS FAILS : a denied run that exits 0 mails as ALL GREEN with a 100% pass "
                      + "rate and promotes a coverage baseline that never executed the GUI tier. One "
                      + "named failure is the only signal this side of automation/ can send.")
