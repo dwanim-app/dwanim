@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import GUIFocusHarness
 import PlayerCore
 @testable import DwanimItUI
 
@@ -57,14 +58,13 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
 
-        NSApp.setActivationPolicy(.regular)
-        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
-        NSApp.activate(ignoringOtherApps: true)
-        let deadline = Date(timeIntervalSinceNow: 3)
-        repeat {
-            window.makeKeyAndOrderFront(nil)
-            pump(0.1)
-        } while !window.isKeyWindow && Date() < deadline
+        // Dispatch-model step 1, through the ONE shared seam: this process must
+        // own a KEY window or no synthesized click can land. `establishFocus`
+        // takes the front — and CANNOT skip: gating here would make every test
+        // in the class conditional on the environment, including the many below
+        // that never synthesize an event. The gate lives at the point of use,
+        // in `click`, and re-observes the front on both sides of it.
+        GUIFocusHarness.establishFocus(window, harness: "CadenceTransportRepeatCycleTests")
         pump(0.2)
     }
 
@@ -90,16 +90,7 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
     // MARK: Event plumbing (same model as CadenceTransportNextButtonTests)
 
     private func pump(_ seconds: TimeInterval) {
-        let deadline = Date(timeIntervalSinceNow: seconds)
-        repeat {
-            while let event = NSApp.nextEvent(
-                matching: .any, until: Date(timeIntervalSinceNow: 0.01),
-                inMode: .default, dequeue: true
-            ) {
-                NSApp.sendEvent(event)
-            }
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
-        } while Date() < deadline
+        GUIFocusHarness.pump(seconds)
     }
 
     private func mouseEvent(_ type: NSEvent.EventType, at p: NSPoint) -> NSEvent {
@@ -112,10 +103,18 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
         return e
     }
 
-    private func click(at p: NSPoint) {
-        NSApp.postEvent(mouseEvent(.leftMouseUp, at: p), atStart: false)
-        window.sendEvent(mouseEvent(.leftMouseDown, at: p))
-        pump(0.25)
+    /// Queue the UP first, then hand the DOWN to the window — inside the shared
+    /// gate, which re-observes the front immediately before the event and again
+    /// after it has been drained. A front missing on either side SKIPS the test
+    /// instead of letting an inert click be reported as a product bug.
+    private func click(at p: NSPoint, file: StaticString = #filePath, line: UInt = #line) throws {
+        try GUIFocusHarness.synthesize(
+            in: window, harness: "CadenceTransportRepeatCycleTests", file: file, line: line
+        ) {
+            NSApp.postEvent(mouseEvent(.leftMouseUp, at: p), atStart: false)
+            window.sendEvent(mouseEvent(.leftMouseDown, at: p))
+            pump(0.25)
+        }
     }
 
     // MARK: Centre-cluster geometry (mirrors CadenceTransportNextButtonTests)
@@ -143,9 +142,9 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
         return NSPoint(x: x + button.width / 2, y: hosting.bounds.midY)
     }
 
-    private func clickButton(_ button: TransportButton) { click(at: center(of: button)) }
-    private func clickNext() { clickButton(.next) }
-    private func clickPrevious() { clickButton(.previous) }
+    private func clickButton(_ button: TransportButton) throws { try click(at: center(of: button)) }
+    private func clickNext() throws { try clickButton(.next) }
+    private func clickPrevious() throws { try clickButton(.previous) }
 
     // MARK: Left-zone pill geometry
 
@@ -192,7 +191,7 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
         return NSPoint(x: used + 12, y: hosting.bounds.midY)
     }
 
-    private func clickPill(_ pill: Pill) { click(at: center(of: pill)) }
+    private func clickPill(_ pill: Pill) throws { try click(at: center(of: pill)) }
 
     private func playTrack(_ index: Int) {
         core.select(index)
@@ -205,7 +204,7 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
     /// Without this, every "the Repeat pill cycled" assertion below could just be
     /// a harness clicking the wrong thing (or nothing). Each computed point must
     /// drive its OWN pill, and dead space must drive none.
-    func testPillGeometryFidelity_eachComputedPointDrivesItsOwnPill() {
+    func testPillGeometryFidelity_eachComputedPointDrivesItsOwnPill() throws {
         // The three pills must fit the fixed 176 pt zone in the WIDEST state,
         // otherwise the derived centres would be meaningless.
         core.repeatMode = .one
@@ -217,30 +216,30 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
 
         // Shuffle.
         XCTAssertFalse(core.isShuffle)
-        clickPill(.shuffle)
+        try clickPill(.shuffle)
         XCTAssertTrue(core.isShuffle, "the computed Shuffle point drives the Shuffle pill")
         XCTAssertEqual(core.repeatMode, .off, "...and nothing else")
-        clickPill(.shuffle)
+        try clickPill(.shuffle)
         XCTAssertFalse(core.isShuffle)
 
         // EQ.
         XCTAssertFalse(core.equalizer.enabled)
-        clickPill(.eq)
+        try clickPill(.eq)
         XCTAssertTrue(core.equalizer.enabled, "the computed EQ point drives the EQ pill")
         XCTAssertFalse(core.isShuffle, "...and nothing else")
-        clickPill(.eq)
+        try clickPill(.eq)
         XCTAssertFalse(core.equalizer.enabled)
 
         // Repeat.
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .all, "the computed Repeat point drives the Repeat pill")
         XCTAssertFalse(core.equalizer.enabled, "...and nothing else")
     }
 
     /// Negative control: dead space just past the pills, still inside the left
     /// zone, changes nothing.
-    func testPillGeometryFidelity_clickPastTheLastPillDoesNothing() {
-        click(at: deadSpaceAfterPills())
+    func testPillGeometryFidelity_clickPastTheLastPillDoesNothing() throws {
+        try click(at: deadSpaceAfterPills())
         XCTAssertFalse(core.isShuffle)
         XCTAssertEqual(core.repeatMode, .off)
         XCTAssertFalse(core.equalizer.enabled)
@@ -250,42 +249,42 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
 
     /// The headline: successive REAL clicks walk OFF -> ALL -> ONE -> OFF, and a
     /// fourth press starts the cycle again. `.all` used to be unreachable here.
-    func testRepeatPill_threeRealClicksWalkOffAllOneAndBackToOff() {
+    func testRepeatPill_threeRealClicksWalkOffAllOneAndBackToOff() throws {
         XCTAssertEqual(core.repeatMode, .off, "precondition: repeat starts off")
 
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .all, "1st press: off -> all")
 
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .one, "2nd press: all -> one")
 
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .off, "3rd press: one -> off")
 
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .all, "4th press restarts the cycle")
     }
 
     /// Mutual exclusivity survives the widened cycle: entering ANY repeat-on state
     /// clears Shuffle, and turning Shuffle on clears repeat from either on-state.
-    func testRepeatAndShuffleStayMutuallyExclusiveAcrossTheWholeCycle() {
+    func testRepeatAndShuffleStayMutuallyExclusiveAcrossTheWholeCycle() throws {
         core.isShuffle = true
         pump(0.1)
 
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .all)
         XCTAssertFalse(core.isShuffle, "entering .all clears Shuffle")
 
         core.isShuffle = true
         pump(0.1)
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .one)
         XCTAssertFalse(core.isShuffle, "entering .one clears Shuffle")
 
         // Shuffle ON from the .one state clears repeat.
         core.repeatMode = .one
         pump(0.1)
-        clickPill(.shuffle)
+        try clickPill(.shuffle)
         XCTAssertTrue(core.isShuffle)
         XCTAssertEqual(core.repeatMode, .off, "turning Shuffle on clears repeat")
 
@@ -293,7 +292,7 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
         core.isShuffle = false
         core.repeatMode = .one
         pump(0.1)
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .off)
         XCTAssertFalse(core.isShuffle, "leaving repeat leaves Shuffle alone")
     }
@@ -303,14 +302,14 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
     /// End to end through the UI: park on the LAST track, press Repeat once
     /// (reaching `.all`), then press `▶▶` — it wraps to the first track and plays
     /// it. This is the whole point of making `.all` reachable.
-    func testRepeatAllReachedByClicking_thenNextWrapsToTheFirstTrack() {
+    func testRepeatAllReachedByClicking_thenNextWrapsToTheFirstTrack() throws {
         playTrack(trackCount - 1)
 
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .all)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0, "▶▶ wraps with repeat all")
         XCTAssertTrue(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track0.mp3"])
@@ -318,20 +317,20 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
 
     /// The same through `.one`, which is now also a wrapping mode for EXPLICIT
     /// navigation (auto-advance still replays — that is a PlayerCore test).
-    func testRepeatOneReachedByClicking_thenNextWrapsAndPreviousWrapsBack() {
+    func testRepeatOneReachedByClicking_thenNextWrapsAndPreviousWrapsBack() throws {
         playTrack(trackCount - 1)
 
-        clickPill(.repeatMode) // off -> all
-        clickPill(.repeatMode) // all -> one
+        try clickPill(.repeatMode) // off -> all
+        try clickPill(.repeatMode) // all -> one
         XCTAssertEqual(core.repeatMode, .one)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0, "▶▶ wraps with repeat one")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track0.mp3"])
 
         engine.resetLog()
-        clickPrevious()
+        try clickPrevious()
         XCTAssertEqual(core.currentIndex, trackCount - 1, "◀◀ from the first track wraps to the last")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track3.mp3"])
     }
@@ -344,11 +343,11 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
     ///
     /// The control for "the harness clicked the right pixel" is the second half:
     /// one press of Repeat re-enables the very same coordinates.
-    func testNextButtonIsDisabledAtTheEndOfTheQueueWithRepeatOffAndReEnabledByRepeat() {
+    func testNextButtonIsDisabledAtTheEndOfTheQueueWithRepeatOffAndReEnabledByRepeat() throws {
         playTrack(trackCount - 1)
         XCTAssertFalse(core.canGoNext, "precondition: the model says ▶▶ cannot act")
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, trackCount - 1, "no move")
         XCTAssertTrue(core.isPlaying, "a DISABLED ▶▶ does not even stop playback")
         XCTAssertEqual(engine.loadedURLs, [], "nothing loaded")
@@ -356,25 +355,25 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
         XCTAssertEqual(engine.playCount, 0)
 
         // Same pixel, repeat on: now it acts.
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .all)
         XCTAssertTrue(core.canGoNext)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0, "the SAME coordinates now wrap — the button was disabled, not missed")
     }
 
     /// An EMPTY queue disables both skips: neither click does anything.
-    func testBothSkipButtonsAreDisabledOnAnEmptyQueue() {
+    func testBothSkipButtonsAreDisabledOnAnEmptyQueue() throws {
         reload(trackCount: 0)
         XCTAssertNil(core.currentIndex)
         XCTAssertFalse(core.canGoNext)
         XCTAssertFalse(core.canGoPrevious)
         engine.resetLog()
 
-        clickNext()
-        clickPrevious()
+        try clickNext()
+        try clickPrevious()
 
         XCTAssertNil(core.currentIndex)
         XCTAssertFalse(core.isPlaying)
@@ -386,11 +385,11 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
     /// `◀◀` stays ENABLED on the first track with repeat off, because the press
     /// restarts that track in place — the deliberate `.off` asymmetry. A real
     /// click proves it still reloads and plays.
-    func testPreviousButtonStaysEnabledOnTheFirstTrackWithRepeatOff() {
+    func testPreviousButtonStaysEnabledOnTheFirstTrackWithRepeatOff() throws {
         playTrack(0)
         XCTAssertTrue(core.canGoPrevious)
 
-        clickPrevious()
+        try clickPrevious()
 
         XCTAssertEqual(core.currentIndex, 0, "the selection stays on the first track")
         XCTAssertTrue(core.isPlaying)
@@ -401,20 +400,20 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
     /// A SINGLE-track queue with repeat off: `▶▶` is dead, so it is dimmed rather
     /// than silently inert. Cycling Repeat on re-enables it (it restarts the only
     /// track).
-    func testSingleTrackQueueDisablesNextUntilRepeatIsOn() {
+    func testSingleTrackQueueDisablesNextUntilRepeatIsOn() throws {
         reload(trackCount: 1)
         playTrack(0)
         XCTAssertFalse(core.canGoNext)
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(engine.loadedURLs, [], "▶▶ is disabled on a 1-track queue with repeat off")
         XCTAssertEqual(engine.stopCount, 0)
 
-        clickPill(.repeatMode)
+        try clickPill(.repeatMode)
         XCTAssertEqual(core.repeatMode, .all)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0)
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track0.mp3"],
                        "with repeat on, ▶▶ restarts the only track")
@@ -422,10 +421,10 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
 
     /// Availability must follow a mid-session playlist EDIT: appending a row while
     /// parked on the last track re-enables `▶▶` without any other interaction.
-    func testAppendingATrackReEnablesNextWhileParkedAtTheEnd() {
+    func testAppendingATrackReEnablesNextWhileParkedAtTheEnd() throws {
         playTrack(trackCount - 1)
         XCTAssertFalse(core.canGoNext)
-        clickNext()
+        try clickNext()
         XCTAssertEqual(engine.loadedURLs, [], "disabled before the append")
 
         core.append([Track(url: URL(fileURLWithPath: "/tmp/dwanim-repeat-harness/track9.mp3"),
@@ -434,23 +433,23 @@ final class CadenceTransportRepeatCycleTests: XCTestCase {
         XCTAssertTrue(core.canGoNext)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, trackCount, "▶▶ reaches the newly appended row")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track9.mp3"])
     }
 
     /// Shuffle keeps `▶▶` live at the end of the queue (shuffle has no end-of-list
     /// stop), so the dimming must not fire there.
-    func testShuffleKeepsNextEnabledAtTheEndOfTheQueue() {
+    func testShuffleKeepsNextEnabledAtTheEndOfTheQueue() throws {
         playTrack(trackCount - 1)
         XCTAssertFalse(core.canGoNext)
 
-        clickPill(.shuffle)
+        try clickPill(.shuffle)
         XCTAssertTrue(core.isShuffle)
         XCTAssertTrue(core.canGoNext)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertNotEqual(core.currentIndex, trackCount - 1, "shuffle picks another track")
         XCTAssertEqual(engine.loadedURLs.count, 1)
     }

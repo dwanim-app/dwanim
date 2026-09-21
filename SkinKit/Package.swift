@@ -41,6 +41,17 @@ let package = Package(
         .library(name: "SkinAppKit", targets: ["SkinAppKit"])
     ],
     targets: [
+        // TEST-SUPPORT ONLY — deliberately NOT a product, and deliberately
+        // pathed under Tests/ so nothing in the shipping `Sources/` tier can
+        // reach it. It holds the single seam every in-process click harness
+        // takes its activation precondition from (`GUIFocusHarness`), shared by
+        // two test targets (DwanimItUITests and PlaybackKitTests) which is why
+        // it has to be a module rather than a file in either of them.
+        .target(
+            name: "GUIFocusHarness",
+            path: "Tests/GUIFocusHarness",
+            swiftSettings: strictConcurrency
+        ),
         .target(name: "SkinKit", swiftSettings: strictConcurrency),
         .testTarget(
             name: "SkinKitTests",
@@ -71,7 +82,7 @@ let package = Package(
         // `PlayerCore`, and `PlaybackKit` does not depend on `DwanimItUI`.
         .testTarget(
             name: "PlaybackKitTests",
-            dependencies: ["PlaybackKit", "PlayerCore", "DwanimItUI"],
+            dependencies: ["PlaybackKit", "PlayerCore", "DwanimItUI", "GUIFocusHarness"],
             swiftSettings: strictConcurrency
         ),
         .target(
@@ -128,7 +139,7 @@ let package = Package(
         ),
         .testTarget(
             name: "DwanimItUITests",
-            dependencies: ["DwanimItUI", "PlayerCore"],
+            dependencies: ["DwanimItUI", "PlayerCore", "GUIFocusHarness"],
             swiftSettings: strictConcurrency
         ),
         // The reusable AppKit tier (same platform tier as the harness: AppKit is

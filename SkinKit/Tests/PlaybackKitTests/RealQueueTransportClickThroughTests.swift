@@ -3,6 +3,7 @@ import AVFoundation
 import Foundation
 import SwiftUI
 import XCTest
+import GUIFocusHarness
 import PlayerCore
 @testable import DwanimItUI
 @testable import PlaybackKit
@@ -299,14 +300,13 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
 
-        NSApp.setActivationPolicy(.regular)
-        NSRunningApplication.current.activate(options: [])
-        NSApp.activate(ignoringOtherApps: true)
-        let deadline = Date(timeIntervalSinceNow: 3)
-        repeat {
-            window.makeKeyAndOrderFront(nil)
-            pump(0.1)
-        } while !window.isKeyWindow && Date() < deadline
+        // Dispatch-model step 1, through the ONE shared seam: this process must
+        // own a KEY window or no synthesized click can land. `establishFocus`
+        // takes the front — and CANNOT skip: gating here would make every test
+        // in the class conditional on the environment, including the many below
+        // that never synthesize an event. The gate lives at the point of use,
+        // in `click`, and re-observes the front on both sides of it.
+        GUIFocusHarness.establishFocus(window, harness: "RealQueueTransportClickThroughTests")
         pump(0.2)
     }
 
@@ -329,16 +329,7 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
     // MARK: - Event plumbing (the established in-process click model)
 
     private func pump(_ seconds: TimeInterval) {
-        let deadline = Date(timeIntervalSinceNow: seconds)
-        repeat {
-            while let event = NSApp.nextEvent(
-                matching: .any, until: Date(timeIntervalSinceNow: 0.01),
-                inMode: .default, dequeue: true
-            ) {
-                NSApp.sendEvent(event)
-            }
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
-        } while Date() < deadline
+        GUIFocusHarness.pump(seconds)
     }
 
     private func mouseEvent(_ type: NSEvent.EventType, at p: NSPoint) -> NSEvent {
@@ -351,10 +342,18 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         return e
     }
 
-    private func click(at p: NSPoint) {
-        NSApp.postEvent(mouseEvent(.leftMouseUp, at: p), atStart: false)
-        window.sendEvent(mouseEvent(.leftMouseDown, at: p))
-        pump(0.2)
+    /// Queue the UP first, then hand the DOWN to the window — inside the shared
+    /// gate, which re-observes the front immediately before the event and again
+    /// after it has been drained. A front missing on either side SKIPS the test
+    /// instead of letting an inert click be reported as a product bug.
+    private func click(at p: NSPoint, file: StaticString = #filePath, line: UInt = #line) throws {
+        try GUIFocusHarness.synthesize(
+            in: window, harness: "RealQueueTransportClickThroughTests", file: file, line: line
+        ) {
+            NSApp.postEvent(mouseEvent(.leftMouseUp, at: p), atStart: false)
+            window.sendEvent(mouseEvent(.leftMouseDown, at: p))
+            pump(0.2)
+        }
     }
 
     // MARK: - Button geometry (mirrors CadenceTransport's own layout)
@@ -394,8 +393,8 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         return NSPoint(x: shuffle + 4 + repeatWidth / 2, y: hosting.bounds.midY)
     }
 
-    private func clickButton(_ button: TransportButton) { click(at: center(of: button)) }
-    private func clickRepeatPill() { click(at: repeatPillCenter()) }
+    private func clickButton(_ button: TransportButton) throws { try click(at: center(of: button)) }
+    private func clickRepeatPill() throws { try click(at: repeatPillCenter()) }
 
     // MARK: - Per-step verification
 
@@ -464,7 +463,7 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
 
         // Start the first track with a REAL click on ▶ (not core.play()).
         XCTAssertFalse(core.isPlaying)
-        clickButton(.playPause)
+        try clickButton(.playPause)
         verifyLanded(on: 0, after: "click ▶")
 
         // --- Forward: seven ▶▶ presses, 01 -> 08 -------------------------------
@@ -474,7 +473,7 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
             let boundary = (from.sampleRate == to.sampleRate ? "" : " [rate change]")
                 + (from.channels == to.channels ? "" : " [channel change]")
             XCTAssertTrue(core.canGoNext, "▶▶ must be live mid-queue (at index \(index - 1))")
-            clickButton(.next)
+            try clickButton(.next)
             verifyLanded(on: index, after: "click ▶▶ (\(index))\(boundary)")
         }
 
@@ -483,23 +482,23 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         XCTAssertEqual(core.repeatMode, .off)
         XCTAssertFalse(core.canGoNext, "▶▶ is dimmed on the last track with repeat off")
         let clockBefore = player.currentTime
-        clickButton(.next)
+        try clickButton(.next)
         XCTAssertEqual(core.currentIndex, queue.count - 1, "a disabled ▶▶ does not move")
         XCTAssertTrue(core.isPlaying, "a disabled ▶▶ does not stop playback")
         XCTAssertGreaterThanOrEqual(player.currentTime, clockBefore, "playback carried on")
         log.append("click ▶▶ at the end with repeat OFF -> disabled: no move, still playing")
 
         // --- Turn repeat on by CLICKING the Repeat pill, then wrap forward -----
-        clickRepeatPill()
+        try clickRepeatPill()
         XCTAssertEqual(core.repeatMode, .all, "one press of Repeat reaches .all")
         XCTAssertTrue(core.canGoNext, "with repeat on, ▶▶ is live at the end")
         log.append("click Repeat pill -> repeatMode = .all")
 
-        clickButton(.next)
+        try clickButton(.next)
         verifyLanded(on: 0, after: "click ▶▶ WRAP 08 -> 01")
 
         // --- Wrap backward: ◀◀ from the first track lands on the last ----------
-        clickButton(.previous)
+        try clickButton(.previous)
         verifyLanded(on: queue.count - 1, after: "click ◀◀ WRAP 01 -> 08")
 
         // --- Backward: seven ◀◀ presses, 08 -> 01 ------------------------------
@@ -509,21 +508,21 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
             let boundary = (from.sampleRate == to.sampleRate ? "" : " [rate change]")
                 + (from.channels == to.channels ? "" : " [channel change]")
             XCTAssertTrue(core.canGoPrevious, "◀◀ must be live (at index \(index + 1))")
-            clickButton(.previous)
+            try clickButton(.previous)
             verifyLanded(on: index, after: "click ◀◀ (\(queue.count - 1 - index))\(boundary)")
         }
 
         // --- Repeat .one wraps for EXPLICIT navigation too ---------------------
         // A second press of the pill reaches `.one`; ◀◀ from the first track must
         // still wrap to the last (auto-advance is what replays under `.one`).
-        clickRepeatPill()
+        try clickRepeatPill()
         XCTAssertEqual(core.repeatMode, .one, "a second press of Repeat reaches .one")
         log.append("click Repeat pill -> repeatMode = .one")
 
-        clickButton(.previous)
+        try clickButton(.previous)
         verifyLanded(on: queue.count - 1, after: "click ◀◀ WRAP under .one 01 -> 08")
 
-        clickButton(.next)
+        try clickButton(.next)
         verifyLanded(on: 0, after: "click ▶▶ WRAP under .one 08 -> 01")
 
         // 1 play + 7 ▶▶ + 1 disabled note + 2 Repeat-pill notes + 4 wraps + 7 ◀◀.
@@ -584,7 +583,7 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         for press in 1...5 {
             XCTAssertTrue(core.canGoPrevious, "press \(press): ◀◀ claims it can act")
             let before = core.currentIndex ?? -1
-            clickButton(.previous)
+            try clickButton(.previous)
             let after = core.currentIndex ?? -1
             trail.append(after)
             XCTAssertLessThanOrEqual(after, before, "press \(press): ◀◀ must never move FORWARD")
@@ -602,7 +601,7 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
 
         // ▶▶ over the same corpse still steps FORWARD — the direction fix was not
         // applied globally.
-        clickButton(.next)
+        try clickButton(.next)
         XCTAssertEqual(core.currentIndex, 2, "▶▶ from 0 steps over the dead row 1 -> 2")
         log.append("click ▶▶ over the same dead row: [0] -> [2] \(urls[2].lastPathComponent)")
     }
@@ -664,7 +663,7 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         for press in 1...4 {
             XCTAssertTrue(core.canGoPrevious, "press \(press): ◀◀ claims it can act")
             let before = core.currentIndex ?? -1
-            clickButton(.previous)
+            try clickButton(.previous)
             pump(0.4)                              // let the instant finish arrive
             let after = core.currentIndex ?? -1
             trail.append(after)
@@ -683,13 +682,13 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         XCTAssertTrue(clockAdvances(past: 0.12), "and its render clock really advances")
 
         // ▶▶ over the same row still steps FORWARD, in one press.
-        clickButton(.next)
+        try clickButton(.next)
         pump(0.4)
         XCTAssertEqual(core.currentIndex, 1, "0 -> 1")
-        clickButton(.next)
+        try clickButton(.next)
         pump(0.4)
         XCTAssertEqual(core.currentIndex, 2, "1 -> 2")
-        clickButton(.next)
+        try clickButton(.next)
         pump(0.5)
         XCTAssertEqual(core.currentIndex, 4, "2 -> (3 renders nothing) -> 4, forward as ever")
         log.append("click ▶▶ over the silent row: [2] -> [4] \(urls[4].lastPathComponent)")
@@ -699,7 +698,7 @@ final class RealQueueTransportClickThroughTests: XCTestCase {
         core.repeatMode = .one
         core.select(4)
         pump(0.4)
-        clickButton(.previous)
+        try clickButton(.previous)
         pump(0.5)
         XCTAssertEqual(core.currentIndex, 2,
                        "under .one, ◀◀ onto the silent row walks BACK instead of sticking")

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import GUIFocusHarness
 import PlayerCore
 @testable import DwanimItUI
 
@@ -43,9 +44,15 @@ final class RecordingPlaybackEngine: AudioPlaybackEngine {
 // DISPATCH MODEL (established against a plain `NSTableView` first):
 //   1. `NSTableView.mouseDown` only performs selection when its window is KEY,
 //      and a window can only become key once the PROCESS is active. The test
-//      runner starts with `.prohibited` activation, so `setUp` switches to
-//      `.regular`, activates via `NSRunningApplication`, and pumps until the
-//      window reports `isKeyWindow`. (The runner briefly appears in the Dock.)
+//      runner starts with `.prohibited` activation, so `setUp` hands the window
+//      to `GUIFocusHarness.establishFocus`, which switches to `.regular`,
+//      activates via `NSRunningApplication` and pumps until the window reports
+//      `isKeyWindow`. (The runner briefly appears in the Dock.) That call never
+//      skips; `click` does. It re-observes the front immediately before and
+//      after every synthesized event, and when the environment refuses — a
+//      locked screen denies the front process-wide — it SKIPS with the
+//      precondition named, rather than letting the assertions below report an
+//      environment problem as a bug.
 //   2. The table's click tracking loop calls
 //      `window.nextEvent(matching:…, inMode: .eventTracking)`, so the matching
 //      mouse-UP is posted to `NSApp`'s queue BEFORE the mouse-DOWN is handed to
@@ -89,15 +96,12 @@ final class CadencePlaylistDoubleClickTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
 
-        // Dispatch-model step 1: the process must be active for the window to be key.
-        NSApp.setActivationPolicy(.regular)
-        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
-        NSApp.activate(ignoringOtherApps: true)
-        let deadline = Date(timeIntervalSinceNow: 3)
-        repeat {
-            window.makeKeyAndOrderFront(nil)
-            pump(0.1)
-        } while !window.isKeyWindow && Date() < deadline
+        // Dispatch-model step 1, through the ONE shared seam: this process must
+        // own a KEY window or no synthesized click can land. `establishFocus`
+        // takes the front — and CANNOT skip: gating here would make every test
+        // in the class conditional on the environment, including the ones that
+        // never click. The gate lives at the point of use, in `click`.
+        GUIFocusHarness.establishFocus(window, harness: "CadencePlaylistDoubleClickTests")
         pump(0.2) // let SwiftUI lay out the List rows
     }
 
@@ -112,16 +116,7 @@ final class CadencePlaylistDoubleClickTests: XCTestCase {
 
     /// Drain `NSApp`'s queue through `sendEvent` and spin the run loop for `seconds`.
     private func pump(_ seconds: TimeInterval) {
-        let deadline = Date(timeIntervalSinceNow: seconds)
-        repeat {
-            while let event = NSApp.nextEvent(
-                matching: .any, until: Date(timeIntervalSinceNow: 0.01),
-                inMode: .default, dequeue: true
-            ) {
-                NSApp.sendEvent(event)
-            }
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
-        } while Date() < deadline
+        GUIFocusHarness.pump(seconds)
     }
 
     private func findTableView(in view: NSView) -> NSTableView? {
@@ -142,12 +137,14 @@ final class CadencePlaylistDoubleClickTests: XCTestCase {
         return e
     }
 
-    /// The List's backing table, with the harness preconditions pinned so a
-    /// failure downstream is unambiguous (rows present, window key).
+    /// The List's backing table, with the row count pinned so a failure
+    /// downstream is unambiguous. The key-window precondition is NOT checked
+    /// here: a check before the click is still a check at the wrong time (the
+    /// front can be taken in between), so it belongs in `click`, on both sides
+    /// of the event.
     private func table() throws -> NSTableView {
         let t = try XCTUnwrap(findTableView(in: hosting), "List must be backed by an NSTableView")
         XCTAssertEqual(t.numberOfRows, trackCount, "one row per track")
-        XCTAssertTrue(window.isKeyWindow, "harness precondition: the window is key (process active)")
         return t
     }
 
@@ -156,16 +153,25 @@ final class CadencePlaylistDoubleClickTests: XCTestCase {
         return NSPoint(x: r.midX, y: r.midY)
     }
 
-    /// Dispatch-model step 2: queue the UP first, then hand the DOWN to the window.
-    private func click(at p: NSPoint, clickCount: Int) {
-        NSApp.postEvent(mouseEvent(.leftMouseUp, at: p, clickCount: clickCount), atStart: false)
-        window.sendEvent(mouseEvent(.leftMouseDown, at: p, clickCount: clickCount))
-        pump(0.1)
+    /// Dispatch-model step 2: queue the UP first, then hand the DOWN to the
+    /// window — inside the shared gate, which re-observes the front immediately
+    /// before the event and again after it has been drained. A front that is
+    /// missing on either side SKIPS this test instead of letting the assertions
+    /// below report an inert click as a product bug.
+    private func click(at p: NSPoint, clickCount: Int,
+                       file: StaticString = #filePath, line: UInt = #line) throws {
+        try GUIFocusHarness.synthesize(
+            in: window, harness: "CadencePlaylistDoubleClickTests", file: file, line: line
+        ) {
+            NSApp.postEvent(mouseEvent(.leftMouseUp, at: p, clickCount: clickCount), atStart: false)
+            window.sendEvent(mouseEvent(.leftMouseDown, at: p, clickCount: clickCount))
+            pump(0.1)
+        }
     }
 
-    private func doubleClick(at p: NSPoint) {
-        click(at: p, clickCount: 1)
-        click(at: p, clickCount: 2)
+    private func doubleClick(at p: NSPoint) throws {
+        try click(at: p, clickCount: 1)
+        try click(at: p, clickCount: 2)
         pump(0.2)
     }
 
@@ -174,7 +180,7 @@ final class CadencePlaylistDoubleClickTests: XCTestCase {
     /// Control: a single click selects the row and must NOT start playback.
     func testSingleClick_selectsRow_doesNotPlay() throws {
         let t = try table()
-        click(at: rowCenterInWindow(t, row: targetRow), clickCount: 1)
+        try click(at: rowCenterInWindow(t, row: targetRow), clickCount: 1)
 
         XCTAssertEqual(t.selectedRowIndexes, IndexSet(integer: targetRow), "single click selects the clicked row")
         XCTAssertEqual(core.currentIndex, 0, "single click leaves the current track alone")
@@ -186,7 +192,7 @@ final class CadencePlaylistDoubleClickTests: XCTestCase {
     /// The owner-reported contract: a double click plays THE CLICKED track.
     func testDoubleClick_playsClickedRow() throws {
         let t = try table()
-        doubleClick(at: rowCenterInWindow(t, row: targetRow))
+        try doubleClick(at: rowCenterInWindow(t, row: targetRow))
 
         XCTAssertEqual(t.selectedRowIndexes, IndexSet(integer: targetRow), "the clicked row is selected")
         XCTAssertEqual(core.currentIndex, targetRow, "double-click makes the clicked row current")

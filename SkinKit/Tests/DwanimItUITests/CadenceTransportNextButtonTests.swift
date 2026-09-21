@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import GUIFocusHarness
 import PlayerCore
 @testable import DwanimItUI
 
@@ -76,7 +77,11 @@ final class TransportRecordingEngine: AudioPlaybackEngine {
 // DISPATCH MODEL (inherited from CadencePlaylistDoubleClickTests, which
 // established it against a real `NSTableView`):
 //   1. The PROCESS must be active for the window to become key, so `setUp`
-//      switches to `.regular` activation and pumps until `isKeyWindow`.
+//      takes the front through `GUIFocusHarness.establishFocus`, which switches
+//      to `.regular` activation and pumps until `isKeyWindow`. Establishing
+//      never skips; the gate is in `click`, which re-observes the front on both
+//      sides of each event and SKIPS (loudly, naming the precondition) when the
+//      environment refuses it.
 //   2. The matching mouse-UP is posted to `NSApp`'s queue BEFORE the mouse-DOWN
 //      is handed to `window.sendEvent`, so a control that runs its own tracking
 //      loop cannot block. `pump` then drains the queue through `NSApp.sendEvent`.
@@ -114,14 +119,13 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
 
-        NSApp.setActivationPolicy(.regular)
-        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
-        NSApp.activate(ignoringOtherApps: true)
-        let deadline = Date(timeIntervalSinceNow: 3)
-        repeat {
-            window.makeKeyAndOrderFront(nil)
-            pump(0.1)
-        } while !window.isKeyWindow && Date() < deadline
+        // Dispatch-model step 1, through the ONE shared seam: this process must
+        // own a KEY window or no synthesized click can land. `establishFocus`
+        // takes the front — and CANNOT skip: gating here would make every test
+        // in the class conditional on the environment, including the many below
+        // that never synthesize an event. The gate lives at the point of use,
+        // in `click`, and re-observes the front on both sides of it.
+        GUIFocusHarness.establishFocus(window, harness: "CadenceTransportNextButtonTests")
         pump(0.2) // let SwiftUI lay the transport row out
     }
 
@@ -149,16 +153,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
 
     /// Drain `NSApp`'s queue through `sendEvent` and spin the run loop for `seconds`.
     private func pump(_ seconds: TimeInterval) {
-        let deadline = Date(timeIntervalSinceNow: seconds)
-        repeat {
-            while let event = NSApp.nextEvent(
-                matching: .any, until: Date(timeIntervalSinceNow: 0.01),
-                inMode: .default, dequeue: true
-            ) {
-                NSApp.sendEvent(event)
-            }
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
-        } while Date() < deadline
+        GUIFocusHarness.pump(seconds)
     }
 
     private func mouseEvent(_ type: NSEvent.EventType, at p: NSPoint, clickCount: Int) -> NSEvent {
@@ -171,11 +166,18 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         return e
     }
 
-    /// Queue the UP first, then hand the DOWN to the window (see DISPATCH MODEL).
-    private func click(at p: NSPoint) {
-        NSApp.postEvent(mouseEvent(.leftMouseUp, at: p, clickCount: 1), atStart: false)
-        window.sendEvent(mouseEvent(.leftMouseDown, at: p, clickCount: 1))
-        pump(0.25)
+    /// Queue the UP first, then hand the DOWN to the window — inside the shared
+    /// gate, which re-observes the front immediately before the event and again
+    /// after it has been drained. A front missing on either side SKIPS the test
+    /// instead of letting an inert click be reported as a product bug.
+    private func click(at p: NSPoint, file: StaticString = #filePath, line: UInt = #line) throws {
+        try GUIFocusHarness.synthesize(
+            in: window, harness: "CadenceTransportNextButtonTests", file: file, line: line
+        ) {
+            NSApp.postEvent(mouseEvent(.leftMouseUp, at: p, clickCount: 1), atStart: false)
+            window.sendEvent(mouseEvent(.leftMouseDown, at: p, clickCount: 1))
+            pump(0.25)
+        }
     }
 
     // MARK: Locating a SwiftUI button
@@ -220,12 +222,12 @@ final class CadenceTransportNextButtonTests: XCTestCase {
     }
 
     /// Real-click one transport button.
-    private func clickButton(_ button: TransportButton) {
-        click(at: center(of: button))
+    private func clickButton(_ button: TransportButton) throws {
+        try click(at: center(of: button))
     }
 
-    private func clickNext() { clickButton(.next) }
-    private func clickPrevious() { clickButton(.previous) }
+    private func clickNext() throws { try clickButton(.next) }
+    private func clickPrevious() throws { try clickButton(.previous) }
 
     // MARK: State setup helpers
 
@@ -256,30 +258,30 @@ final class CadenceTransportNextButtonTests: XCTestCase {
     func testHarnessFidelity_playPreviousAndNextAllRespondToRealClicks() throws {
         // Play (the queue is loaded, index 0, not playing).
         XCTAssertFalse(core.isPlaying)
-        clickButton(.playPause)
+        try clickButton(.playPause)
         XCTAssertTrue(core.isPlaying, "a real click on ▶ starts playback")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track0.mp3"])
 
         // Pause (the glyph — and so the a11y label — has flipped to Pause).
-        clickButton(.playPause)
+        try clickButton(.playPause)
         XCTAssertFalse(core.isPlaying, "a real click on ⏸ pauses")
         XCTAssertEqual(engine.pauseCount, 1)
 
         // Next, from the middle of the list.
         playTrack(1)
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 2, "a real click on ▶▶ advances one track")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track2.mp3"])
 
         // Previous.
         engine.resetLog()
-        clickPrevious()
+        try clickPrevious()
         XCTAssertEqual(core.currentIndex, 1, "a real click on ◀◀ steps back one track")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track1.mp3"])
 
         // Stop.
         engine.resetLog()
-        clickButton(.stop)
+        try clickButton(.stop)
         XCTAssertFalse(core.isPlaying, "a real click on ■ halts playback")
         XCTAssertEqual(engine.seekTimes, [0], "■ also rewinds to 0")
     }
@@ -288,10 +290,10 @@ final class CadenceTransportNextButtonTests: XCTestCase {
     /// centre box, outside the button cluster) must do nothing. Without this, a
     /// harness that fired the nearest button from any point could make every
     /// "the click worked" assertion above meaningless.
-    func testHarnessFidelity_clickOnDeadSpaceDoesNothing() {
+    func testHarnessFidelity_clickOnDeadSpaceDoesNothing() throws {
         playTrack(1)
         let previous = center(of: .previous)
-        click(at: NSPoint(x: previous.x - 32, y: previous.y))
+        try click(at: NSPoint(x: previous.x - 32, y: previous.y))
 
         XCTAssertEqual(core.currentIndex, 1, "a click on empty space changes nothing")
         XCTAssertTrue(core.isPlaying)
@@ -306,7 +308,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
     /// (1) Playing, middle of the list → advances and plays the next track.
     func testNext_playingMidList_advancesAndPlays() throws {
         playTrack(1)
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 2)
         XCTAssertTrue(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track2.mp3"])
@@ -318,7 +320,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         core.pause()
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 2)
         XCTAssertTrue(core.isPlaying, "▶▶ from a paused track starts the next one")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track2.mp3"])
@@ -327,10 +329,10 @@ final class CadenceTransportNextButtonTests: XCTestCase {
     /// (3) Stopped (the ■ button's pause+seek-0), middle of the list → advances.
     func testNext_stoppedMidList_advancesAndPlays() throws {
         playTrack(1)
-        clickButton(.stop)
+        try clickButton(.stop)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 2)
         XCTAssertTrue(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track2.mp3"])
@@ -348,7 +350,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         playTrack(trackCount - 1)
         XCTAssertFalse(core.canGoNext, "precondition: the model reports ▶▶ cannot act")
 
-        clickNext()
+        try clickNext()
 
         XCTAssertEqual(core.currentIndex, trackCount - 1, "the selection stays on the last track")
         XCTAssertTrue(core.isPlaying, "a disabled ▶▶ no longer stops playback")
@@ -370,7 +372,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         XCTAssertFalse(core.canGoNext, "precondition: ▶▶ is dimmed here")
 
         let indexBefore = core.currentIndex
-        clickNext()
+        try clickNext()
 
         XCTAssertEqual(core.currentIndex, indexBefore, "▶▶ does not move the selection")
         XCTAssertFalse(core.isPlaying, "▶▶ does not start anything")
@@ -389,7 +391,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         core.select(trackCount - 1)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0, "▶▶ wraps with repeat .all")
         XCTAssertTrue(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track0.mp3"])
@@ -405,7 +407,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         core.pause()
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0, "▶▶ wraps with repeat one")
         XCTAssertTrue(core.isPlaying, "and the wrapped-to track plays")
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track0.mp3"])
@@ -417,7 +419,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         core.isShuffle = true
         playTrack(trackCount - 1)
 
-        clickNext()
+        try clickNext()
         XCTAssertNotEqual(core.currentIndex, trackCount - 1, "shuffle picks a different track")
         XCTAssertTrue(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs.count, 1)
@@ -432,7 +434,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         playTrack(0)
         XCTAssertFalse(core.canGoNext, "sequential: nowhere to go on a 1-track queue")
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0)
         XCTAssertTrue(core.isPlaying, "a disabled ▶▶ no longer stops the only track")
         XCTAssertEqual(engine.stopCount, 0)
@@ -440,7 +442,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         core.isShuffle = true
         playTrack(0)
         XCTAssertFalse(core.canGoNext, "shuffle cannot leave a 1-track queue either")
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 0)
         XCTAssertTrue(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs, [], "no reload")
@@ -453,7 +455,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         XCTAssertNil(core.currentIndex)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertNil(core.currentIndex)
         XCTAssertFalse(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs, [])
@@ -470,7 +472,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         XCTAssertEqual(core.currentIndex, trackCount - 1, "the selection follows the moved track")
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         // The moved track is now LAST, so with repeat off ▶▶ is dimmed: the press
         // does nothing and playback carries on.
         XCTAssertFalse(core.canGoNext, "the reorder parked the current track at the end")
@@ -483,7 +485,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         pump(0.1)
         XCTAssertEqual(core.currentIndex, 1)
         engine.resetLog()
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 2, "▶▶ advances in the reordered list")
         XCTAssertTrue(core.isPlaying)
     }
@@ -498,7 +500,7 @@ final class CadenceTransportNextButtonTests: XCTestCase {
         XCTAssertFalse(core.isPlaying)
         engine.resetLog()
 
-        clickNext()
+        try clickNext()
         XCTAssertEqual(core.currentIndex, 1, "▶▶ works before anything has played")
         XCTAssertTrue(core.isPlaying)
         XCTAssertEqual(engine.loadedURLs.map(\.lastPathComponent), ["track1.mp3"],

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import GUIFocusHarness
 import PlayerCore
 @testable import DwanimItUI
 
@@ -73,13 +74,13 @@ final class CadenceTransportRepeatAppearanceTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
 
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-        let deadline = Date(timeIntervalSinceNow: 3)
-        repeat {
-            window.makeKeyAndOrderFront(nil)
-            pump(0.1)
-        } while !window.isKeyWindow && Date() < deadline
+        // Dispatch-model step 1, through the ONE shared seam: this process must
+        // own a KEY window or no synthesized click can land. `establishFocus`
+        // takes the front — and CANNOT skip: gating here would make every test
+        // in the class conditional on the environment, including the many below
+        // that never synthesize an event. The gate lives at the point of use,
+        // in `click`, and re-observes the front on both sides of it.
+        GUIFocusHarness.establishFocus(window, harness: "CadenceTransportRepeatAppearanceTests")
         pump(0.2)
     }
 
@@ -93,19 +94,14 @@ final class CadenceTransportRepeatAppearanceTests: XCTestCase {
     // MARK: Event plumbing (the established in-process click model)
 
     private func pump(_ seconds: TimeInterval) {
-        let deadline = Date(timeIntervalSinceNow: seconds)
-        repeat {
-            while let event = NSApp.nextEvent(
-                matching: .any, until: Date(timeIntervalSinceNow: 0.01),
-                inMode: .default, dequeue: true
-            ) {
-                NSApp.sendEvent(event)
-            }
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
-        } while Date() < deadline
+        GUIFocusHarness.pump(seconds)
     }
 
-    private func click(at p: NSPoint) {
+    /// Queue the UP first, then hand the DOWN to the window — inside the shared
+    /// gate, which re-observes the front immediately before the event and again
+    /// after it has been drained. A front missing on either side SKIPS the test
+    /// instead of letting an inert click be reported as a product bug.
+    private func click(at p: NSPoint, file: StaticString = #filePath, line: UInt = #line) throws {
         func event(_ type: NSEvent.EventType) -> NSEvent {
             guard let e = NSEvent.mouseEvent(
                 with: type, location: p, modifierFlags: [],
@@ -115,9 +111,13 @@ final class CadenceTransportRepeatAppearanceTests: XCTestCase {
             ) else { fatalError("NSEvent.mouseEvent returned nil for \(type)") }
             return e
         }
-        NSApp.postEvent(event(.leftMouseUp), atStart: false)
-        window.sendEvent(event(.leftMouseDown))
-        pump(0.25)
+        try GUIFocusHarness.synthesize(
+            in: window, harness: "CadenceTransportRepeatAppearanceTests", file: file, line: line
+        ) {
+            NSApp.postEvent(event(.leftMouseUp), atStart: false)
+            window.sendEvent(event(.leftMouseDown))
+            pump(0.25)
+        }
     }
 
     /// Put the view into `mode` and let the render settle.
@@ -321,7 +321,7 @@ final class CadenceTransportRepeatAppearanceTests: XCTestCase {
     /// to its right — is the same in off, all and one. When the ONE state
     /// rendered a longer label, this x fell inside the Repeat pill instead, and
     /// the click cycled repeat rather than toggling EQ.
-    func testTheToggleRowDoesNotReflowAcrossTheRepeatCycle() {
+    func testTheToggleRowDoesNotReflowAcrossTheRepeatCycle() throws {
         let eqCentre = NSPoint(x: eqPillX + eqPillWidth / 2, y: hosting.bounds.midY)
 
         for mode in [RepeatMode.off, .all, .one] {
@@ -329,7 +329,7 @@ final class CadenceTransportRepeatAppearanceTests: XCTestCase {
             let repeatBefore = core.repeatMode
             let eqBefore = core.equalizer.enabled
 
-            click(at: eqCentre)
+            try click(at: eqCentre)
 
             XCTAssertEqual(core.equalizer.enabled, !eqBefore,
                            "\(mode): the EQ pill must sit at the same x in every "

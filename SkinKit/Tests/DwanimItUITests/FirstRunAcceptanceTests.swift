@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+import GUIFocusHarness
 import PlayerCore
 @testable import DwanimItUI
 
@@ -66,7 +67,7 @@ final class FirstRunAcceptanceTests: XCTestCase {
         addFilesCalls = 0
         addFolderCalls = 0
         playSampleCalls = 0
-        host(withSample: true)
+        try host(withSample: true)
     }
 
     override func tearDown() async throws {
@@ -79,7 +80,7 @@ final class FirstRunAcceptanceTests: XCTestCase {
     /// Cold-start the real face over the current (empty) core, EXACTLY as the app
     /// wires it: the footer/CTA add handlers and the core's empty-queue Play seam all
     /// route to the same app-tier "add files" flow.
-    private func host(withSample: Bool) {
+    private func host(withSample: Bool) throws {
         window?.orderOut(nil)
         window?.close()
         // A fresh probe per host: the old tree's frames must not outlive it.
@@ -109,14 +110,13 @@ final class FirstRunAcceptanceTests: XCTestCase {
         window.isReleasedWhenClosed = false
         window.contentView = hosting
 
-        NSApp.setActivationPolicy(.regular)
-        NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
-        NSApp.activate(ignoringOtherApps: true)
-        let deadline = Date(timeIntervalSinceNow: 3)
-        repeat {
-            window.makeKeyAndOrderFront(nil)
-            pump(0.1)
-        } while !window.isKeyWindow && Date() < deadline
+        // Dispatch-model step 1, through the ONE shared seam: this process must
+        // own a KEY window or no synthesized click can land. `establishFocus`
+        // takes the front — and CANNOT skip: gating here would make every test
+        // in the class conditional on the environment, including the many below
+        // that never synthesize an event. The gate lives at the point of use,
+        // in `click`, and re-observes the front on both sides of it.
+        GUIFocusHarness.establishFocus(window, harness: "FirstRunAcceptanceTests")
         pump(0.3) // let SwiftUI lay the whole face out and the probe fill
     }
 
@@ -128,16 +128,7 @@ final class FirstRunAcceptanceTests: XCTestCase {
     // MARK: Event plumbing (the established in-process click model)
 
     private func pump(_ seconds: TimeInterval) {
-        let deadline = Date(timeIntervalSinceNow: seconds)
-        repeat {
-            while let event = NSApp.nextEvent(
-                matching: .any, until: Date(timeIntervalSinceNow: 0.01),
-                inMode: .default, dequeue: true
-            ) {
-                NSApp.sendEvent(event)
-            }
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.01))
-        } while Date() < deadline
+        GUIFocusHarness.pump(seconds)
     }
 
     private func mouseEvent(_ type: NSEvent.EventType, at p: NSPoint) -> NSEvent {
@@ -150,12 +141,18 @@ final class FirstRunAcceptanceTests: XCTestCase {
         return e
     }
 
-    /// Queue the UP first, then hand the DOWN to the window (so a control that
-    /// runs its own tracking loop cannot block), then drain.
-    private func click(at p: NSPoint) {
-        NSApp.postEvent(mouseEvent(.leftMouseUp, at: p), atStart: false)
-        window.sendEvent(mouseEvent(.leftMouseDown, at: p))
-        pump(0.25)
+    /// Queue the UP first, then hand the DOWN to the window — inside the shared
+    /// gate, which re-observes the front immediately before the event and again
+    /// after it has been drained. A front missing on either side SKIPS the test
+    /// instead of letting an inert click be reported as a product bug.
+    private func click(at p: NSPoint, file: StaticString = #filePath, line: UInt = #line) throws {
+        try GUIFocusHarness.synthesize(
+            in: window, harness: "FirstRunAcceptanceTests", file: file, line: line
+        ) {
+            NSApp.postEvent(mouseEvent(.leftMouseUp, at: p), atStart: false)
+            window.sendEvent(mouseEvent(.leftMouseDown, at: p))
+            pump(0.25)
+        }
     }
 
     // MARK: Locating a control through the probe
@@ -186,13 +183,13 @@ final class FirstRunAcceptanceTests: XCTestCase {
     /// Real-click the centre of a control.
     private func clickControl(_ id: CadenceControlID, file: StaticString = #filePath, line: UInt = #line) throws {
         let f = try frame(of: id, file: file, line: line)
-        click(at: windowPoint(CGPoint(x: f.midX, y: f.midY)))
+        try click(at: windowPoint(CGPoint(x: f.midX, y: f.midY)), file: file, line: line)
     }
 
     /// Real-click a control at a fraction of its own height (0 = top edge).
     private func clickControl(_ id: CadenceControlID, atHeightFraction fraction: CGFloat) throws {
         let f = try frame(of: id)
-        click(at: windowPoint(CGPoint(x: f.midX, y: f.minY + f.height * fraction)))
+        try click(at: windowPoint(CGPoint(x: f.midX, y: f.minY + f.height * fraction)))
     }
 
     // MARK: Pixels
@@ -280,7 +277,7 @@ final class FirstRunAcceptanceTests: XCTestCase {
         pump(0.3)
         let play = try frame(of: .playPause)
         let previous = try frame(of: .previous)
-        click(at: windowPoint(CGPoint(x: previous.minX - 24, y: play.midY)))
+        try click(at: windowPoint(CGPoint(x: previous.minX - 24, y: play.midY)))
         XCTAssertFalse(core.isPlaying)
         XCTAssertEqual(engine.playCount, 0)
         XCTAssertEqual(engine.loadedURLs, [])
@@ -432,7 +429,7 @@ final class FirstRunAcceptanceTests: XCTestCase {
     }
 
     func testColdStart_playSampleIsHiddenWhenTheResourceIsMissing() throws {
-        host(withSample: false)
+        try host(withSample: false)
         XCTAssertNotNil(probe.frame(of: .ctaAddFiles), "the other two buttons remain")
         XCTAssertNotNil(probe.frame(of: .ctaAddFolder))
         XCTAssertNil(probe.frame(of: .ctaPlaySample), "no sample resource, no Play Sample button")
