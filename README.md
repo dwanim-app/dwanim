@@ -2,6 +2,10 @@
 
 > A lightweight, skinnable native macOS music player for your local music collection.
 
+<a href="https://apps.apple.com/us/app/dwanim-it-local-music-player/id6806094897?mt=12"><img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-mac-app-store/black/en-us" alt="Download dwanim it on the Mac App Store" height="44"></a>
+
+$1.99 on the Mac App Store · macOS 14 or later.
+
 ## The name
 
 **dwanim it** takes its name from **Dwennimmen** ("ram's horns"), an Adinkra symbol
@@ -49,9 +53,9 @@ choose to load your own `.wsz` file.
   `.dwtheme` / `.json` theme files.
 - Runs in the macOS App Sandbox with no network access at all.
 
-> **Status:** feature-complete and building. The app runs, and the `SkinKit`
-> package it is built on passes its full test suite. Store submission is in
-> preparation; no release date is announced.
+> **Status:** released on the Mac App Store. The app runs, and the `SkinKit`
+> package it is built on passes its full test suite. It is available as a paid
+> download; see the Mac App Store link at the top of this file.
 
 ## Skins
 
